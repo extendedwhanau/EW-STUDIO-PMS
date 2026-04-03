@@ -380,11 +380,18 @@ function GanttChart({ projects, designers }) {
 
   const allStarts = validProjects.map(p => daysFromEpoch(p.startDate));
   const allEnds = validProjects.map(p => daysFromEpoch(p.endDate));
-  const minDay = Math.min(...allStarts) - 3;
-  const maxDay = Math.max(...allEnds) + 5;
+  const minStart = Math.min(...allStarts);
+  const maxEnd = Math.max(...allEnds);
+  const minDay = minStart - 14;
+  // ~12 months past latest project end, ~15 months ahead of today, minimum span — room to plan ahead
+  const maxDay = Math.max(maxEnd + 380, todayDay + 460, minStart + 120);
   const totalDays = maxDay - minDay;
 
   const pct = (day) => ((day - minDay) / totalDays) * 100;
+
+  const minYear = new Date(minDay * 86400000).getFullYear();
+  const maxYear = new Date(maxDay * 86400000).getFullYear();
+  const monthLabelOpts = minYear !== maxYear ? { month: 'short', year: '2-digit' } : { month: 'short' };
 
   const months = [];
   let cur = new Date(minDay * 86400000);
@@ -393,7 +400,7 @@ function GanttChart({ projects, designers }) {
     const day = daysFromEpoch(cur.toISOString().slice(0, 10));
     if (day >= minDay && day <= maxDay) {
       months.push({
-        label: cur.toLocaleDateString('en-NZ', { month: 'short' }),
+        label: cur.toLocaleDateString('en-NZ', monthLabelOpts),
         day,
       });
     }
@@ -401,7 +408,7 @@ function GanttChart({ projects, designers }) {
   }
 
   const lineStep = 7;
-  const labelStep = totalDays > 98 ? 14 : 7;
+  const labelStep = totalDays > 240 ? 21 : totalDays > 98 ? 14 : 7;
   const labelEveryNLines = labelStep / lineStep;
   const gridLines = [];
   for (let day = minDay; day <= maxDay; day += lineStep) {
@@ -526,8 +533,67 @@ function GanttChart({ projects, designers }) {
   );
 }
 
+const STUDIO_ACCESS_STORAGE = 'ew_studio_access';
+const STUDIO_ACCESS_CODE = '3131';
+
+function AccessScreen({ onUnlock }) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState(false);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (value === STUDIO_ACCESS_CODE) {
+      try {
+        localStorage.setItem(STUDIO_ACCESS_STORAGE, '1');
+      } catch {
+        /* ignore */
+      }
+      setError(false);
+      onUnlock();
+    } else {
+      setError(true);
+    }
+  };
+
+  return (
+    <div className="access-gate">
+      <form className="access-gate-card" onSubmit={submit}>
+        <p className="access-gate-brand">Extended Whānau</p>
+        <p className="access-gate-label">Access code</p>
+        <input
+          className="access-gate-input"
+          type="password"
+          inputMode="numeric"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="••••"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(false);
+          }}
+        />
+        {error && <p className="access-gate-error">Code not recognised.</p>}
+        <button type="submit" className="btn-primary access-gate-submit" disabled={!value}>
+          Continue
+        </button>
+        <p className="access-gate-note">Casual protection only — not for sensitive data.</p>
+      </form>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  const [accessUnlocked, setAccessUnlocked] = useState(() => {
+    try {
+      return localStorage.getItem(STUDIO_ACCESS_STORAGE) === '1';
+    } catch {
+      return false;
+    }
+  });
+
   const [view, setView] = useState('projects');
   const [designers, setDesigners] = useState(loadDesignersFromStorage);
   const [projects, setProjects] = useState(() => {
@@ -615,6 +681,10 @@ export default function App() {
 
   const activeCount = projects.filter(p => p.status !== 'Complete').length;
   const archivedCount = projects.filter(p => p.status === 'Complete').length;
+
+  if (!accessUnlocked) {
+    return <AccessScreen onUnlock={() => setAccessUnlocked(true)} />;
+  }
 
   return (
     <div className="app">
