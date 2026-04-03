@@ -5,14 +5,76 @@ import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 import './gantt-timeline.css';
 
-// ── Designer palette ──────────────────────────────────────────────────────────
+// ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
-  { bg: '#E8D5C4', bar: '#C4956A', text: '#7A5230' },
-  { bg: '#C8D8C8', bar: '#6A9E6A', text: '#2D5A2D' },
-  { bg: '#C4CDD8', bar: '#6A85A8', text: '#1F3A5F' },
-  { bg: '#D8C8D8', bar: '#9E6AA8', text: '#4A1F5A' },
-  { bg: '#D8D4C4', bar: '#A89E6A', text: '#5A4E1F' },
+  { bg: '#F1EEEB', bar: '#9A8F86', text: '#45403C' },
+  { bg: '#EDF1EE', bar: '#8B978C', text: '#383E3A' },
+  { bg: '#EAEDF3', bar: '#8490A0', text: '#343A42' },
+  { bg: '#F0EEEA', bar: '#9D968A', text: '#403E39' },
+  { bg: '#EEECF1', bar: '#8D8794', text: '#38353D' },
 ];
+
+function normalizeHex(hex) {
+  if (!hex || typeof hex !== 'string') return '#8b978c';
+  let h = hex.trim().replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6 || !/^[0-9a-fA-F]+$/.test(h)) return '#8b978c';
+  return `#${h.toLowerCase()}`;
+}
+
+function hexToRgb(hex) {
+  const h = normalizeHex(hex).slice(1);
+  const n = parseInt(h, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function rgbToHex(r, g, b) {
+  const c = (x) => Math.max(0, Math.min(255, Math.round(x)));
+  return `#${[c(r), c(g), c(b)].map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function mixRgb(a, b, t) {
+  return {
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+  };
+}
+
+/** Bar + derived soft bg + label text (for Gantt + cards). */
+function paletteFromBar(barHex) {
+  const bar = normalizeHex(barHex);
+  const rgb = hexToRgb(bar);
+  const white = { r: 255, g: 255, b: 255 };
+  const bgRgb = mixRgb(rgb, white, 0.78);
+  const textRgb = {
+    r: rgb.r * 0.28 + 28,
+    g: rgb.g * 0.28 + 28,
+    b: rgb.b * 0.28 + 28,
+  };
+  return {
+    bg: rgbToHex(bgRgb.r, bgRgb.g, bgRgb.b),
+    bar,
+    text: rgbToHex(textRgb.r, textRgb.g, textRgb.b),
+  };
+}
+
+function getDesignerPalette(designer) {
+  if (!designer) return { bg: '#EEE', bar: '#CCC', text: '#888' };
+  const barSource = designer.colorHex
+    ? designer.colorHex
+    : DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length].bar;
+  return paletteFromBar(barSource);
+}
+
+function designerWithNormalizedColor(d) {
+  if (!d) return d;
+  const idx = typeof d.colorIdx === 'number' ? d.colorIdx % DESIGNER_COLORS.length : 0;
+  if (d.colorHex && String(d.colorHex).trim().length > 0) {
+    return { ...d, colorHex: normalizeHex(d.colorHex), colorIdx: idx };
+  }
+  return { ...d, colorHex: normalizeHex(DESIGNER_COLORS[idx].bar), colorIdx: idx };
+}
 
 const STATUS_OPTIONS = ['In Progress', 'In Review', 'Complete'];
 
@@ -113,7 +175,14 @@ function applyTeamSchemaVersion(list) {
     if (localStorage.getItem('studio_team_schema') === TEAM_SCHEMA_VERSION) return list;
     const next = list.map((d) => {
       const canon = SAMPLE_DESIGNER_BY_ID[d.id];
-      return canon ? { ...d, name: canon.name, colorIdx: canon.colorIdx } : d;
+      if (!canon) return d;
+      const ci = canon.colorIdx % DESIGNER_COLORS.length;
+      return {
+        ...d,
+        name: canon.name,
+        colorIdx: canon.colorIdx,
+        colorHex: normalizeHex(DESIGNER_COLORS[ci].bar),
+      };
     });
     localStorage.setItem('studio_team_schema', TEAM_SCHEMA_VERSION);
     localStorage.setItem('studio_designers', JSON.stringify(next));
@@ -129,9 +198,9 @@ function loadDesignersFromStorage() {
     let list = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(list) || list.length === 0) list = [...SAMPLE_DESIGNERS];
     else list = normalizeDesignersFromStorage(list);
-    return applyTeamSchemaVersion(list);
+    return applyTeamSchemaVersion(list).map(designerWithNormalizedColor);
   } catch {
-    return [...SAMPLE_DESIGNERS];
+    return SAMPLE_DESIGNERS.map(designerWithNormalizedColor);
   }
 }
 
@@ -218,7 +287,7 @@ function today() {
 
 function Avatar({ designer, size = 32 }) {
   if (!designer) return null;
-  const c = DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length];
+  const c = getDesignerPalette(designer);
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
@@ -432,52 +501,68 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
 function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
   const isEdit = initialDesigner != null;
   const [name, setName] = useState(initialDesigner?.name ?? '');
-  const [colorIdx, setColorIdx] = useState(initialDesigner?.colorIdx ?? 0);
+  const [barHex, setBarHex] = useState(() =>
+    normalizeHex(
+      initialDesigner
+        ? getDesignerPalette(initialDesigner).bar
+        : DESIGNER_COLORS[0].bar,
+    ),
+  );
 
   const handleSave = () => {
     if (!name.trim()) return;
+    const hex = normalizeHex(barHex);
+    const idx = DESIGNER_COLORS.findIndex((c) => c.bar.toLowerCase() === hex.toLowerCase());
+    const payload = {
+      name: name.trim(),
+      colorHex: hex,
+      colorIdx: idx >= 0 ? idx : 0,
+    };
     if (isEdit) {
-      onSave({ ...initialDesigner, name: name.trim(), colorIdx });
+      onSave({ ...initialDesigner, ...payload });
     } else {
-      onSave({ id: uuidv4(), name: name.trim(), colorIdx });
+      onSave({ id: uuidv4(), ...payload });
     }
     onClose();
   };
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-narrow">
-        <div className="modal-header">
-          <span className="modal-sheet-title">{isEdit ? 'Edit profile' : 'Add team member'}</span>
-          <button type="button" className="icon-btn" onClick={onClose}>✕</button>
+      <div className="modal modal--project">
+        <div className="modal-header modal-header--project">
+          <h2 className="modal-project-sheet-heading">
+            {isEdit ? 'Edit' : 'Add team member'}
+          </h2>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
-        <div className="modal-body">
-          <div className="field">
-            <label>Name</label>
+        <div className="modal-body modal-body--project">
+          <div className="sheet-grid-row sheet-grid-row--bare-fields">
             <input
+              id="designer-modal-name"
+              className="sheet-text-input sheet-text-input--left"
+              type="text"
               placeholder="Name"
+              aria-label="Name"
               value={name}
               onChange={e => setName(e.target.value)}
               autoFocus
             />
-          </div>
-          <div className="field">
-            <label>Colour</label>
-            <div className="designer-color-picks">
-              {DESIGNER_COLORS.map((c, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={`designer-color-pick ${colorIdx === i ? 'selected' : ''}`}
-                  style={{ background: c.bar }}
-                  onClick={() => setColorIdx(i)}
-                  aria-label={`Colour ${i + 1}`}
+            <div className="sheet-designer-color-cell">
+              <label className="designer-color-custom-hit" title="Colour">
+                <span className="sr-only">Colour</span>
+                <input
+                  type="color"
+                  className="designer-color-native-input"
+                  value={barHex}
+                  onChange={(e) => setBarHex(normalizeHex(e.target.value))}
+                  aria-label="Choose colour"
                 />
-              ))}
+                <span className="designer-color-custom-swatch" style={{ background: barHex }} aria-hidden />
+              </label>
             </div>
           </div>
         </div>
-        <div className="modal-footer">
+        <div className="modal-footer modal-footer--project">
           {isEdit && (
             <button
               type="button"
@@ -487,13 +572,20 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
                 onClose();
               }}
             >
-              Remove from team
+              Remove
             </button>
           )}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn-primary" onClick={handleSave} disabled={!name.trim()}>
-              {isEdit ? 'Save' : 'Add'}
+          <div className="modal-footer-actions">
+            <button type="button" className="modal-btn-close" onClick={onClose}>
+              Close
+            </button>
+            <button
+              type="button"
+              className="modal-btn-submit"
+              onClick={handleSave}
+              disabled={!name.trim()}
+            >
+              {isEdit ? 'Save changes' : 'Add'}
             </button>
           </div>
         </div>
@@ -835,7 +927,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
           <div className="gantt-rows">
             {orderedProjects.map((project) => {
               const designer = designers.find(d => d.id === project.designerId);
-              const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : { bg: '#EEE', bar: '#CCC', text: '#888' };
+              const colors = designer ? getDesignerPalette(designer) : { bg: '#EEE', bar: '#CCC', text: '#888' };
               const startPct = pct(daysFromEpoch(project.startDate));
               const endPct = pct(daysFromEpoch(project.endDate));
               const widthPct = endPct - startPct;
@@ -1141,7 +1233,7 @@ export default function App() {
               All
             </button>
             {designers.map((d) => {
-              const c = DESIGNER_COLORS[d.colorIdx % DESIGNER_COLORS.length];
+              const c = getDesignerPalette(d);
               return (
                 <div key={d.id} className="designer-row">
                   <button
