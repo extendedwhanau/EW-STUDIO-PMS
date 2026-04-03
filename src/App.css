@@ -17,7 +17,7 @@
 
 html, body, #root {
   height: 100%;
-  font-family: 'DM Sans', -apple-system, sans-serif;
+  font-family: 'Die Grotesk A', -apple-system, BlinkMacSystemFont, sans-serif;
   background: var(--bg);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -47,18 +47,13 @@ html, body, #root {
 .logo {
   display: flex;
   align-items: center;
-  gap: 8px;
   padding: 0 4px;
 }
-.logo-mark {
-  font-size: 16px;
-  color: #1A1A1A;
-  line-height: 1;
-}
 .logo-text {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.03em;
+  line-height: 1.2;
   color: #1A1A1A;
 }
 
@@ -97,7 +92,12 @@ html, body, #root {
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 99px;
-  font-family: 'DM Mono';
+  font-family: 'Die Grotesk A', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.nav-badge-muted {
+  background: #E8E8E8;
+  color: var(--text-secondary);
 }
 
 .sidebar-section { display: flex; flex-direction: column; gap: 8px; }
@@ -136,7 +136,8 @@ html, body, #root {
 .sidebar-bottom { margin-top: auto; }
 .sidebar-date {
   font-size: 11px; color: var(--text-tertiary);
-  font-family: 'DM Mono'; padding: 0 4px;
+  font-family: 'Die Grotesk A', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums; padding: 0 4px;
 }
 
 /* ── Main ──────────────────────────────────────────────────────────────────── */
@@ -151,10 +152,27 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   padding: 28px 32px 20px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
+}
+
+.main-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.header-stat {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin: 0;
+  font-family: 'Die Grotesk A', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .page-title {
@@ -167,7 +185,8 @@ html, body, #root {
   font-size: 12.5px;
   color: var(--text-secondary);
   margin-top: 2px;
-  font-family: 'DM Mono';
+  font-family: 'Die Grotesk A', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 .main-content {
@@ -181,6 +200,25 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.project-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+.project-section:last-child {
+  margin-bottom: 0;
+}
+.project-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0 4px;
+  margin-bottom: 2px;
 }
 
 .project-row {
@@ -233,18 +271,37 @@ html, body, #root {
 .project-dates {
   font-size: 11.5px;
   color: var(--text-tertiary);
-  font-family: 'DM Mono';
+  font-family: 'Die Grotesk A', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.dropbox-link {
-  font-size: 14px;
-  color: var(--text-tertiary);
-  text-decoration: none;
-  transition: color 0.15s;
-  line-height: 1;
+.row-status-select {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 28px 5px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  max-width: 160px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23888' d='M2 3.5L5 6.5 8 3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }
-.dropbox-link:hover { color: #0061FF; }
+.row-status-select:hover {
+  border-color: #C8C8C8;
+  background-color: #fff;
+}
+.row-status-select:focus {
+  outline: none;
+  border-color: var(--text-primary);
+  background-color: #fff;
+}
 
 /* ── Gantt ─────────────────────────────────────────────────────────────────── */
 .gantt-wrapper {
@@ -461,40 +518,6 @@ html, body, #root {
   background: #fff;
 }
 .field select { cursor: pointer; }
-
-/* ── Checklist ─────────────────────────────────────────────────────────────── */
-.checklist {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  background: var(--bg);
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-
-.check-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  cursor: pointer;
-  font-size: 13.5px;
-  transition: background 0.1s;
-  border-bottom: 1px solid var(--border);
-}
-.check-item:last-child { border-bottom: none; }
-.check-item:hover { background: #F0EFED; }
-
-.check-item input[type="checkbox"] {
-  width: 15px; height: 15px;
-  accent-color: #1A1A1A;
-  cursor: pointer;
-  flex-shrink: 0;
-  border: none;
-  background: none;
-  padding: 0;
-}
 
 /* ── Empty State ───────────────────────────────────────────────────────────── */
 .empty-state {

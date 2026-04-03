@@ -11,63 +11,67 @@ const DESIGNER_COLORS = [
   { bg: '#D8D4C4', bar: '#A89E6A', text: '#5A4E1F' },
 ];
 
-const DEFAULT_CHECKLIST = [
-  { id: 'brief', label: 'Brief received', done: false },
-  { id: 'content', label: 'Final content received', done: false },
-  { id: 'quote', label: 'Print quote approved', done: false },
-  { id: 'draft', label: 'First draft sent', done: false },
-  { id: 'revisions', label: 'Revisions complete', done: false },
-  { id: 'approval', label: 'Client approval', done: false },
-  { id: 'files', label: 'Print-ready files delivered', done: false },
-  { id: 'archived', label: 'Archived to Dropbox', done: false },
-];
-
 const STATUS_OPTIONS = ['In Progress', 'Waiting on Client', 'In Review', 'Ready to Print', 'Complete'];
-const STATUS_COLORS = {
-  'In Progress':      { bg: '#E8F0FF', text: '#2D5BE3' },
-  'Waiting on Client':{ bg: '#FFF3E0', text: '#C47A00' },
-  'In Review':        { bg: '#F0E8FF', text: '#6A35C4' },
-  'Ready to Print':   { bg: '#E8F8EE', text: '#1E7A45' },
-  'Complete':         { bg: '#F0F0F0', text: '#888' },
-};
+const PRIORITY_OPTIONS = [
+  { value: 'priority', label: 'Priority' },
+  { value: 'background', label: 'Secondary' },
+];
 
 // ── Sample data ───────────────────────────────────────────────────────────────
 const SAMPLE_DESIGNERS = [
-  { id: 'd1', name: 'Alex', colorIdx: 0 },
-  { id: 'd2', name: 'Jordan', colorIdx: 1 },
-  { id: 'd3', name: 'Sam', colorIdx: 2 },
+  { id: 'd1', name: 'Tyrone', colorIdx: 0 },
+  { id: 'd2', name: 'Max', colorIdx: 1 },
+  { id: 'd3', name: 'Eva', colorIdx: 2 },
+  { id: 'd4', name: 'Shaun', colorIdx: 3 },
+  { id: 'd5', name: 'Poi', colorIdx: 4 },
 ];
 
 const SAMPLE_PROJECTS = [
   {
     id: 'p1', name: 'Annual Report', client: 'Meridian Co.',
-    designerId: 'd1', status: 'In Progress',
+    designerId: 'd1', status: 'In Progress', priority: 'priority',
     startDate: '2025-04-01', endDate: '2025-04-28',
-    dropboxUrl: '', notes: 'Cover options due first.',
-    checklist: DEFAULT_CHECKLIST.map((i, idx) => ({ ...i, done: idx < 2 })),
+    notes: 'Cover options due first.',
   },
   {
     id: 'p2', name: 'Brand Identity', client: 'Volta Studio',
-    designerId: 'd2', status: 'Waiting on Client',
+    designerId: 'd2', status: 'Waiting on Client', priority: 'priority',
     startDate: '2025-04-05', endDate: '2025-05-10',
-    dropboxUrl: '', notes: 'Awaiting logo feedback.',
-    checklist: DEFAULT_CHECKLIST.map((i, idx) => ({ ...i, done: idx < 1 })),
+    notes: 'Awaiting logo feedback.',
   },
   {
     id: 'p3', name: 'Packaging Suite', client: 'Bloom Foods',
-    designerId: 'd3', status: 'In Review',
+    designerId: 'd3', status: 'In Review', priority: 'background',
     startDate: '2025-04-10', endDate: '2025-04-24',
-    dropboxUrl: '', notes: '',
-    checklist: DEFAULT_CHECKLIST.map((i, idx) => ({ ...i, done: idx < 4 })),
+    notes: '',
   },
   {
     id: 'p4', name: 'Campaign Collateral', client: 'Meridian Co.',
-    designerId: 'd1', status: 'In Progress',
+    designerId: 'd5', status: 'In Progress', priority: 'background',
     startDate: '2025-04-15', endDate: '2025-05-05',
-    dropboxUrl: '', notes: 'Three formats needed.',
-    checklist: DEFAULT_CHECKLIST.map(i => ({ ...i, done: false })),
+    notes: 'Three formats needed.',
   },
 ];
+
+/** Replace cached team when it matches old built-in samples so names stay current. */
+function normalizeDesignersFromStorage(parsed) {
+  if (!Array.isArray(parsed) || parsed.length === 0) return SAMPLE_DESIGNERS;
+  const names = parsed.map(d => (d && d.name ? String(d.name).trim().toLowerCase() : ''));
+  const isAlexJordanSam =
+    parsed.length === 3 &&
+    names[0] === 'alex' &&
+    names[1] === 'jordan' &&
+    names[2] === 'sam';
+  const isOldPoiShaunOrder =
+    parsed.length === 5 &&
+    names[0] === 'tyrone' &&
+    names[1] === 'max' &&
+    names[2] === 'eva' &&
+    names[3] === 'poi' &&
+    names[4] === 'shaun';
+  if (isAlexJordanSam || isOldPoiShaunOrder) return SAMPLE_DESIGNERS;
+  return parsed;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDate(str) {
@@ -105,49 +109,23 @@ function Avatar({ designer, size = 32 }) {
   );
 }
 
-function StatusPill({ status }) {
-  const c = STATUS_COLORS[status] || { bg: '#f0f0f0', text: '#888' };
-  return (
-    <span style={{
-      background: c.bg, color: c.text,
-      fontSize: 11, fontWeight: 500, padding: '3px 9px',
-      borderRadius: 99, letterSpacing: '0.01em', whiteSpace: 'nowrap',
-    }}>
-      {status}
-    </span>
-  );
-}
-
-function ChecklistProgress({ checklist }) {
-  const done = checklist.filter(i => i.done).length;
-  const total = checklist.length;
-  const pct = total ? (done / total) * 100 : 0;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <div style={{ flex: 1, height: 3, background: '#EBEBEB', borderRadius: 99, overflow: 'hidden', minWidth: 60 }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: '#1A1A1A', borderRadius: 99, transition: 'width 0.3s' }} />
-      </div>
-      <span style={{ fontSize: 11, color: '#999', fontFamily: 'DM Mono', whiteSpace: 'nowrap' }}>
-        {done}/{total}
-      </span>
-    </div>
-  );
-}
-
 // ── Project Modal ─────────────────────────────────────────────────────────────
 function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
-  const [form, setForm] = useState(project ? { ...project } : {
-    id: uuidv4(), name: '', client: '', designerId: designers[0]?.id || '',
-    status: 'In Progress', startDate: today(), endDate: addDays(today(), 14),
-    dropboxUrl: '', notes: '',
-    checklist: DEFAULT_CHECKLIST.map(i => ({ ...i })),
+  const [form, setForm] = useState(() => {
+    if (project) {
+      return {
+        ...project,
+        priority: project.priority || 'priority',
+      };
+    }
+    return {
+      id: uuidv4(), name: '', client: '', designerId: designers[0]?.id || '',
+      status: 'In Progress', startDate: today(), endDate: addDays(today(), 14),
+      notes: '', priority: 'priority',
+    };
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const toggleCheck = (id) => setForm(f => ({
-    ...f,
-    checklist: f.checklist.map(i => i.id === id ? { ...i, done: !i.done } : i),
-  }));
 
   const designer = designers.find(d => d.id === form.designerId);
   const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : null;
@@ -193,6 +171,13 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
             </div>
           </div>
 
+          <div className="field">
+            <label>Type</label>
+            <select value={form.priority} onChange={e => set('priority', e.target.value)}>
+              {PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+
           <div className="modal-row">
             <div className="field">
               <label>Start date</label>
@@ -205,37 +190,12 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
           </div>
 
           <div className="field">
-            <label>Dropbox folder link</label>
-            <input
-              type="url" placeholder="https://dropbox.com/sh/..."
-              value={form.dropboxUrl} onChange={e => set('dropboxUrl', e.target.value)}
-            />
-          </div>
-
-          <div className="field">
             <label>Notes</label>
             <textarea
               placeholder="Any notes for this project..."
               value={form.notes} onChange={e => set('notes', e.target.value)}
               rows={3}
             />
-          </div>
-
-          <div className="field">
-            <label>Checklist</label>
-            <div className="checklist">
-              {form.checklist.map(item => (
-                <label key={item.id} className="check-item">
-                  <input
-                    type="checkbox" checked={item.done}
-                    onChange={() => toggleCheck(item.id)}
-                  />
-                  <span style={{ textDecoration: item.done ? 'line-through' : 'none', color: item.done ? '#BBB' : '#1A1A1A' }}>
-                    {item.label}
-                  </span>
-                </label>
-              ))}
-            </div>
           </div>
         </div>
 
@@ -304,7 +264,7 @@ function DesignerModal({ onClose, onAdd }) {
 }
 
 // ── Project Row ───────────────────────────────────────────────────────────────
-function ProjectRow({ project, designers, onClick }) {
+function ProjectRow({ project, designers, onClick, onStatusChange }) {
   const designer = designers.find(d => d.id === project.designerId);
   const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : null;
   return (
@@ -315,19 +275,19 @@ function ProjectRow({ project, designers, onClick }) {
           <span className="project-name">{project.name}</span>
           <span className="project-client">{project.client}</span>
         </div>
-        <ChecklistProgress checklist={project.checklist} />
       </div>
       <div className="project-row-meta">
-        <StatusPill status={project.status} />
+        <select
+          className="row-status-select"
+          value={project.status}
+          onChange={e => onStatusChange(project.id, e.target.value)}
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+        >
+          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
         {designer && <Avatar designer={designer} size={28} />}
         <span className="project-dates">{formatDate(project.startDate)} → {formatDate(project.endDate)}</span>
-        {project.dropboxUrl && (
-          <a href={project.dropboxUrl} target="_blank" rel="noreferrer"
-            onClick={e => e.stopPropagation()}
-            className="dropbox-link" title="Open Dropbox folder">
-            ⬡
-          </a>
-        )}
       </div>
     </div>
   );
@@ -370,7 +330,7 @@ function GanttChart({ projects, designers }) {
         {months.map((m, i) => (
           <div key={i} style={{
             position: 'absolute', left: `${pct(m.day)}%`,
-            fontSize: 11, color: '#AAA', fontFamily: 'DM Mono', fontWeight: 400,
+            fontSize: 11, color: '#AAA', fontFamily: "'Die Grotesk A', ui-monospace, monospace", fontWeight: 400, fontVariantNumeric: 'tabular-nums',
             transform: 'none', top: 6,
           }}>
             {m.label}
@@ -388,8 +348,6 @@ function GanttChart({ projects, designers }) {
           const widthPct = endPct - startPct;
           const isWaiting = project.status === 'Waiting on Client';
           const isComplete = project.status === 'Complete';
-          const done = project.checklist.filter(i => i.done).length;
-          const total = project.checklist.length;
 
           return (
             <div key={project.id} className="gantt-row">
@@ -421,14 +379,6 @@ function GanttChart({ projects, designers }) {
                     ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}22 4px, ${colors.bar}22 8px)`
                     : 'none',
                 }}>
-                  {/* Progress fill */}
-                  {!isComplete && total > 0 && (
-                    <div style={{
-                      position: 'absolute', left: 0, top: 0, bottom: 0,
-                      width: `${(done / total) * 100}%`,
-                      background: colors.bar, opacity: 0.18, borderRadius: '4px 0 0 4px',
-                    }} />
-                  )}
                   <span style={{
                     fontSize: 11, fontWeight: 500, color: isComplete ? '#AAA' : colors.text,
                     paddingLeft: 8, whiteSpace: 'nowrap', overflow: 'hidden',
@@ -448,7 +398,7 @@ function GanttChart({ projects, designers }) {
         <div style={{ position: 'relative', height: 20 }}>
           <span style={{
             position: 'absolute', left: `${todayPct}%`, transform: 'translateX(-50%)',
-            fontSize: 10, color: '#FF4D4D', fontFamily: 'DM Mono', top: 4,
+            fontSize: 10, color: '#FF4D4D', fontFamily: "'Die Grotesk A', ui-monospace, monospace", fontVariantNumeric: 'tabular-nums', top: 4,
           }}>
             today
           </span>
@@ -462,7 +412,13 @@ function GanttChart({ projects, designers }) {
 export default function App() {
   const [view, setView] = useState('projects');
   const [designers, setDesigners] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('studio_designers')) || SAMPLE_DESIGNERS; } catch { return SAMPLE_DESIGNERS; }
+    try {
+      const raw = localStorage.getItem('studio_designers');
+      if (!raw) return SAMPLE_DESIGNERS;
+      return normalizeDesignersFromStorage(JSON.parse(raw));
+    } catch {
+      return SAMPLE_DESIGNERS;
+    }
   });
   const [projects, setProjects] = useState(() => {
     try { return JSON.parse(localStorage.getItem('studio_projects')) || SAMPLE_PROJECTS; } catch { return SAMPLE_PROJECTS; }
@@ -480,33 +436,57 @@ export default function App() {
   }, [projects]);
 
   const saveProject = (p) => {
+    const normalized = {
+      ...p,
+      priority: p.priority === 'background' ? 'background' : 'priority',
+    };
     setProjects(prev => {
-      const exists = prev.find(x => x.id === p.id);
-      return exists ? prev.map(x => x.id === p.id ? p : x) : [...prev, p];
+      const exists = prev.find(x => x.id === normalized.id);
+      return exists ? prev.map(x => x.id === normalized.id ? normalized : x) : [...prev, normalized];
     });
   };
   const deleteProject = (id) => setProjects(prev => prev.filter(p => p.id !== id));
   const addDesigner = (d) => setDesigners(prev => [...prev, d]);
 
-  const visibleProjects = filterDesigner === 'all'
+  const updateProjectStatus = (id, status) => {
+    setProjects(prev => prev.map(p => (p.id === id ? { ...p, status } : p)));
+  };
+
+  const designerFiltered = filterDesigner === 'all'
     ? projects
     : projects.filter(p => p.designerId === filterDesigner);
 
+  const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
+  const archivedProjects = designerFiltered
+    .filter(p => p.status === 'Complete')
+    .slice()
+    .sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+
+  const sortFeed = (list) =>
+    list.slice().sort((a, b) => (a.endDate || '').localeCompare(b.endDate || ''));
+
+  const priorityFeed = sortFeed(activeProjects.filter(p => (p.priority || 'priority') === 'priority'));
+  const smallerJobsFeed = sortFeed(activeProjects.filter(p => (p.priority || 'priority') === 'background'));
+
   const activeCount = projects.filter(p => p.status !== 'Complete').length;
+  const archivedCount = projects.filter(p => p.status === 'Complete').length;
 
   return (
     <div className="app">
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="logo">
-          <span className="logo-mark">◆</span>
-          <span className="logo-text">Studio</span>
+          <span className="logo-text">Extended Whānau</span>
         </div>
 
         <nav className="sidebar-nav">
           <button className={`nav-item ${view === 'projects' ? 'active' : ''}`} onClick={() => setView('projects')}>
             <span className="nav-icon">≡</span> Projects
             {activeCount > 0 && <span className="nav-badge">{activeCount}</span>}
+          </button>
+          <button className={`nav-item ${view === 'archive' ? 'active' : ''}`} onClick={() => setView('archive')}>
+            <span className="nav-icon">▣</span> Archive
+            {archivedCount > 0 && <span className="nav-badge nav-badge-muted">{archivedCount}</span>}
           </button>
           <button className={`nav-item ${view === 'gantt' ? 'active' : ''}`} onClick={() => setView('gantt')}>
             <span className="nav-icon">▤</span> Timeline
@@ -553,32 +533,90 @@ export default function App() {
       <main className="main">
         <header className="main-header">
           <div>
-            <h1 className="page-title">{view === 'projects' ? 'Projects' : 'Timeline'}</h1>
-            <p className="page-subtitle">
-              {view === 'projects'
-                ? `${visibleProjects.length} project${visibleProjects.length !== 1 ? 's' : ''}${filterDesigner !== 'all' ? ` · ${designers.find(d => d.id === filterDesigner)?.name}` : ''}`
-                : `${visibleProjects.length} project${visibleProjects.length !== 1 ? 's' : ''} across ${designers.length} designer${designers.length !== 1 ? 's' : ''}`}
-            </p>
+            <h1 className="page-title">
+              {view === 'projects' ? 'Projects' : view === 'archive' ? 'Archive' : 'Timeline'}
+            </h1>
+            {view === 'archive' && (
+              <p className="page-subtitle">
+                {archivedProjects.length} completed project{archivedProjects.length !== 1 ? 's' : ''}
+                {filterDesigner !== 'all' ? ` · ${designers.find(d => d.id === filterDesigner)?.name}` : ''}
+              </p>
+            )}
           </div>
-          <button className="btn-primary" onClick={() => setShowNewProject(true)}>
-            + New project
-          </button>
+          {view !== 'archive' && (
+            <div className="main-header-actions">
+              {view === 'projects' && (
+                <p className="header-stat">
+                  {activeProjects.length} active
+                  {filterDesigner !== 'all' ? ` · ${designers.find(d => d.id === filterDesigner)?.name}` : ''}
+                </p>
+              )}
+              {view === 'gantt' && (
+                <p className="header-stat">{activeProjects.length} active</p>
+              )}
+              <button className="btn-primary" onClick={() => setShowNewProject(true)}>
+                + New project
+              </button>
+            </div>
+          )}
         </header>
 
         <div className="main-content">
           {view === 'projects' && (
             <div className="project-list">
-              {visibleProjects.length === 0 ? (
+              {activeProjects.length === 0 ? (
                 <div className="empty-state">
-                  No projects yet. Add one to get started.
+                  No active projects. Add one to get started, or check Archive for completed work.
                 </div>
               ) : (
-                visibleProjects.map(p => (
+                <>
+                  {priorityFeed.length > 0 && (
+                    <div className="project-section">
+                      <h2 className="project-section-title">Priority</h2>
+                      {priorityFeed.map(p => (
+                        <ProjectRow
+                          key={p.id}
+                          project={p}
+                          designers={designers}
+                          onClick={() => setEditingProject(p)}
+                          onStatusChange={updateProjectStatus}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {smallerJobsFeed.length > 0 && (
+                    <div className="project-section">
+                      <h2 className="project-section-title">Secondary</h2>
+                      {smallerJobsFeed.map(p => (
+                        <ProjectRow
+                          key={p.id}
+                          project={p}
+                          designers={designers}
+                          onClick={() => setEditingProject(p)}
+                          onStatusChange={updateProjectStatus}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {view === 'archive' && (
+            <div className="project-list">
+              {archivedProjects.length === 0 ? (
+                <div className="empty-state">
+                  Nothing archived yet. Set a project&apos;s status to Complete and it will appear here.
+                </div>
+              ) : (
+                archivedProjects.map(p => (
                   <ProjectRow
                     key={p.id}
                     project={p}
                     designers={designers}
                     onClick={() => setEditingProject(p)}
+                    onStatusChange={updateProjectStatus}
                   />
                 ))
               )}
@@ -586,7 +624,7 @@ export default function App() {
           )}
 
           {view === 'gantt' && (
-            <GanttChart projects={visibleProjects} designers={designers} />
+            <GanttChart projects={activeProjects} designers={designers} />
           )}
         </div>
       </main>
