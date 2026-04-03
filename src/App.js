@@ -254,40 +254,72 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
   );
 }
 
-// ── Designer Modal ────────────────────────────────────────────────────────────
-function DesignerModal({ onClose, onAdd }) {
-  const [name, setName] = useState('');
-  const [colorIdx, setColorIdx] = useState(0);
+// ── Designer Modal (add or edit profile) ─────────────────────────────────────
+function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
+  const isEdit = initialDesigner != null;
+  const [name, setName] = useState(initialDesigner?.name ?? '');
+  const [colorIdx, setColorIdx] = useState(initialDesigner?.colorIdx ?? 0);
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    if (isEdit) {
+      onSave({ ...initialDesigner, name: name.trim(), colorIdx });
+    } else {
+      onSave({ id: uuidv4(), name: name.trim(), colorIdx });
+    }
+    onClose();
+  };
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 380 }}>
+      <div className="modal modal-narrow">
         <div className="modal-header">
-          <span style={{ fontWeight: 600, fontSize: 16 }}>Add designer</span>
-          <button className="icon-btn" onClick={onClose}>✕</button>
+          <span className="modal-sheet-title">{isEdit ? 'Edit profile' : 'Add team member'}</span>
+          <button type="button" className="icon-btn" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
           <div className="field">
             <label>Name</label>
-            <input placeholder="Designer name" value={name} onChange={e => setName(e.target.value)} />
+            <input
+              placeholder="Name"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              autoFocus
+            />
           </div>
           <div className="field">
             <label>Colour</label>
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <div className="designer-color-picks">
               {DESIGNER_COLORS.map((c, i) => (
-                <button key={i} onClick={() => setColorIdx(i)} style={{
-                  width: 28, height: 28, borderRadius: '50%', background: c.bar,
-                  border: colorIdx === i ? '2px solid #1A1A1A' : '2px solid transparent',
-                  cursor: 'pointer', outline: 'none',
-                }} />
+                <button
+                  key={i}
+                  type="button"
+                  className={`designer-color-pick ${colorIdx === i ? 'selected' : ''}`}
+                  style={{ background: c.bar }}
+                  onClick={() => setColorIdx(i)}
+                  aria-label={`Colour ${i + 1}`}
+                />
               ))}
             </div>
           </div>
         </div>
         <div className="modal-footer">
+          {isEdit && (
+            <button
+              type="button"
+              className="btn-delete"
+              onClick={() => {
+                onDelete(initialDesigner.id);
+                onClose();
+              }}
+            >
+              Remove from team
+            </button>
+          )}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <button className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn-primary" onClick={() => { onAdd({ id: uuidv4(), name, colorIdx }); onClose(); }} disabled={!name}>
-              Add
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-primary" onClick={handleSave} disabled={!name.trim()}>
+              {isEdit ? 'Save' : 'Add'}
             </button>
           </div>
         </div>
@@ -503,7 +535,8 @@ export default function App() {
   });
   const [editingProject, setEditingProject] = useState(null);
   const [showNewProject, setShowNewProject] = useState(false);
-  const [showNewDesigner, setShowNewDesigner] = useState(false);
+  const [designerModalOpen, setDesignerModalOpen] = useState(false);
+  const [designerBeingEdited, setDesignerBeingEdited] = useState(null);
   const [filterDesigner, setFilterDesigner] = useState('all');
 
   useEffect(() => {
@@ -524,7 +557,19 @@ export default function App() {
     });
   };
   const deleteProject = (id) => setProjects(prev => prev.filter(p => p.id !== id));
-  const addDesigner = (d) => setDesigners(prev => [...prev, d]);
+
+  const saveDesigner = (d) => {
+    setDesigners((prev) => {
+      const exists = prev.find((x) => x.id === d.id);
+      return exists ? prev.map((x) => (x.id === d.id ? d : x)) : [...prev, d];
+    });
+  };
+
+  const deleteDesigner = (id) => {
+    setDesigners((prev) => prev.filter((x) => x.id !== id));
+    setProjects((prev) => prev.map((p) => (p.designerId === id ? { ...p, designerId: '' } : p)));
+    setFilterDesigner((fd) => (fd === id ? 'all' : fd));
+  };
 
   const updateProjectStatus = (id, status) => {
     setProjects(prev => prev.map(p => (p.id === id ? { ...p, status } : p)));
@@ -574,7 +619,16 @@ export default function App() {
         <div className="sidebar-section">
           <div className="sidebar-section-header">
             <span>Team</span>
-            <button className="sidebar-add-btn" onClick={() => setShowNewDesigner(true)}>+</button>
+            <button
+              type="button"
+              className="sidebar-add-btn"
+              onClick={() => {
+                setDesignerBeingEdited(null);
+                setDesignerModalOpen(true);
+              }}
+            >
+              +
+            </button>
           </div>
           <div className="designer-list">
             <button
@@ -584,17 +638,32 @@ export default function App() {
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#CCC' }} />
               All
             </button>
-            {designers.map(d => {
+            {designers.map((d) => {
               const c = DESIGNER_COLORS[d.colorIdx % DESIGNER_COLORS.length];
               return (
-                <button
-                  key={d.id}
-                  className={`designer-chip ${filterDesigner === d.id ? 'selected' : ''}`}
-                  onClick={() => setFilterDesigner(filterDesigner === d.id ? 'all' : d.id)}
-                >
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: c.bar }} />
-                  {d.name}
-                </button>
+                <div key={d.id} className="designer-row">
+                  <button
+                    type="button"
+                    className={`designer-chip ${filterDesigner === d.id ? 'selected' : ''}`}
+                    onClick={() => setFilterDesigner(filterDesigner === d.id ? 'all' : d.id)}
+                  >
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: c.bar }} />
+                    <span className="designer-chip-name">{d.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="designer-edit-btn"
+                    title="Edit or remove"
+                    aria-label={`Edit ${d.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDesignerBeingEdited(d);
+                      setDesignerModalOpen(true);
+                    }}
+                  >
+                    ···
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -614,29 +683,29 @@ export default function App() {
             <h1 className="page-title">
               {view === 'projects' ? 'Projects' : view === 'archive' ? 'Archive' : 'Timeline'}
             </h1>
-            {view === 'archive' && (
-              <p className="page-subtitle">
-                {archivedProjects.length} completed project{archivedProjects.length !== 1 ? 's' : ''}
+          </div>
+          <div className="main-header-actions">
+            {view === 'projects' && (
+              <p className="header-stat">
+                {activeProjects.length} active
                 {filterDesigner !== 'all' ? ` · ${designers.find(d => d.id === filterDesigner)?.name}` : ''}
               </p>
             )}
-          </div>
-          {view !== 'archive' && (
-            <div className="main-header-actions">
-              {view === 'projects' && (
-                <p className="header-stat">
-                  {activeProjects.length} active
-                  {filterDesigner !== 'all' ? ` · ${designers.find(d => d.id === filterDesigner)?.name}` : ''}
-                </p>
-              )}
-              {view === 'gantt' && (
-                <p className="header-stat">{activeProjects.length} active</p>
-              )}
-              <button className="btn-primary" onClick={() => setShowNewProject(true)}>
+            {view === 'gantt' && (
+              <p className="header-stat">{activeProjects.length} active</p>
+            )}
+            {view === 'archive' && (
+              <p className="header-stat">
+                {archivedProjects.length} completed
+                {filterDesigner !== 'all' ? ` · ${designers.find(d => d.id === filterDesigner)?.name}` : ''}
+              </p>
+            )}
+            {view !== 'archive' && (
+              <button type="button" className="btn-primary" onClick={() => setShowNewProject(true)}>
                 + New project
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </header>
 
         <div className="main-content">
@@ -726,10 +795,16 @@ export default function App() {
           onDelete={deleteProject}
         />
       )}
-      {showNewDesigner && (
+      {designerModalOpen && (
         <DesignerModal
-          onClose={() => setShowNewDesigner(false)}
-          onAdd={addDesigner}
+          key={designerBeingEdited?.id ?? 'new'}
+          initialDesigner={designerBeingEdited}
+          onClose={() => {
+            setDesignerModalOpen(false);
+            setDesignerBeingEdited(null);
+          }}
+          onSave={saveDesigner}
+          onDelete={deleteDesigner}
         />
       )}
     </div>

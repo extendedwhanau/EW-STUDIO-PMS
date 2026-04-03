@@ -121,17 +121,101 @@ html, body, #root {
 .sidebar-add-btn:hover { background: var(--bg); color: var(--text-primary); }
 
 .designer-list { display: flex; flex-direction: column; gap: 2px; }
+
+.designer-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-radius: 8px;
+}
+.designer-row:hover { background: var(--bg); }
+.designer-row:hover .designer-edit-btn { opacity: 1; color: var(--text-secondary); }
+
 .designer-chip {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 10px; border-radius: 8px;
-  border: none; background: none;
-  font-family: inherit; font-size: 13px;
-  color: var(--text-secondary); cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px 6px 10px;
+  border-radius: 8px 0 0 8px;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
   transition: background 0.15s, color 0.15s;
   text-align: left;
 }
-.designer-chip:hover { background: var(--bg); color: var(--text-primary); }
-.designer-chip.selected { background: var(--bg); color: var(--text-primary); font-weight: 500; }
+.designer-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.designer-chip:hover { color: var(--text-primary); }
+.designer-chip.selected {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.designer-row:has(.designer-chip.selected) {
+  background: var(--bg);
+}
+
+.designer-edit-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-right: 2px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.designer-edit-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+}
+
+.modal-narrow {
+  max-width: 380px;
+}
+.modal-sheet-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.designer-color-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.designer-color-pick {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  transition: transform 0.1s, border-color 0.15s;
+}
+.designer-color-pick:hover { transform: scale(1.06); }
+.designer-color-pick.selected {
+  border-color: #1A1A1A;
+}
 
 .sidebar-bottom { margin-top: auto; }
 .sidebar-date {
