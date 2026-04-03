@@ -47,6 +47,7 @@ html, body, #root {
 
 /* ── Sidebar ───────────────────────────────────────────────────────────────── */
 .sidebar {
+  --sidebar-inner-pad-x: 4px;
   width: var(--sidebar-width);
   background: var(--surface);
   display: flex;
@@ -61,7 +62,7 @@ html, body, #root {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 4px;
+  padding: 0 var(--sidebar-inner-pad-x);
   flex-shrink: 0;
 }
 
@@ -140,7 +141,7 @@ html, body, #root {
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  padding: 0 4px;
+  padding: 0 var(--sidebar-inner-pad-x);
 }
 .sidebar-add-btn {
   background: none; border: none; cursor: pointer;
@@ -251,7 +252,8 @@ html, body, #root {
 .sidebar-date {
   font-size: 11px; color: var(--text-tertiary);
   font-family: 'Die Grotesk A', ui-monospace, monospace;
-  font-variant-numeric: tabular-nums; padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+  padding: 0 var(--sidebar-inner-pad-x);
 }
 
 /* ── Main ──────────────────────────────────────────────────────────────────── */
@@ -1228,12 +1230,13 @@ html, body, #root {
     justify-content: center;
     width: 44px;
     height: 44px;
-    margin: -8px 0 -8px -6px;
+    margin: 0 0 0 -4px;
     border: none;
     border-radius: 10px;
     background: transparent;
     cursor: pointer;
     flex-shrink: 0;
+    align-self: center;
     -webkit-tap-highlight-color: transparent;
   }
   .mobile-nav-toggle:active {
@@ -1255,10 +1258,14 @@ html, body, #root {
 
   .main-header {
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
     row-gap: 10px;
     /* Match drawer sidebar top inset */
     padding: max(20px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 14px max(var(--app-inline), env(safe-area-inset-left, 0px));
+  }
+
+  .main-header-title-row {
+    align-items: center;
   }
 
   .page-title {
@@ -1267,20 +1274,25 @@ html, body, #root {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    align-self: center;
   }
 
   .main-header-actions {
     width: auto;
     margin-left: auto;
     justify-content: flex-end;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
     flex-wrap: wrap;
   }
 
   .header-new-project.modal-btn-submit {
     min-height: 44px;
-    padding: 10px 16px;
+    padding: 0 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
   }
 
   .btn-primary {
@@ -1295,25 +1307,29 @@ html, body, #root {
   }
 
   .project-row-inner {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      'client'
-      'name'
-      'due'
-      'trail';
-    column-gap: 0;
-    row-gap: 0;
-    padding: 18px 16px 30px;
+      'client client'
+      'name due'
+      'trail trail';
+    column-gap: 14px;
+    row-gap: 6px;
+    padding: 18px 16px 18px;
     align-items: start;
   }
 
   .project-row-col--due {
-    justify-content: flex-start;
-    text-align: left;
+    justify-content: flex-end;
+    text-align: right;
+    align-self: start;
   }
 
   .project-row-due-pair {
-    justify-content: flex-start;
+    justify-content: flex-end;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0 0.5em;
+    text-align: right;
   }
 
   .project-row-col--trail {
