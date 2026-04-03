@@ -160,14 +160,14 @@ function workingDayCountdown(endDateStr) {
   return { kind: 'upcoming', days: workingDaysAfterThrough(todayD, due) };
 }
 
-/** Middle segment for due line: working days (Mon–Fri). */
+/** Countdown text for due row: working days (Mon–Fri), lowercase. */
 function formatDueDaysSegment(endDateStr) {
   const { kind, days } = workingDayCountdown(endDateStr);
-  if (kind === 'today') return 'Today';
+  if (kind === 'today') return 'today';
   if (kind === 'overdue') {
-    return days === 1 ? '1 Day overdue' : `${days} Days overdue`;
+    return days === 1 ? '1 day overdue' : `${days} days overdue`;
   }
-  return days === 1 ? '1 Day' : `${days} Days`;
+  return days === 1 ? '1 day' : `${days} days`;
 }
 
 function formatDueDateLong(str) {
@@ -429,20 +429,14 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
         <div className="project-sub-line">
           <span className="project-client">{project.client}</span>
           {project.endDate ? (
-            <>
-              <span className="project-sub-sep" aria-hidden>·</span>
-              <span
-                className="project-due"
-                title="Day count is working days (Mon–Fri)"
-              >
-                <span className="project-due-tag">DUE</span>
-                <span className="project-due-body">
-                  {dueDaysSeg}
-                  <span className="project-due-bar" aria-hidden> | </span>
-                  {formatDueDateLong(project.endDate)}
-                </span>
-              </span>
-            </>
+            <span
+              className="project-due-row"
+              title="Day count is working days (Mon–Fri)"
+              aria-label={`${dueDaysSeg}, ${formatDueDateLong(project.endDate)}. Working weekdays.`}
+            >
+              <span className="project-due-count">{dueDaysSeg}</span>
+              <span className="project-due-date">{formatDueDateLong(project.endDate)}</span>
+            </span>
           ) : null}
         </div>
       </div>
@@ -509,15 +503,21 @@ const GANTT_DESKTOP_VIEWPORT_DAYS = 92;
 const GANTT_MOBILE_BREAKPOINT_PX = 768;
 
 // ── Gantt Chart ───────────────────────────────────────────────────────────────
-function GanttChart({ projects, designers }) {
+function GanttChart({ projects, designers, onSelectProject }) {
   const validProjects = projects.filter(p => p.startDate && p.endDate);
   if (!validProjects.length) {
     return <div className="empty-state">No projects with timelines yet.</div>;
   }
-  return <GanttChartInner projects={validProjects} designers={designers} />;
+  return (
+    <GanttChartInner
+      projects={validProjects}
+      designers={designers}
+      onSelectProject={onSelectProject}
+    />
+  );
 }
 
-function GanttChartInner({ projects: validProjects, designers }) {
+function GanttChartInner({ projects: validProjects, designers, onSelectProject }) {
   const scrollRef = useRef(null);
   const mobileTodayScrollDone = useRef(false);
   const [viewportW, setViewportW] = useState(() =>
@@ -721,7 +721,21 @@ function GanttChartInner({ projects: validProjects, designers }) {
               const isComplete = project.status === 'Complete';
 
               return (
-                <div key={project.id} className="gantt-row">
+                <div
+                  key={project.id}
+                  className="gantt-row"
+                  role={onSelectProject ? 'button' : undefined}
+                  tabIndex={onSelectProject ? 0 : undefined}
+                  aria-label={onSelectProject ? `Edit ${project.name}` : undefined}
+                  onClick={() => onSelectProject?.(project)}
+                  onKeyDown={(e) => {
+                    if (!onSelectProject) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectProject(project);
+                    }
+                  }}
+                >
                   <div className="gantt-label">
                     <Avatar designer={designer} size={22} />
                     <span className="gantt-project-name">{project.name}</span>
@@ -1148,7 +1162,11 @@ export default function App() {
           )}
 
           {view === 'gantt' && (
-            <GanttChart projects={activeProjects} designers={designers} />
+            <GanttChart
+              projects={activeProjects}
+              designers={designers}
+              onSelectProject={setEditingProject}
+            />
           )}
         </div>
       </main>
