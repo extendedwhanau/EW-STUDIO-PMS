@@ -113,7 +113,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 10px 8px 4px;
+  padding: 8px 10px;
   border-radius: 8px;
   border: none;
   background: none;
@@ -129,22 +129,6 @@ html, body, #root {
 }
 .nav-item:hover { background: var(--bg); color: var(--text-primary); }
 .nav-item.active { background: var(--bg); color: var(--text-primary); font-weight: 550; }
-.nav-icon { font-size: 15px; opacity: 0.6; }
-.nav-badge {
-  margin-left: auto;
-  background: #1A1A1A;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 99px;
-  font-family: 'Die Grotesk A', ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-}
-.nav-badge-muted {
-  background: #E8E8E8;
-  color: var(--text-secondary);
-}
 
 .sidebar-section { display: flex; flex-direction: column; gap: 8px; }
 .sidebar-section-header {
@@ -299,12 +283,40 @@ html, body, #root {
   display: none;
 }
 
+.page-title-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
 .page-title {
   font-size: var(--app-wordmark-size);
   font-weight: var(--app-wordmark-weight);
   letter-spacing: var(--app-wordmark-tracking);
   line-height: 1.2;
   color: var(--text-primary);
+  margin: 0;
+}
+
+.page-title-badge {
+  flex-shrink: 0;
+  background: #1A1A1A;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-family: 'Die Grotesk A', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.page-title-badge--muted {
+  background: #E8E8E8;
+  color: var(--text-secondary);
 }
 .page-subtitle {
   font-size: 12.5px;

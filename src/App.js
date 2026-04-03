@@ -1098,23 +1098,21 @@ export default function App() {
             className={`nav-item ${view === 'projects' ? 'active' : ''}`}
             onClick={() => { setView('projects'); closeSidebar(); }}
           >
-            <span className="nav-icon">≡</span> Projects
-            {activeCount > 0 && <span className="nav-badge">{activeCount}</span>}
+            Projects
           </button>
           <button
             type="button"
             className={`nav-item ${view === 'gantt' ? 'active' : ''}`}
             onClick={() => { setView('gantt'); closeSidebar(); }}
           >
-            <span className="nav-icon">▤</span> Timeline
+            Timeline
           </button>
           <button
             type="button"
             className={`nav-item ${view === 'archive' ? 'active' : ''}`}
             onClick={() => { setView('archive'); closeSidebar(); }}
           >
-            <span className="nav-icon">▣</span> Archive
-            {archivedCount > 0 && <span className="nav-badge nav-badge-muted">{archivedCount}</span>}
+            Archive
           </button>
         </nav>
 
@@ -1197,9 +1195,24 @@ export default function App() {
             >
               <span className="mobile-nav-bars" aria-hidden />
             </button>
-            <h1 className="page-title">
-              {view === 'projects' ? 'Projects' : view === 'archive' ? 'Archive' : 'Timeline'}
-            </h1>
+            <div className="page-title-cluster">
+              <h1 className="page-title">
+                {view === 'projects' ? 'Projects' : view === 'archive' ? 'Archive' : 'Timeline'}
+              </h1>
+              {view === 'projects' && activeCount > 0 && (
+                <span className="page-title-badge" aria-label={`${activeCount} active projects`}>
+                  {activeCount}
+                </span>
+              )}
+              {view === 'archive' && archivedCount > 0 && (
+                <span
+                  className="page-title-badge page-title-badge--muted"
+                  aria-label={`${archivedCount} archived projects`}
+                >
+                  {archivedCount}
+                </span>
+              )}
+            </div>
           </div>
           <div className="main-header-actions">
             {view === 'gantt' && (
