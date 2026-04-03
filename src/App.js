@@ -326,11 +326,20 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
   );
 }
 
+function formatGanttTick(day) {
+  const d = new Date(day * 86400000);
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+}
+
+function isFirstOfMonth(day) {
+  const d = new Date(day * 86400000);
+  return d.getDate() === 1;
+}
+
 // ── Gantt Chart ───────────────────────────────────────────────────────────────
 function GanttChart({ projects, designers }) {
   const containerRef = useRef(null);
-  const todayStr = today();
-  const todayDay = daysFromEpoch(todayStr);
+  const todayDay = daysFromEpoch(today());
 
   const validProjects = projects.filter(p => p.startDate && p.endDate);
   if (!validProjects.length) return (
@@ -345,98 +354,142 @@ function GanttChart({ projects, designers }) {
 
   const pct = (day) => ((day - minDay) / totalDays) * 100;
 
-  // Build month labels
   const months = [];
   let cur = new Date(minDay * 86400000);
   cur.setDate(1);
   while (daysFromEpoch(cur.toISOString().slice(0, 10)) <= maxDay) {
-    months.push({ label: cur.toLocaleDateString('en-NZ', { month: 'short', year: '2-digit' }), day: daysFromEpoch(cur.toISOString().slice(0, 10)) });
+    const day = daysFromEpoch(cur.toISOString().slice(0, 10));
+    if (day >= minDay && day <= maxDay) {
+      months.push({
+        label: cur.toLocaleDateString('en-NZ', { month: 'short' }),
+        day,
+      });
+    }
     cur.setMonth(cur.getMonth() + 1);
+  }
+
+  const lineStep = 7;
+  const labelStep = totalDays > 98 ? 14 : 7;
+  const labelEveryNLines = labelStep / lineStep;
+  const gridLines = [];
+  for (let day = minDay; day <= maxDay; day += lineStep) {
+    const idx = (day - minDay) / lineStep;
+    gridLines.push({
+      day,
+      left: pct(day),
+      monthStart: isFirstOfMonth(day),
+      showLabel: idx % labelEveryNLines === 0,
+    });
   }
 
   const todayPct = pct(todayDay);
 
   return (
     <div className="gantt-wrapper" ref={containerRef}>
-      {/* Month header */}
-      <div className="gantt-months" style={{ position: 'relative', height: 28 }}>
-        {months.map((m, i) => (
-          <div key={i} style={{
-            position: 'absolute', left: `${pct(m.day)}%`,
-            fontSize: 11, color: '#AAA', fontFamily: "'Die Grotesk A', ui-monospace, monospace", fontWeight: 400, fontVariantNumeric: 'tabular-nums',
-            transform: 'none', top: 6,
-          }}>
-            {m.label}
-          </div>
-        ))}
-      </div>
-
-      {/* Rows */}
-      <div className="gantt-rows">
-        {validProjects.map(project => {
-          const designer = designers.find(d => d.id === project.designerId);
-          const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : { bg: '#EEE', bar: '#CCC', text: '#888' };
-          const startPct = pct(daysFromEpoch(project.startDate));
-          const endPct = pct(daysFromEpoch(project.endDate));
-          const widthPct = endPct - startPct;
-          const isWaiting = project.status === 'Waiting on Client';
-          const isComplete = project.status === 'Complete';
-
-          return (
-            <div key={project.id} className="gantt-row">
-              <div className="gantt-label">
-                <Avatar designer={designer} size={22} />
-                <span className="gantt-project-name">{project.name}</span>
-                <span className="gantt-client-name">{project.client}</span>
-              </div>
-              <div className="gantt-track">
-                {/* Today line */}
-                {todayPct >= 0 && todayPct <= 100 && (
-                  <div style={{
-                    position: 'absolute', left: `${todayPct}%`, top: 0, bottom: 0,
-                    width: 1, background: '#FF4D4D', zIndex: 2, opacity: 0.5,
-                  }} />
-                )}
-                {/* Bar */}
-                <div style={{
-                  position: 'absolute',
-                  left: `${startPct}%`,
-                  width: `${Math.max(widthPct, 1)}%`,
-                  top: '50%', transform: 'translateY(-50%)',
-                  height: 28, borderRadius: 6,
-                  background: isComplete ? '#EBEBEB' : colors.bg,
-                  border: `1.5px solid ${isComplete ? '#DDD' : colors.bar}`,
-                  display: 'flex', alignItems: 'center', overflow: 'hidden',
-                  opacity: isWaiting ? 0.65 : 1,
-                  backgroundImage: isWaiting
-                    ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}22 4px, ${colors.bar}22 8px)`
-                    : 'none',
-                }}>
-                  <span style={{
-                    fontSize: 11, fontWeight: 500, color: isComplete ? '#AAA' : colors.text,
-                    paddingLeft: 8, whiteSpace: 'nowrap', overflow: 'hidden',
-                    textOverflow: 'ellipsis', position: 'relative', zIndex: 1,
-                  }}>
-                    {project.name}
-                  </span>
+      <div className="gantt-chart">
+        <div className="gantt-chart-header">
+          <div className="gantt-corner" aria-hidden />
+          <div className="gantt-ruler">
+            <div className="gantt-ruler-months">
+              {months.map((m, i) => (
+                <span
+                  key={i}
+                  className="gantt-ruler-month"
+                  style={{ left: `${pct(m.day)}%` }}
+                >
+                  {m.label}
+                </span>
+              ))}
+            </div>
+            <div className="gantt-ruler-ticks">
+              {gridLines.map((line) => (
+                <div
+                  key={line.day}
+                  className="gantt-tick"
+                  style={{ left: `${line.left}%` }}
+                >
+                  {line.showLabel && (
+                    <span className="gantt-tick-label">{formatGanttTick(line.day)}</span>
+                  )}
                 </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="gantt-chart-body">
+          <div className="gantt-grid-back" aria-hidden>
+            <div className="gantt-corner-spacer" />
+            <div className="gantt-vgrid">
+              {gridLines.map((line) => (
+                <div
+                  key={`v-${line.day}`}
+                  className={`gantt-vline ${line.monthStart ? 'gantt-vline-month' : ''}`}
+                  style={{ left: `${line.left}%` }}
+                />
+              ))}
+              {todayPct >= 0 && todayPct <= 100 && (
+                <div className="gantt-today-line" style={{ left: `${todayPct}%` }} />
+              )}
+            </div>
+          </div>
+
+          <div className="gantt-rows">
+            {validProjects.map((project) => {
+              const designer = designers.find(d => d.id === project.designerId);
+              const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : { bg: '#EEE', bar: '#CCC', text: '#888' };
+              const startPct = pct(daysFromEpoch(project.startDate));
+              const endPct = pct(daysFromEpoch(project.endDate));
+              const widthPct = endPct - startPct;
+              const isWaiting = project.status === 'Waiting on Client';
+              const isComplete = project.status === 'Complete';
+
+              return (
+                <div key={project.id} className="gantt-row">
+                  <div className="gantt-label">
+                    <Avatar designer={designer} size={22} />
+                    <span className="gantt-project-name">{project.name}</span>
+                    <span className="gantt-client-name">{project.client}</span>
+                  </div>
+                  <div className="gantt-track">
+                    <div
+                      className="gantt-bar"
+                      style={{
+                        left: `${startPct}%`,
+                        width: `${Math.max(widthPct, 0.35)}%`,
+                        background: isComplete ? '#F2F2F7' : colors.bg,
+                        borderColor: isComplete ? 'rgba(60, 60, 67, 0.12)' : colors.bar,
+                        opacity: isWaiting ? 0.55 : 1,
+                        backgroundImage: isWaiting
+                          ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}18 4px, ${colors.bar}18 8px)`
+                          : 'none',
+                      }}
+                    >
+                      <span
+                        className="gantt-bar-label"
+                        style={{ color: isComplete ? 'rgba(60, 60, 67, 0.45)' : colors.text }}
+                      >
+                        {project.name}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {todayPct >= 0 && todayPct <= 100 && (
+            <div className="gantt-today-footer">
+              <div className="gantt-corner" aria-hidden />
+              <div className="gantt-today-label-wrap">
+                <span className="gantt-today-label" style={{ left: `${todayPct}%` }}>
+                  Today
+                </span>
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {/* Today label */}
-      {todayPct >= 0 && todayPct <= 100 && (
-        <div style={{ position: 'relative', height: 20 }}>
-          <span style={{
-            position: 'absolute', left: `${todayPct}%`, transform: 'translateX(-50%)',
-            fontSize: 10, color: '#FF4D4D', fontFamily: "'Die Grotesk A', ui-monospace, monospace", fontVariantNumeric: 'tabular-nums', top: 4,
-          }}>
-            today
-          </span>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
