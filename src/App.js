@@ -634,26 +634,28 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
 
   return (
     <div className="gantt-frame">
-      <div className="gantt-toolbar" role="toolbar" aria-label="Timeline navigation">
-        <button
-          type="button"
-          className="gantt-nav-btn"
-          onClick={() => scrollTimelineBy(-1)}
-          aria-label="Pan timeline left"
-        >
-          ‹
-        </button>
-        <button type="button" className="gantt-nav-btn gantt-nav-btn--today" onClick={scrollToToday}>
-          Today
-        </button>
-        <button
-          type="button"
-          className="gantt-nav-btn"
-          onClick={() => scrollTimelineBy(1)}
-          aria-label="Pan timeline right"
-        >
-          ›
-        </button>
+      <div className="gantt-toolbar">
+        <div className="gantt-toolbar-inner" role="toolbar" aria-label="Timeline navigation">
+          <button
+            type="button"
+            className="gantt-nav-btn gantt-nav-btn--arrow"
+            onClick={() => scrollTimelineBy(-1)}
+            aria-label="Pan timeline left"
+          >
+            ‹
+          </button>
+          <button type="button" className="gantt-nav-btn gantt-nav-btn--today" onClick={scrollToToday}>
+            Today
+          </button>
+          <button
+            type="button"
+            className="gantt-nav-btn gantt-nav-btn--arrow"
+            onClick={() => scrollTimelineBy(1)}
+            aria-label="Pan timeline right"
+          >
+            ›
+          </button>
+        </div>
       </div>
       <div className="gantt-wrapper" ref={scrollRef}>
         <div className="gantt-chart" style={{ minWidth: chartMinWidthPx }}>
@@ -674,6 +676,13 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
               ))}
             </div>
             <div className="gantt-ruler-ticks">
+              {todayPct >= 0 && todayPct <= 100 && (
+                <div
+                  className="gantt-today-marker"
+                  style={{ left: `${todayPct}%` }}
+                  aria-hidden
+                />
+              )}
               {gridLines.map((line) => (
                 <div
                   key={line.day}
@@ -705,7 +714,11 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
                 />
               ))}
               {todayPct >= 0 && todayPct <= 100 && (
-                <div className="gantt-today-line" style={{ left: `${todayPct}%` }} />
+                <div
+                  className="gantt-today-line"
+                  style={{ left: `${todayPct}%` }}
+                  aria-hidden
+                />
               )}
             </div>
           </div>
@@ -737,7 +750,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
                   }}
                 >
                   <div className="gantt-label">
-                    <Avatar designer={designer} size={22} />
+                    <Avatar designer={designer} size={28} />
                     <span className="gantt-project-name">{project.name}</span>
                     <span className="gantt-client-name">{project.client}</span>
                   </div>
@@ -767,17 +780,6 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
               );
             })}
           </div>
-
-          {todayPct >= 0 && todayPct <= 100 && (
-            <div className="gantt-today-footer">
-              <div className="gantt-corner" aria-hidden />
-              <div className="gantt-today-label-wrap">
-                <span className="gantt-today-label" style={{ left: `${todayPct}%` }}>
-                  Today
-                </span>
-              </div>
-            </div>
-          )}
           </div>
         </div>
       </div>

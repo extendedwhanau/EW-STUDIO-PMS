@@ -472,54 +472,78 @@ html, body, #root {
 .gantt-toolbar {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 0 0 14px;
+  justify-content: flex-end;
+  padding: 0 0 10px;
   flex-shrink: 0;
 }
 
-.gantt-nav-btn {
-  min-width: 48px;
-  min-height: 48px;
-  padding: 0 14px;
-  font-family: inherit;
-  font-size: 22px;
-  font-weight: 500;
-  line-height: 1;
-  color: var(--text-primary);
-  background: var(--surface);
+/* Segmented control — typography matches .gantt-jobs-title / .project-section-title */
+.gantt-toolbar-inner {
+  display: inline-flex;
+  align-items: stretch;
   border: 1px solid var(--border);
-  border-radius: var(--control-radius);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.gantt-nav-btn {
+  font-family: inherit;
+  margin: 0;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  -webkit-tap-highlight-color: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  -webkit-tap-highlight-color: transparent;
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-tertiary);
+  transition: color 0.12s, background 0.12s;
+}
+
+.gantt-nav-btn:last-child {
+  border-right: none;
 }
 
 .gantt-nav-btn:hover {
-  border-color: var(--border-strong);
-  background: #fff;
+  color: var(--text-secondary);
+  background: var(--bg);
 }
 
 .gantt-nav-btn:focus {
   outline: none;
-  border-color: var(--border-strong);
-  box-shadow: var(--control-focus-ring);
+}
+
+.gantt-nav-btn:focus-visible {
+  position: relative;
+  z-index: 1;
+  box-shadow: inset 0 0 0 2px var(--text-primary);
 }
 
 .gantt-nav-btn:active {
-  transform: scale(0.97);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .gantt-nav-btn--today {
-  min-width: auto;
-  padding: 0 22px;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 14px;
+  min-height: 30px;
+}
+
+.gantt-nav-btn--arrow {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  min-width: 34px;
+  padding: 0 6px;
+  min-height: 30px;
 }
 
 .gantt-wrapper {
@@ -556,7 +580,7 @@ html, body, #root {
 .gantt-chart-header {
   display: flex;
   align-items: stretch;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .gantt-corner,
@@ -668,7 +692,7 @@ html, body, #root {
 
 .gantt-chart-body {
   position: relative;
-  margin-top: 2px;
+  margin-top: 0;
   background: var(--gantt-track-bg);
   border-radius: 0 0 8px 8px;
 }
@@ -703,7 +727,22 @@ html, body, #root {
   width: 0;
   border-left: 1.5px solid var(--gantt-today);
   transform: translateX(-0.75px);
+  pointer-events: none;
   z-index: 2;
+}
+
+/* Small tick under the date numbers (same row as .gantt-tick-label) */
+.gantt-today-marker {
+  position: absolute;
+  left: 0;
+  top: 13px;
+  width: 0;
+  height: 8px;
+  border-left: 2px solid var(--gantt-today);
+  border-radius: 1px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 3;
 }
 
 .gantt-rows {
@@ -718,7 +757,7 @@ html, body, #root {
   display: flex;
   align-items: stretch;
   gap: 0;
-  min-height: 48px;
+  min-height: 52px;
   border-bottom: 1px solid rgba(60, 60, 67, 0.07);
   cursor: pointer;
   transition: background-color 0.12s ease;
@@ -748,8 +787,8 @@ html, body, #root {
 }
 
 .gantt-project-name {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 550;
   letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
@@ -767,7 +806,7 @@ html, body, #root {
   flex: 1;
   position: relative;
   z-index: 0;
-  height: 48px;
+  height: 52px;
   min-width: 200px;
   margin-left: 0;
   padding-left: 16px;
@@ -779,7 +818,7 @@ html, body, #root {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  height: 26px;
+  height: 28px;
   border-radius: 6px;
   border: 1px solid;
   display: flex;
@@ -789,7 +828,7 @@ html, body, #root {
 }
 
 .gantt-bar-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: -0.01em;
   padding-left: 10px;
@@ -797,33 +836,6 @@ html, body, #root {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.gantt-today-footer {
-  display: flex;
-  align-items: flex-start;
-  margin-top: 8px;
-  padding-top: 4px;
-  background: var(--gantt-track-bg);
-  border-radius: 0 0 8px 8px;
-}
-
-.gantt-today-label-wrap {
-  flex: 1;
-  position: relative;
-  height: 16px;
-  min-width: 200px;
-}
-
-.gantt-today-label {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: rgba(0, 122, 255, 0.85);
-  font-variant-numeric: tabular-nums;
 }
 
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
@@ -1304,25 +1316,17 @@ html, body, #root {
   }
 
   .gantt-toolbar {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 0 0 8px;
-  }
-  .gantt-nav-btn {
-    width: auto;
-    min-width: 38px;
-    min-height: 36px;
-    padding: 0 8px;
-    font-size: 17px;
-    border-radius: 8px;
+    justify-content: flex-end;
+    padding: 0 0 10px;
   }
   .gantt-nav-btn--today {
-    min-width: 0;
+    min-height: 40px;
     padding: 0 12px;
-    font-size: 12px;
+  }
+  .gantt-nav-btn--arrow {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 16px;
   }
   .gantt-wrapper {
     --gantt-label: 132px;
