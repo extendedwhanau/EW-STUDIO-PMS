@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, {
+  useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback,
+} from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
+import './gantt-timeline.css';
 
 // ── Designer palette ──────────────────────────────────────────────────────────
 const DESIGNER_COLORS = [
@@ -184,6 +187,17 @@ function formatDueDateLong(str) {
   return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long' });
 }
 
+/** e.g. "14 Days", "Today" — same scale as due date in project cards */
+function formatDueDaysDisplay(endDateStr) {
+  if (!endDateStr) return '';
+  const { kind, days } = workingDayCountdown(endDateStr);
+  if (kind === 'today') return 'Today';
+  if (kind === 'overdue') {
+    return days === 1 ? '1 day overdue' : `${days} days overdue`;
+  }
+  return days === 1 ? '1 Day' : `${days} Days`;
+}
+
 function daysFromEpoch(str) {
   return Math.floor(new Date(str + 'T00:00:00').getTime() / 86400000);
 }
@@ -243,24 +257,35 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal--project">
         <div className="modal-header modal-header--project">
-          <div className="modal-header-project-titles">
-            <input
-              className="modal-title-input modal-title-input--project"
-              placeholder="Project name"
-              value={form.name}
-              onChange={e => set('name', e.target.value)}
-            />
-            <input
-              className="modal-client-input modal-client-input--project"
-              placeholder="Client name"
-              value={form.client}
-              onChange={e => set('client', e.target.value)}
-            />
-          </div>
+          <h2 className="modal-project-sheet-heading">
+            {project ? 'Edit' : 'Create Project'}
+          </h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <div className="modal-body modal-body--project">
+          <div className="sheet-grid-row sheet-grid-row--bare-fields">
+            <input
+              id="project-modal-client"
+              className="sheet-text-input sheet-text-input--left"
+              type="text"
+              placeholder="Client"
+              aria-label="Client"
+              value={form.client}
+              onChange={e => set('client', e.target.value)}
+              autoFocus
+            />
+            <input
+              id="project-modal-name"
+              className="sheet-text-input sheet-text-input--left"
+              type="text"
+              placeholder="Project"
+              aria-label="Project"
+              value={form.name}
+              onChange={e => set('name', e.target.value)}
+            />
+          </div>
+
           <div className="sheet-grid-row">
             <div className="sheet-pair">
               <label htmlFor="project-modal-designer" className="sheet-field-label">
@@ -381,7 +406,7 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
         <div className="modal-footer modal-footer--project">
           {project && (
             <button type="button" className="btn-delete" onClick={() => { onDelete(project.id); onClose(); }}>
-              Delete project
+              Delete
             </button>
           )}
           <div className="modal-footer-actions">
@@ -480,47 +505,56 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
 // ── Project Row ───────────────────────────────────────────────────────────────
 function ProjectRow({ project, designers, onClick, onStatusChange }) {
   const designer = designers.find(d => d.id === project.designerId);
-  const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : null;
   const accent = statusAccent(project.status);
-  const dueDaysSeg = project.endDate ? formatDueDaysSegment(project.endDate) : '';
+  const dueSeg = project.endDate ? formatDueDaysSegment(project.endDate) : '';
   return (
     <div className="project-row" onClick={() => onClick(project)}>
-      {colors && <div style={{ width: 3, background: colors.bar, borderRadius: 99, flexShrink: 0 }} />}
-      <div className="project-row-main">
-        <div className="project-title-line">
-          <span
-            className="project-status-dot"
-            style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
-            title={project.status}
-            aria-hidden
-          />
+      <div className="project-row-inner">
+        <div className="project-row-client-span">
+          <span className="project-client">{project.client}</span>
+        </div>
+        <div className="project-row-col project-row-col--lead">
           <span className="project-name">{project.name}</span>
         </div>
-        <div className="project-sub-line">
-          <span className="project-client">{project.client}</span>
+        <div className="project-row-col project-row-col--due">
           {project.endDate ? (
-            <span
-              className="project-due-row"
+            <div
+              className="project-row-due-pair"
               title="Day count is working days (Mon–Fri)"
-              aria-label={`${dueDaysSeg}, ${formatDueDateLong(project.endDate)}. Working weekdays.`}
+              aria-label={`${dueSeg}, ${formatDueDateLong(project.endDate)}. Working weekdays.`}
             >
-              <span className="project-due-count">{dueDaysSeg}</span>
-              <span className="project-due-date">{formatDueDateLong(project.endDate)}</span>
-            </span>
-          ) : null}
+              <span className="project-due-date-main">{formatDueDateLong(project.endDate)}</span>
+              <span className="project-due-days">{formatDueDaysDisplay(project.endDate)}</span>
+            </div>
+          ) : (
+            <span className="project-due-date-main project-due-date-main--empty">—</span>
+          )}
         </div>
-      </div>
-      <div className="project-row-meta">
-        <select
-          className="row-status-select"
-          value={project.status}
-          onChange={e => onStatusChange(project.id, e.target.value)}
-          onPointerDown={e => e.stopPropagation()}
-          onClick={e => e.stopPropagation()}
-        >
-          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        {designer && <Avatar designer={designer} size={28} />}
+        <div className="project-row-col project-row-col--trail">
+          <div
+            className="project-status-hit"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
+          >
+            <span
+              className="project-status-dot"
+              style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
+              title={project.status}
+              aria-hidden
+            />
+            <select
+              className="row-status-select"
+              value={project.status}
+              onChange={e => onStatusChange(project.id, e.target.value)}
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+              aria-label="Project status"
+            >
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          {designer ? <Avatar designer={designer} size={28} /> : null}
+        </div>
       </div>
     </div>
   );
@@ -572,8 +606,24 @@ function isFirstOfMonthNZ(epochDay) {
 const GANTT_DESKTOP_VIEWPORT_DAYS = 92;
 const GANTT_MOBILE_BREAKPOINT_PX = 768;
 
+/** Timeline rows: group by designer (sidebar roster order), then due date like project feed. */
+function sortTimelineProjectsByDesigner(projects, designers) {
+  const rank = Object.fromEntries(designers.map((d, i) => [d.id, i]));
+  const tail = designers.length;
+  return projects.slice().sort((a, b) => {
+    const ra = a.designerId != null && a.designerId !== '' && rank[a.designerId] !== undefined
+      ? rank[a.designerId]
+      : tail;
+    const rb = b.designerId != null && b.designerId !== '' && rank[b.designerId] !== undefined
+      ? rank[b.designerId]
+      : tail;
+    if (ra !== rb) return ra - rb;
+    return (a.endDate || '').localeCompare(b.endDate || '');
+  });
+}
+
 // ── Gantt Chart ───────────────────────────────────────────────────────────────
-function GanttChart({ projects, designers, onSelectProject }) {
+function GanttChart({ projects, designers, onSelectProject, onRegisterNav }) {
   const validProjects = projects.filter(p => p.startDate && p.endDate);
   if (!validProjects.length) {
     return <div className="empty-state">No projects with timelines yet.</div>;
@@ -583,17 +633,23 @@ function GanttChart({ projects, designers, onSelectProject }) {
       projects={validProjects}
       designers={designers}
       onSelectProject={onSelectProject}
+      onRegisterNav={onRegisterNav}
     />
   );
 }
 
-function GanttChartInner({ projects: validProjects, designers, onSelectProject }) {
+function GanttChartInner({ projects: validProjects, designers, onSelectProject, onRegisterNav }) {
   const scrollRef = useRef(null);
   const mobileTodayScrollDone = useRef(false);
   const [viewportW, setViewportW] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth : 1200
   );
   const todayDay = daysFromEpoch(today());
+
+  const orderedProjects = useMemo(
+    () => sortTimelineProjectsByDesigner(validProjects, designers),
+    [validProjects, designers]
+  );
 
   const allStarts = validProjects.map(p => daysFromEpoch(p.startDate));
   const allEnds = validProjects.map(p => daysFromEpoch(p.endDate));
@@ -672,7 +728,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
   const todayPct = pct(todayDay);
   const compactTimeline = viewportW <= GANTT_MOBILE_BREAKPOINT_PX;
 
-  const scrollTimelineBy = (direction) => {
+  const scrollTimelineBy = useCallback((direction) => {
     const el = scrollRef.current;
     if (!el) return;
     const w = el.clientWidth;
@@ -681,15 +737,21 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
         ? Math.floor(w * 0.9)
         : Math.max(240, Math.floor(w * 0.72));
     el.scrollBy({ left: direction * step, behavior: 'smooth' });
-  };
+  }, [viewportW]);
 
-  const scrollToToday = () => {
+  const scrollToToday = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
     const x = (todayPct / 100) * el.scrollWidth - el.clientWidth / 2;
     el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior: 'smooth' });
-  };
+  }, [todayPct]);
+
+  useLayoutEffect(() => {
+    if (!onRegisterNav) return undefined;
+    onRegisterNav({ scrollBy: scrollTimelineBy, scrollToToday });
+    return () => onRegisterNav(null);
+  }, [onRegisterNav, scrollTimelineBy, scrollToToday]);
 
   useLayoutEffect(() => {
     if (mobileTodayScrollDone.current) return;
@@ -705,52 +767,31 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
 
   return (
     <div className="gantt-frame">
-      <div className="gantt-toolbar">
-        <div className="gantt-toolbar-inner" role="toolbar" aria-label="Timeline navigation">
-          <button
-            type="button"
-            className="gantt-nav-btn gantt-nav-btn--arrow"
-            onClick={() => scrollTimelineBy(-1)}
-            aria-label="Pan timeline left"
-          >
-            ‹
-          </button>
-          <button type="button" className="gantt-nav-btn gantt-nav-btn--today" onClick={scrollToToday}>
-            Today
-          </button>
-          <button
-            type="button"
-            className="gantt-nav-btn gantt-nav-btn--arrow"
-            onClick={() => scrollTimelineBy(1)}
-            aria-label="Pan timeline right"
-          >
-            ›
-          </button>
-        </div>
-      </div>
       <div className="gantt-wrapper" ref={scrollRef}>
         <div
           className={`gantt-chart${compactTimeline ? ' gantt-chart--compact' : ''}`}
           style={{ minWidth: chartMinWidthPx }}
         >
-          <div className="gantt-chart-header">
-          <div className="gantt-corner gantt-corner--jobs">
-            {compactTimeline ? (
-              <span className="gantt-jobs-icon" role="img" aria-label="Jobs">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path
-                    d="M4 6h16M4 12h16M4 18h10"
-                    stroke="currentColor"
-                    strokeWidth="1.75"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
-            ) : (
-              <span className="gantt-jobs-title">Jobs</span>
-            )}
+          <div className="gantt-chart-lines" aria-hidden>
+            <div className="gantt-lines-spacer" />
+            <div className="gantt-vgrid">
+              {gridLines.map((line) => (
+                <div
+                  key={`v-full-${line.day}`}
+                  className={`gantt-vline ${line.monthStart ? 'gantt-vline-month' : ''}`}
+                  style={{ left: `${line.left}%` }}
+                />
+              ))}
+              {todayPct >= 0 && todayPct <= 100 && (
+                <div
+                  className="gantt-today-line"
+                  style={{ left: `${todayPct}%` }}
+                />
+              )}
+            </div>
           </div>
+          <div className="gantt-chart-header">
+          <div className="gantt-header-lead" />
           <div className="gantt-ruler">
             <div className="gantt-ruler-months">
               {months.map((m, i) => (
@@ -791,28 +832,8 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
           </div>
 
           <div className="gantt-chart-body">
-          <div className="gantt-grid-back" aria-hidden>
-            <div className="gantt-corner-spacer" />
-            <div className="gantt-vgrid">
-              {gridLines.map((line) => (
-                <div
-                  key={`v-${line.day}`}
-                  className={`gantt-vline ${line.monthStart ? 'gantt-vline-month' : ''}`}
-                  style={{ left: `${line.left}%` }}
-                />
-              ))}
-              {todayPct >= 0 && todayPct <= 100 && (
-                <div
-                  className="gantt-today-line"
-                  style={{ left: `${todayPct}%` }}
-                  aria-hidden
-                />
-              )}
-            </div>
-          </div>
-
           <div className="gantt-rows">
-            {validProjects.map((project) => {
+            {orderedProjects.map((project) => {
               const designer = designers.find(d => d.id === project.designerId);
               const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : { bg: '#EEE', bar: '#CCC', text: '#888' };
               const startPct = pct(daysFromEpoch(project.startDate));
@@ -838,9 +859,9 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
                   }}
                 >
                   <div className="gantt-label">
-                    <Avatar designer={designer} size={compactTimeline ? 22 : 28} />
-                    <span className="gantt-project-name">{project.name}</span>
-                    <span className="gantt-client-name">{project.client}</span>
+                    <div className="gantt-avatar-float">
+                      <Avatar designer={designer} size={compactTimeline ? 22 : 28} />
+                    </div>
                   </div>
                   <div className="gantt-track">
                     <div
@@ -849,19 +870,19 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
                         left: `${startPct}%`,
                         width: `${Math.max(widthPct, 0.35)}%`,
                         background: isComplete ? '#F2F2F7' : colors.bg,
-                        borderColor: isComplete ? 'rgba(60, 60, 67, 0.12)' : colors.bar,
                         opacity: isWaiting ? 0.55 : 1,
                         backgroundImage: isWaiting
                           ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}18 4px, ${colors.bar}18 8px)`
                           : 'none',
                       }}
                     >
-                      <span
-                        className="gantt-bar-label"
+                      <div
+                        className="gantt-bar-label-stack"
                         style={{ color: isComplete ? 'rgba(60, 60, 67, 0.45)' : colors.text }}
                       >
-                        {project.name}
-                      </span>
+                        <span className="gantt-bar-client">{project.client}</span>
+                        <span className="gantt-bar-project">{project.name}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -954,6 +975,21 @@ export default function App() {
   const [designerBeingEdited, setDesignerBeingEdited] = useState(null);
   const [filterDesigner, setFilterDesigner] = useState('all');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const ganttNavRef = useRef({
+    scrollBy: () => {},
+    scrollToToday: () => {},
+  });
+  const registerGanttNav = useCallback((api) => {
+    if (api) {
+      ganttNavRef.current = api;
+    } else {
+      ganttNavRef.current = {
+        scrollBy: () => {},
+        scrollToToday: () => {},
+      };
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('studio_designers', JSON.stringify(designers));
@@ -1166,14 +1202,43 @@ export default function App() {
             </h1>
           </div>
           <div className="main-header-actions">
+            {view === 'gantt' && (
+              <div className="gantt-toolbar gantt-toolbar--header">
+                <div className="gantt-toolbar-inner" role="toolbar" aria-label="Timeline navigation">
+                  <button
+                    type="button"
+                    className="gantt-nav-btn gantt-nav-btn--arrow"
+                    onClick={() => ganttNavRef.current.scrollBy(-1)}
+                    aria-label="Pan timeline left"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className="gantt-nav-btn gantt-nav-btn--today"
+                    onClick={() => ganttNavRef.current.scrollToToday()}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    className="gantt-nav-btn gantt-nav-btn--arrow"
+                    onClick={() => ganttNavRef.current.scrollBy(1)}
+                    aria-label="Pan timeline right"
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
+            )}
             {view !== 'archive' && (
               <button
                 type="button"
-                className="header-new-project"
+                className="modal-btn-submit header-new-project"
                 onClick={() => setShowNewProject(true)}
-                aria-label="New project"
+                aria-label="New Project"
               >
-                NEW PROJECT
+                New Project
               </button>
             )}
           </div>
@@ -1190,7 +1255,6 @@ export default function App() {
                 <>
                   {priorityFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-section-title">Priority</h2>
                       {priorityFeed.map(p => (
                         <ProjectRow
                           key={p.id}
@@ -1204,7 +1268,6 @@ export default function App() {
                   )}
                   {smallerJobsFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-section-title">Secondary</h2>
                       {smallerJobsFeed.map(p => (
                         <ProjectRow
                           key={p.id}
@@ -1225,11 +1288,10 @@ export default function App() {
             <div className="project-list">
               {archivedProjects.length === 0 ? (
                 <div className="empty-state">
-                  Nothing archived yet. Set a project&apos;s status to Complete and it will appear here.
+                  Nothing archived yet.
                 </div>
               ) : (
                 <div className="project-section">
-                  <h2 className="project-section-title">Completed</h2>
                   {archivedProjects.map(p => (
                     <ProjectRow
                       key={p.id}
@@ -1249,6 +1311,7 @@ export default function App() {
               projects={activeProjects}
               designers={designers}
               onSelectProject={setEditingProject}
+              onRegisterNav={registerGanttNav}
             />
           )}
         </div>
