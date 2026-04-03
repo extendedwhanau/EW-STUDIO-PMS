@@ -53,6 +53,11 @@ const SAMPLE_PROJECTS = [
   },
 ];
 
+/** Bump when default roster names/order change — triggers one-time sync for built-in ids (d1–d5). */
+const TEAM_SCHEMA_VERSION = '2';
+
+const SAMPLE_DESIGNER_BY_ID = Object.fromEntries(SAMPLE_DESIGNERS.map(d => [d.id, d]));
+
 /** Replace cached team when it matches old built-in samples so names stay current. */
 function normalizeDesignersFromStorage(parsed) {
   if (!Array.isArray(parsed) || parsed.length === 0) return SAMPLE_DESIGNERS;
@@ -71,6 +76,34 @@ function normalizeDesignersFromStorage(parsed) {
     names[4] === 'shaun';
   if (isAlexJordanSam || isOldPoiShaunOrder) return SAMPLE_DESIGNERS;
   return parsed;
+}
+
+/** Once per schema version: align stored d1–d5 with SAMPLE_DESIGNERS (custom-added designers unchanged). */
+function applyTeamSchemaVersion(list) {
+  try {
+    if (localStorage.getItem('studio_team_schema') === TEAM_SCHEMA_VERSION) return list;
+    const next = list.map((d) => {
+      const canon = SAMPLE_DESIGNER_BY_ID[d.id];
+      return canon ? { ...d, name: canon.name, colorIdx: canon.colorIdx } : d;
+    });
+    localStorage.setItem('studio_team_schema', TEAM_SCHEMA_VERSION);
+    localStorage.setItem('studio_designers', JSON.stringify(next));
+    return next;
+  } catch {
+    return list;
+  }
+}
+
+function loadDesignersFromStorage() {
+  try {
+    const raw = localStorage.getItem('studio_designers');
+    let list = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(list) || list.length === 0) list = [...SAMPLE_DESIGNERS];
+    else list = normalizeDesignersFromStorage(list);
+    return applyTeamSchemaVersion(list);
+  } catch {
+    return [...SAMPLE_DESIGNERS];
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -411,15 +444,7 @@ function GanttChart({ projects, designers }) {
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState('projects');
-  const [designers, setDesigners] = useState(() => {
-    try {
-      const raw = localStorage.getItem('studio_designers');
-      if (!raw) return SAMPLE_DESIGNERS;
-      return normalizeDesignersFromStorage(JSON.parse(raw));
-    } catch {
-      return SAMPLE_DESIGNERS;
-    }
-  });
+  const [designers, setDesigners] = useState(loadDesignersFromStorage);
   const [projects, setProjects] = useState(() => {
     try { return JSON.parse(localStorage.getItem('studio_projects')) || SAMPLE_PROJECTS; } catch { return SAMPLE_PROJECTS; }
   });
