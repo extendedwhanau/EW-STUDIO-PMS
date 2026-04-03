@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 
@@ -11,11 +11,29 @@ const DESIGNER_COLORS = [
   { bg: '#D8D4C4', bar: '#A89E6A', text: '#5A4E1F' },
 ];
 
-const STATUS_OPTIONS = ['In Progress', 'Waiting on Client', 'In Review', 'Ready to Print', 'Complete'];
-const PRIORITY_OPTIONS = [
-  { value: 'priority', label: 'Priority' },
-  { value: 'background', label: 'Secondary' },
-];
+const STATUS_OPTIONS = ['In Progress', 'In Review', 'Complete'];
+
+/** Row dot colours — green / amber / grey. */
+const STATUS_ACCENT = {
+  'In Progress': '#22A45A',
+  'In Review': '#E5A50A',
+  Complete: '#9CA3AF',
+};
+
+const LEGACY_STATUS_MAP = {
+  'Waiting on Client': 'In Review',
+  'Ready to Print': 'In Progress',
+};
+
+function normalizeProjectStatus(status) {
+  if (STATUS_OPTIONS.includes(status)) return status;
+  if (LEGACY_STATUS_MAP[status]) return LEGACY_STATUS_MAP[status];
+  return 'In Progress';
+}
+
+function statusAccent(status) {
+  return STATUS_ACCENT[status] || '#A8A8A8';
+}
 
 // ── Sample data ───────────────────────────────────────────────────────────────
 const SAMPLE_DESIGNERS = [
@@ -35,7 +53,7 @@ const SAMPLE_PROJECTS = [
   },
   {
     id: 'p2', name: 'Brand Identity', client: 'Volta Studio',
-    designerId: 'd2', status: 'Waiting on Client', priority: 'priority',
+    designerId: 'd2', status: 'In Review', priority: 'priority',
     startDate: '2025-04-05', endDate: '2025-05-10',
     notes: 'Awaiting logo feedback.',
   },
@@ -107,11 +125,57 @@ function loadDesignersFromStorage() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function formatDate(str) {
+function parseISODateLocal(str) {
+  const [y, m, day] = str.split('-').map(Number);
+  return new Date(y, m - 1, day, 12, 0, 0, 0);
+}
+
+/** Weekdays (Mon–Fri) strictly after `from`, through `to` inclusive. */
+function workingDaysAfterThrough(from, to) {
+  let count = 0;
+  const cur = new Date(from);
+  cur.setDate(cur.getDate() + 1);
+  cur.setHours(12, 0, 0, 0);
+  const end = new Date(to);
+  end.setHours(12, 0, 0, 0);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow >= 1 && dow <= 5) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+/** { kind, days } — days are Mon–Fri only; compares using local calendar dates. */
+function workingDayCountdown(endDateStr) {
+  const due = parseISODateLocal(endDateStr);
+  const now = new Date();
+  const todayD = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+  if (due < todayD) {
+    return { kind: 'overdue', days: workingDaysAfterThrough(due, todayD) };
+  }
+  if (due.getTime() === todayD.getTime()) {
+    return { kind: 'today', days: 0 };
+  }
+  return { kind: 'upcoming', days: workingDaysAfterThrough(todayD, due) };
+}
+
+/** Middle segment for due line: working days (Mon–Fri). */
+function formatDueDaysSegment(endDateStr) {
+  const { kind, days } = workingDayCountdown(endDateStr);
+  if (kind === 'today') return 'Today';
+  if (kind === 'overdue') {
+    return days === 1 ? '1 Day overdue' : `${days} Days overdue`;
+  }
+  return days === 1 ? '1 Day' : `${days} Days`;
+}
+
+function formatDueDateLong(str) {
   if (!str) return '';
   const d = new Date(str + 'T00:00:00');
-  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long' });
 }
+
 function daysFromEpoch(str) {
   return Math.floor(new Date(str + 'T00:00:00').getTime() / 86400000);
 }
@@ -121,7 +185,11 @@ function addDays(str, n) {
   return d.toISOString().slice(0, 10);
 }
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 // ── Components ────────────────────────────────────────────────────────────────
@@ -148,6 +216,7 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
     if (project) {
       return {
         ...project,
+        status: normalizeProjectStatus(project.status),
         priority: project.priority || 'priority',
       };
     }
@@ -205,10 +274,20 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
           </div>
 
           <div className="field">
-            <label>Type</label>
-            <select value={form.priority} onChange={e => set('priority', e.target.value)}>
-              {PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <label htmlFor="project-priority-switch">Priority</label>
+            <div className="priority-toggle-shell">
+              <button
+                id="project-priority-switch"
+                type="button"
+                role="switch"
+                aria-checked={form.priority === 'priority'}
+                title={form.priority === 'priority' ? 'On — Priority list' : 'Off — Secondary list'}
+                className={`toggle-switch ${form.priority === 'priority' ? 'toggle-switch--on' : ''}`}
+                onClick={() => set('priority', form.priority === 'priority' ? 'background' : 'priority')}
+              >
+                <span className="toggle-switch-thumb" />
+              </button>
+            </div>
           </div>
 
           <div className="modal-row">
@@ -332,13 +411,39 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
 function ProjectRow({ project, designers, onClick, onStatusChange }) {
   const designer = designers.find(d => d.id === project.designerId);
   const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : null;
+  const accent = statusAccent(project.status);
+  const dueDaysSeg = project.endDate ? formatDueDaysSegment(project.endDate) : '';
   return (
     <div className="project-row" onClick={() => onClick(project)}>
       {colors && <div style={{ width: 3, background: colors.bar, borderRadius: 99, flexShrink: 0 }} />}
       <div className="project-row-main">
-        <div className="project-row-top">
+        <div className="project-title-line">
+          <span
+            className="project-status-dot"
+            style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
+            title={project.status}
+            aria-hidden
+          />
           <span className="project-name">{project.name}</span>
+        </div>
+        <div className="project-sub-line">
           <span className="project-client">{project.client}</span>
+          {project.endDate ? (
+            <>
+              <span className="project-sub-sep" aria-hidden>·</span>
+              <span
+                className="project-due"
+                title="Day count is working days (Mon–Fri)"
+              >
+                <span className="project-due-tag">DUE</span>
+                <span className="project-due-body">
+                  {dueDaysSeg}
+                  <span className="project-due-bar" aria-hidden> | </span>
+                  {formatDueDateLong(project.endDate)}
+                </span>
+              </span>
+            </>
+          ) : null}
         </div>
       </div>
       <div className="project-row-meta">
@@ -352,40 +457,111 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         {designer && <Avatar designer={designer} size={28} />}
-        <span className="project-dates">{formatDate(project.startDate)} → {formatDate(project.endDate)}</span>
       </div>
     </div>
   );
 }
 
-function formatGanttTick(day) {
-  const d = new Date(day * 86400000);
-  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+const GANTT_NZ_TZ = 'Pacific/Auckland';
+
+function ganttNzNoonMs(epochDay) {
+  return epochDay * 86400000 + 12 * 60 * 60 * 1000;
 }
 
-function isFirstOfMonth(day) {
-  const d = new Date(day * 86400000);
-  return d.getDate() === 1;
+/** Calendar Friday in NZ (avoids DST midnight edge cases). */
+function isFridayNZ(epochDay) {
+  const wk = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    weekday: 'short',
+  }).format(new Date(ganttNzNoonMs(epochDay)));
+  return wk === 'Fri';
 }
+
+/** Day of month only (NZ), for Friday ticks. */
+function ganttTickDayNumberNZ(epochDay) {
+  return new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    day: 'numeric',
+  }).format(new Date(ganttNzNoonMs(epochDay)));
+}
+
+function nzYearMonthKey(epochDay) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: GANTT_NZ_TZ,
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date(ganttNzNoonMs(epochDay)));
+  const y = parts.find((p) => p.type === 'year')?.value;
+  const m = parts.find((p) => p.type === 'month')?.value;
+  return `${y}-${m}`;
+}
+
+function isFirstOfMonthNZ(epochDay) {
+  const dom = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    day: 'numeric',
+  }).format(new Date(ganttNzNoonMs(epochDay)));
+  return dom === '1';
+}
+
+/** ~3 calendar months of days shown across the scroll viewport (desktop). */
+const GANTT_DESKTOP_VIEWPORT_DAYS = 92;
+const GANTT_MOBILE_BREAKPOINT_PX = 768;
 
 // ── Gantt Chart ───────────────────────────────────────────────────────────────
 function GanttChart({ projects, designers }) {
-  const containerRef = useRef(null);
-  const todayDay = daysFromEpoch(today());
-
   const validProjects = projects.filter(p => p.startDate && p.endDate);
-  if (!validProjects.length) return (
-    <div className="empty-state">No projects with timelines yet.</div>
+  if (!validProjects.length) {
+    return <div className="empty-state">No projects with timelines yet.</div>;
+  }
+  return <GanttChartInner projects={validProjects} designers={designers} />;
+}
+
+function GanttChartInner({ projects: validProjects, designers }) {
+  const scrollRef = useRef(null);
+  const mobileTodayScrollDone = useRef(false);
+  const [viewportW, setViewportW] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1200
   );
+  const todayDay = daysFromEpoch(today());
 
   const allStarts = validProjects.map(p => daysFromEpoch(p.startDate));
   const allEnds = validProjects.map(p => daysFromEpoch(p.endDate));
   const minStart = Math.min(...allStarts);
   const maxEnd = Math.max(...allEnds);
-  const minDay = minStart - 14;
-  // ~12 months past latest project end, ~15 months ahead of today, minimum span — room to plan ahead
-  const maxDay = Math.max(maxEnd + 380, todayDay + 460, minStart + 120);
-  const totalDays = maxDay - minDay;
+  const ganttLastDay = daysFromEpoch('2026-12-31');
+  let minDay = minStart - 14;
+  // Room to plan ahead, but timeline never extends past 31 Dec 2026
+  let maxDay = Math.min(
+    Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
+    ganttLastDay
+  );
+  if (maxDay <= minDay) {
+    minDay = maxDay - 365;
+  }
+  const totalDays = Math.max(7, maxDay - minDay);
+
+  /** Desktop: ~3 months per viewport width; mobile: dense chart + horizontal pan. */
+  const chartMinWidthPx = useMemo(() => {
+    if (viewportW <= GANTT_MOBILE_BREAKPOINT_PX) {
+      return Math.max(1280, Math.ceil(totalDays * 2.65));
+    }
+    const w = Math.max(480, viewportW);
+    const pxPerDay = w / GANTT_DESKTOP_VIEWPORT_DAYS;
+    return Math.ceil(totalDays * pxPerDay);
+  }, [viewportW, totalDays]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width;
+      if (w > 0) setViewportW(w);
+    });
+    ro.observe(el);
+    setViewportW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
 
   const pct = (day) => ((day - minDay) / totalDays) * 100;
 
@@ -407,27 +583,84 @@ function GanttChart({ projects, designers }) {
     cur.setMonth(cur.getMonth() + 1);
   }
 
-  const lineStep = 7;
-  const labelStep = totalDays > 240 ? 21 : totalDays > 98 ? 14 : 7;
-  const labelEveryNLines = labelStep / lineStep;
   const gridLines = [];
-  for (let day = minDay; day <= maxDay; day += lineStep) {
-    const idx = (day - minDay) / lineStep;
+  let prevFridayYm = null;
+  for (let day = minDay; day <= maxDay; day++) {
+    if (!isFridayNZ(day)) continue;
+    const ym = nzYearMonthKey(day);
+    const firstFridayOfMonth = prevFridayYm === null || ym !== prevFridayYm;
+    prevFridayYm = ym;
     gridLines.push({
       day,
       left: pct(day),
-      monthStart: isFirstOfMonth(day),
-      showLabel: idx % labelEveryNLines === 0,
+      monthStart: isFirstOfMonthNZ(day),
+      firstFridayOfMonth,
+      showLabel: true,
     });
   }
 
   const todayPct = pct(todayDay);
 
+  const scrollTimelineBy = (direction) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const w = el.clientWidth;
+    const step =
+      viewportW > GANTT_MOBILE_BREAKPOINT_PX
+        ? Math.floor(w * 0.9)
+        : Math.max(240, Math.floor(w * 0.72));
+    el.scrollBy({ left: direction * step, behavior: 'smooth' });
+  };
+
+  const scrollToToday = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+    const x = (todayPct / 100) * el.scrollWidth - el.clientWidth / 2;
+    el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior: 'smooth' });
+  };
+
+  useLayoutEffect(() => {
+    if (mobileTodayScrollDone.current) return;
+    const el = scrollRef.current;
+    if (!el || typeof window === 'undefined') return;
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+    if (maxScroll <= 0) return;
+    const x = (todayPct / 100) * el.scrollWidth - el.clientWidth / 2;
+    el.scrollLeft = Math.max(0, Math.min(maxScroll, x));
+    mobileTodayScrollDone.current = true;
+  }, [todayPct, chartMinWidthPx]);
+
   return (
-    <div className="gantt-wrapper" ref={containerRef}>
-      <div className="gantt-chart">
-        <div className="gantt-chart-header">
-          <div className="gantt-corner" aria-hidden />
+    <div className="gantt-frame">
+      <div className="gantt-toolbar" role="toolbar" aria-label="Timeline navigation">
+        <button
+          type="button"
+          className="gantt-nav-btn"
+          onClick={() => scrollTimelineBy(-1)}
+          aria-label="Pan timeline left"
+        >
+          ‹
+        </button>
+        <button type="button" className="gantt-nav-btn gantt-nav-btn--today" onClick={scrollToToday}>
+          Today
+        </button>
+        <button
+          type="button"
+          className="gantt-nav-btn"
+          onClick={() => scrollTimelineBy(1)}
+          aria-label="Pan timeline right"
+        >
+          ›
+        </button>
+      </div>
+      <div className="gantt-wrapper" ref={scrollRef}>
+        <div className="gantt-chart" style={{ minWidth: chartMinWidthPx }}>
+          <div className="gantt-chart-header">
+          <div className="gantt-corner gantt-corner--jobs">
+            <span className="gantt-jobs-title">Jobs</span>
+          </div>
           <div className="gantt-ruler">
             <div className="gantt-ruler-months">
               {months.map((m, i) => (
@@ -448,15 +681,19 @@ function GanttChart({ projects, designers }) {
                   style={{ left: `${line.left}%` }}
                 >
                   {line.showLabel && (
-                    <span className="gantt-tick-label">{formatGanttTick(line.day)}</span>
+                    <span
+                      className={`gantt-tick-label${line.firstFridayOfMonth ? ' gantt-tick-label--month' : ''}`}
+                    >
+                      {ganttTickDayNumberNZ(line.day)}
+                    </span>
                   )}
                 </div>
               ))}
             </div>
           </div>
-        </div>
+          </div>
 
-        <div className="gantt-chart-body">
+          <div className="gantt-chart-body">
           <div className="gantt-grid-back" aria-hidden>
             <div className="gantt-corner-spacer" />
             <div className="gantt-vgrid">
@@ -480,7 +717,7 @@ function GanttChart({ projects, designers }) {
               const startPct = pct(daysFromEpoch(project.startDate));
               const endPct = pct(daysFromEpoch(project.endDate));
               const widthPct = endPct - startPct;
-              const isWaiting = project.status === 'Waiting on Client';
+              const isWaiting = project.status === 'In Review';
               const isComplete = project.status === 'Complete';
 
               return (
@@ -527,6 +764,7 @@ function GanttChart({ projects, designers }) {
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>
@@ -597,7 +835,14 @@ export default function App() {
   const [view, setView] = useState('projects');
   const [designers, setDesigners] = useState(loadDesignersFromStorage);
   const [projects, setProjects] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('studio_projects')) || SAMPLE_PROJECTS; } catch { return SAMPLE_PROJECTS; }
+    let raw;
+    try {
+      raw = JSON.parse(localStorage.getItem('studio_projects'));
+    } catch {
+      raw = null;
+    }
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : SAMPLE_PROJECTS;
+    return list.map((p) => ({ ...p, status: normalizeProjectStatus(p.status) }));
   });
   const [editingProject, setEditingProject] = useState(null);
   const [showNewProject, setShowNewProject] = useState(false);
@@ -637,6 +882,7 @@ export default function App() {
   const saveProject = (p) => {
     const normalized = {
       ...p,
+      status: normalizeProjectStatus(p.status),
       priority: p.priority === 'background' ? 'background' : 'priority',
     };
     setProjects(prev => {
