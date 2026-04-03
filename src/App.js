@@ -31,6 +31,14 @@ function normalizeProjectStatus(status) {
   return 'In Progress';
 }
 
+/** Sentence case labels for sheet-style status display */
+function formatStatusForDisplay(status) {
+  const s = normalizeProjectStatus(status);
+  if (s === 'In Progress') return 'In progress';
+  if (s === 'In Review') return 'In review';
+  return s;
+}
+
 function statusAccent(status) {
   return STATUS_ACCENT[status] || '#A8A8A8';
 }
@@ -230,99 +238,161 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const designer = designers.find(d => d.id === form.designerId);
-  const colors = designer ? DESIGNER_COLORS[designer.colorIdx % DESIGNER_COLORS.length] : null;
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        {/* Header accent */}
-        {colors && <div style={{ height: 4, background: colors.bar, borderRadius: '12px 12px 0 0', margin: '-1px -1px 0' }} />}
-
-        <div className="modal-header">
-          <div>
+      <div className="modal modal--project">
+        <div className="modal-header modal-header--project">
+          <div className="modal-header-project-titles">
             <input
-              className="modal-title-input"
+              className="modal-title-input modal-title-input--project"
               placeholder="Project name"
               value={form.name}
               onChange={e => set('name', e.target.value)}
             />
             <input
-              className="modal-client-input"
+              className="modal-client-input modal-client-input--project"
               placeholder="Client name"
               value={form.client}
               onChange={e => set('client', e.target.value)}
             />
           </div>
-          <button className="icon-btn" onClick={onClose}>✕</button>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
-        <div className="modal-body">
-          <div className="modal-row">
-            <div className="field">
-              <label>Designer</label>
-              <select value={form.designerId} onChange={e => set('designerId', e.target.value)}>
-                {designers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                <option value="">Unassigned</option>
-              </select>
+        <div className="modal-body modal-body--project">
+          <div className="sheet-grid-row">
+            <div className="sheet-pair">
+              <label htmlFor="project-modal-designer" className="sheet-field-label">
+                Designer
+              </label>
+              <div className="sheet-field-value">
+                <div className="sheet-select-hit sheet-select-hit--designer">
+                  <span className="sheet-select-visual" aria-hidden>
+                    <span className="sheet-value">{designer?.name || 'Unassigned'}</span>
+                  </span>
+                  <select
+                    id="project-modal-designer"
+                    className="sheet-select-native"
+                    value={form.designerId}
+                    onChange={e => set('designerId', e.target.value)}
+                  >
+                    {designers.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                    <option value="">Unassigned</option>
+                  </select>
+                </div>
+              </div>
             </div>
-            <div className="field">
-              <label>Status</label>
-              <select value={form.status} onChange={e => set('status', e.target.value)}>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+            <div className="sheet-pair">
+              <label htmlFor="project-priority-yesno" className="sheet-field-label">
+                Priority
+              </label>
+              <div className="sheet-field-value">
+                <button
+                  id="project-priority-yesno"
+                  type="button"
+                  className="priority-yesno"
+                  onClick={() => set('priority', form.priority === 'priority' ? 'background' : 'priority')}
+                  aria-pressed={form.priority === 'priority'}
+                  title={form.priority === 'priority' ? 'Priority list — click for Secondary' : 'Secondary list — click for Priority'}
+                >
+                  {form.priority === 'priority' ? 'Yes' : 'No'}
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="field">
-            <label htmlFor="project-priority-switch">Priority</label>
-            <div className="priority-toggle-shell">
-              <button
-                id="project-priority-switch"
-                type="button"
-                role="switch"
-                aria-checked={form.priority === 'priority'}
-                title={form.priority === 'priority' ? 'On — Priority list' : 'Off — Secondary list'}
-                className={`toggle-switch ${form.priority === 'priority' ? 'toggle-switch--on' : ''}`}
-                onClick={() => set('priority', form.priority === 'priority' ? 'background' : 'priority')}
-              >
-                <span className="toggle-switch-thumb" />
-              </button>
+          <div className="sheet-grid-row">
+            <div className="sheet-pair">
+              <label htmlFor="project-modal-start" className="sheet-field-label">
+                Start
+              </label>
+              <div className="sheet-field-value sheet-field-value--date">
+                <input
+                  id="project-modal-start"
+                  type="date"
+                  className="sheet-date"
+                  value={form.startDate}
+                  onChange={e => set('startDate', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="sheet-pair">
+              <label htmlFor="project-modal-end" className="sheet-field-label">
+                End
+              </label>
+              <div className="sheet-field-value sheet-field-value--date">
+                <input
+                  id="project-modal-end"
+                  type="date"
+                  className="sheet-date"
+                  value={form.endDate}
+                  onChange={e => set('endDate', e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="modal-row">
-            <div className="field">
-              <label>Start date</label>
-              <input type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)} />
-            </div>
-            <div className="field">
-              <label>End date</label>
-              <input type="date" value={form.endDate} onChange={e => set('endDate', e.target.value)} />
+          <div className="sheet-grid-row">
+            <div className="sheet-pair sheet-pair--blank" aria-hidden="true" />
+            <div className="sheet-pair">
+              <label htmlFor="project-modal-status" className="sheet-field-label">
+                Status
+              </label>
+              <div className="sheet-field-value">
+                <div className="sheet-select-hit">
+                  <span className="sheet-select-visual" aria-hidden>
+                    <span className="sheet-value sheet-value--nowrap">
+                      {formatStatusForDisplay(form.status)}
+                    </span>
+                  </span>
+                  <select
+                    id="project-modal-status"
+                    className="sheet-select-native"
+                    value={form.status}
+                    onChange={e => set('status', e.target.value)}
+                  >
+                    {STATUS_OPTIONS.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="field">
-            <label>Notes</label>
+          <div className="sheet-notes-block">
+            <label htmlFor="project-modal-notes" className="sheet-field-label">
+              Notes
+            </label>
             <textarea
-              placeholder="Any notes for this project..."
-              value={form.notes} onChange={e => set('notes', e.target.value)}
+              id="project-modal-notes"
+              className="sheet-notes"
+              placeholder="Any notes for this project…"
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
               rows={3}
             />
           </div>
         </div>
 
-        <div className="modal-footer">
+        <div className="modal-footer modal-footer--project">
           {project && (
-            <button className="btn-delete" onClick={() => { onDelete(project.id); onClose(); }}>
+            <button type="button" className="btn-delete" onClick={() => { onDelete(project.id); onClose(); }}>
               Delete project
             </button>
           )}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <div className="modal-footer-actions">
+            <button type="button" className="modal-btn-close" onClick={onClose}>
+              Close
+            </button>
             <button
-              className="btn-primary"
+              type="button"
+              className="modal-btn-submit"
               onClick={() => { onSave(form); onClose(); }}
-              disabled={!form.name}
+              disabled={!form.name.trim()}
             >
               {project ? 'Save changes' : 'Add project'}
             </button>
@@ -600,6 +670,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
   }
 
   const todayPct = pct(todayDay);
+  const compactTimeline = viewportW <= GANTT_MOBILE_BREAKPOINT_PX;
 
   const scrollTimelineBy = (direction) => {
     const el = scrollRef.current;
@@ -658,10 +729,27 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
         </div>
       </div>
       <div className="gantt-wrapper" ref={scrollRef}>
-        <div className="gantt-chart" style={{ minWidth: chartMinWidthPx }}>
+        <div
+          className={`gantt-chart${compactTimeline ? ' gantt-chart--compact' : ''}`}
+          style={{ minWidth: chartMinWidthPx }}
+        >
           <div className="gantt-chart-header">
           <div className="gantt-corner gantt-corner--jobs">
-            <span className="gantt-jobs-title">Jobs</span>
+            {compactTimeline ? (
+              <span className="gantt-jobs-icon" role="img" aria-label="Jobs">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M4 6h16M4 12h16M4 18h10"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            ) : (
+              <span className="gantt-jobs-title">Jobs</span>
+            )}
           </div>
           <div className="gantt-ruler">
             <div className="gantt-ruler-months">
@@ -750,7 +838,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject }
                   }}
                 >
                   <div className="gantt-label">
-                    <Avatar designer={designer} size={28} />
+                    <Avatar designer={designer} size={compactTimeline ? 22 : 28} />
                     <span className="gantt-project-name">{project.name}</span>
                     <span className="gantt-client-name">{project.client}</span>
                   </div>
@@ -979,18 +1067,18 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={`nav-item ${view === 'gantt' ? 'active' : ''}`}
+            onClick={() => { setView('gantt'); closeSidebar(); }}
+          >
+            <span className="nav-icon">▤</span> Timeline
+          </button>
+          <button
+            type="button"
             className={`nav-item ${view === 'archive' ? 'active' : ''}`}
             onClick={() => { setView('archive'); closeSidebar(); }}
           >
             <span className="nav-icon">▣</span> Archive
             {archivedCount > 0 && <span className="nav-badge nav-badge-muted">{archivedCount}</span>}
-          </button>
-          <button
-            type="button"
-            className={`nav-item ${view === 'gantt' ? 'active' : ''}`}
-            onClick={() => { setView('gantt'); closeSidebar(); }}
-          >
-            <span className="nav-icon">▤</span> Timeline
           </button>
         </nav>
 
@@ -1078,24 +1166,14 @@ export default function App() {
             </h1>
           </div>
           <div className="main-header-actions">
-            {view === 'projects' && (
-              <p className="header-stat">
-                {activeProjects.length} active
-                {filterDesigner !== 'all' ? ` · ${designers.find(d => d.id === filterDesigner)?.name}` : ''}
-              </p>
-            )}
-            {view === 'gantt' && (
-              <p className="header-stat">{activeProjects.length} active</p>
-            )}
-            {view === 'archive' && (
-              <p className="header-stat">
-                {archivedProjects.length} completed
-                {filterDesigner !== 'all' ? ` · ${designers.find(d => d.id === filterDesigner)?.name}` : ''}
-              </p>
-            )}
             {view !== 'archive' && (
-              <button type="button" className="btn-primary" onClick={() => setShowNewProject(true)}>
-                + New project
+              <button
+                type="button"
+                className="header-new-project"
+                onClick={() => setShowNewProject(true)}
+                aria-label="New project"
+              >
+                NEW PROJECT
               </button>
             )}
           </div>
@@ -1150,15 +1228,18 @@ export default function App() {
                   Nothing archived yet. Set a project&apos;s status to Complete and it will appear here.
                 </div>
               ) : (
-                archivedProjects.map(p => (
-                  <ProjectRow
-                    key={p.id}
-                    project={p}
-                    designers={designers}
-                    onClick={() => setEditingProject(p)}
-                    onStatusChange={updateProjectStatus}
-                  />
-                ))
+                <div className="project-section">
+                  <h2 className="project-section-title">Completed</h2>
+                  {archivedProjects.map(p => (
+                    <ProjectRow
+                      key={p.id}
+                      project={p}
+                      designers={designers}
+                      onClick={() => setEditingProject(p)}
+                      onStatusChange={updateProjectStatus}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           )}
