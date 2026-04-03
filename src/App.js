@@ -538,6 +538,7 @@ export default function App() {
   const [designerModalOpen, setDesignerModalOpen] = useState(false);
   const [designerBeingEdited, setDesignerBeingEdited] = useState(null);
   const [filterDesigner, setFilterDesigner] = useState('all');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('studio_designers', JSON.stringify(designers));
@@ -545,6 +546,27 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('studio_projects', JSON.stringify(projects));
   }, [projects]);
+
+  useEffect(() => {
+    const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+    const syncScrollLock = () => {
+      document.documentElement.classList.toggle('app-nav-open', sidebarOpen && isMobile());
+    };
+    syncScrollLock();
+    const onResize = () => syncScrollLock();
+    window.addEventListener('resize', onResize);
+    const onKey = (e) => {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    };
+    if (sidebarOpen) window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('keydown', onKey);
+      document.documentElement.classList.remove('app-nav-open');
+    };
+  }, [sidebarOpen]);
+
+  const closeSidebar = () => setSidebarOpen(false);
 
   const saveProject = (p) => {
     const normalized = {
@@ -596,22 +618,46 @@ export default function App() {
 
   return (
     <div className="app">
+      <button
+        type="button"
+        className={`sidebar-backdrop ${sidebarOpen ? 'is-visible' : ''}`}
+        aria-label="Close menu"
+        onClick={closeSidebar}
+      />
+
       {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="logo">
-          <span className="logo-text">Extended Whānau</span>
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar--open' : ''}`}>
+        <div className="sidebar-top">
+          <div className="logo">
+            <span className="logo-text">Extended Whānau</span>
+          </div>
+          <button type="button" className="sidebar-close-btn" onClick={closeSidebar} aria-label="Close menu">
+            ✕
+          </button>
         </div>
 
         <nav className="sidebar-nav">
-          <button className={`nav-item ${view === 'projects' ? 'active' : ''}`} onClick={() => setView('projects')}>
+          <button
+            type="button"
+            className={`nav-item ${view === 'projects' ? 'active' : ''}`}
+            onClick={() => { setView('projects'); closeSidebar(); }}
+          >
             <span className="nav-icon">≡</span> Projects
             {activeCount > 0 && <span className="nav-badge">{activeCount}</span>}
           </button>
-          <button className={`nav-item ${view === 'archive' ? 'active' : ''}`} onClick={() => setView('archive')}>
+          <button
+            type="button"
+            className={`nav-item ${view === 'archive' ? 'active' : ''}`}
+            onClick={() => { setView('archive'); closeSidebar(); }}
+          >
             <span className="nav-icon">▣</span> Archive
             {archivedCount > 0 && <span className="nav-badge nav-badge-muted">{archivedCount}</span>}
           </button>
-          <button className={`nav-item ${view === 'gantt' ? 'active' : ''}`} onClick={() => setView('gantt')}>
+          <button
+            type="button"
+            className={`nav-item ${view === 'gantt' ? 'active' : ''}`}
+            onClick={() => { setView('gantt'); closeSidebar(); }}
+          >
             <span className="nav-icon">▤</span> Timeline
           </button>
         </nav>
@@ -625,6 +671,7 @@ export default function App() {
               onClick={() => {
                 setDesignerBeingEdited(null);
                 setDesignerModalOpen(true);
+                closeSidebar();
               }}
             >
               +
@@ -632,8 +679,9 @@ export default function App() {
           </div>
           <div className="designer-list">
             <button
+              type="button"
               className={`designer-chip ${filterDesigner === 'all' ? 'selected' : ''}`}
-              onClick={() => setFilterDesigner('all')}
+              onClick={() => { setFilterDesigner('all'); closeSidebar(); }}
             >
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#CCC' }} />
               All
@@ -645,7 +693,10 @@ export default function App() {
                   <button
                     type="button"
                     className={`designer-chip ${filterDesigner === d.id ? 'selected' : ''}`}
-                    onClick={() => setFilterDesigner(filterDesigner === d.id ? 'all' : d.id)}
+                    onClick={() => {
+                      setFilterDesigner(filterDesigner === d.id ? 'all' : d.id);
+                      closeSidebar();
+                    }}
                   >
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: c.bar }} />
                     <span className="designer-chip-name">{d.name}</span>
@@ -659,6 +710,7 @@ export default function App() {
                       e.stopPropagation();
                       setDesignerBeingEdited(d);
                       setDesignerModalOpen(true);
+                      closeSidebar();
                     }}
                   >
                     ···
@@ -679,7 +731,16 @@ export default function App() {
       {/* Main */}
       <main className="main">
         <header className="main-header">
-          <div>
+          <div className="main-header-title-row">
+            <button
+              type="button"
+              className="mobile-nav-toggle"
+              aria-label="Open menu"
+              aria-expanded={sidebarOpen}
+              onClick={() => setSidebarOpen(true)}
+            >
+              <span className="mobile-nav-bars" aria-hidden />
+            </button>
             <h1 className="page-title">
               {view === 'projects' ? 'Projects' : view === 'archive' ? 'Archive' : 'Timeline'}
             </h1>
