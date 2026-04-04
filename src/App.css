@@ -1045,13 +1045,12 @@ html, body, #root {
 }
 
 .modal-footer--project-form .modal-btn-submit {
-  background: #1a1a1a;
-  color: #fff;
+  background: rgba(204, 204, 204, 0.5);
+  color: var(--text-primary);
 }
 
 .modal-footer--project-form .modal-btn-submit:hover:not(:disabled) {
-  opacity: 0.88;
-  background: #1a1a1a;
+  background: rgba(204, 204, 204, 0.65);
 }
 
 .modal-footer--project-form .modal-btn-submit:disabled {
