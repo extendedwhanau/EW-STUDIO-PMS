@@ -4,6 +4,11 @@ import React, {
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 import './gantt-timeline.css';
+import {
+  isSupabaseConfigured,
+  loadWorkspacePayload,
+  saveWorkspacePayload,
+} from './supabaseData';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -1067,6 +1072,13 @@ export default function App() {
   const [designerBeingEdited, setDesignerBeingEdited] = useState(null);
   const [filterDesigner, setFilterDesigner] = useState('all');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  /** After first Supabase pull (or immediately if Supabase off), cloud saves are allowed. */
+  const [cloudReady, setCloudReady] = useState(() => !isSupabaseConfigured());
+
+  const designersRef = useRef(designers);
+  const projectsRef = useRef(projects);
+  designersRef.current = designers;
+  projectsRef.current = projects;
 
   const ganttNavRef = useRef({
     scrollBy: () => {},
@@ -1084,11 +1096,52 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('studio_designers', JSON.stringify(designers));
-  }, [designers]);
+    if (!isSupabaseConfigured()) return undefined;
+    let cancelled = false;
+    (async () => {
+      const remote = await loadWorkspacePayload();
+      if (cancelled) return;
+      if (remote === null) {
+        setCloudReady(true);
+        return;
+      }
+      if (remote.designers.length > 0 || remote.projects.length > 0) {
+        setDesigners(remote.designers.map(designerWithNormalizedColor));
+        setProjects(
+          remote.projects.map((p) => ({ ...p, status: normalizeProjectStatus(p.status) })),
+        );
+      } else {
+        await saveWorkspacePayload({
+          designers: designersRef.current,
+          projects: projectsRef.current,
+        });
+      }
+      setCloudReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
-    localStorage.setItem('studio_projects', JSON.stringify(projects));
-  }, [projects]);
+    try {
+      localStorage.setItem('studio_designers', JSON.stringify(designers));
+    } catch {
+      /* ignore */
+    }
+    try {
+      localStorage.setItem('studio_projects', JSON.stringify(projects));
+    } catch {
+      /* ignore */
+    }
+
+    if (!isSupabaseConfigured() || !cloudReady) return undefined;
+
+    const t = window.setTimeout(() => {
+      saveWorkspacePayload({ designers, projects });
+    }, 550);
+    return () => window.clearTimeout(t);
+  }, [designers, projects, cloudReady]);
 
   useEffect(() => {
     const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
