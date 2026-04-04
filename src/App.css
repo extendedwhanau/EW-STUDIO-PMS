@@ -297,11 +297,11 @@ html, body, #root {
   display: none;
 }
 
-/* Count badge sits beside New Project; gap matches status row (.project-row-col--trail) dot → avatar */
+/* Count badge flush against New Project */
 .main-header-trailing {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 0;
   flex-shrink: 0;
 }
 
@@ -325,8 +325,8 @@ html, body, #root {
 
 .page-title-badge {
   flex-shrink: 0;
-  background: #1A1A1A;
-  color: #fff;
+  background: #E8E8E8;
+  color: var(--text-secondary);
   font-size: 10px;
   font-weight: 600;
   padding: 2px 7px;
@@ -754,59 +754,10 @@ html, body, #root {
   min-width: 0;
 }
 
-/* Client: text field + optional saved list (native select — reliable on all browsers) */
+/* Client — single line; datalist supplies prior names (browser UI) */
 .sheet-client-field {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   width: 100%;
   min-width: 0;
-}
-
-.sheet-client-saved-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  width: 100%;
-}
-
-.sheet-client-saved-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  line-height: 1.2;
-}
-
-.modal--project .sheet-client-saved-select {
-  width: 100%;
-  font-family: inherit;
-  font-size: var(--sheet-pt);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.3;
-  color: var(--text-primary);
-  background-color: var(--surface);
-  background-image: var(--select-chevron);
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 12px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--control-radius);
-  padding: 10px 36px 10px 12px;
-  min-height: 44px;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  transition: border-color 0.15s ease;
-}
-
-.modal--project .sheet-client-saved-select:focus {
-  outline: none;
-  border-color: var(--border-strong);
-  box-shadow: var(--control-focus-ring);
 }
 
 .sheet-designer-color-cell {
@@ -1146,7 +1097,7 @@ html, body, #root {
   letter-spacing: var(--app-wordmark-tracking);
   line-height: 1.2;
   text-transform: none;
-  padding: 0 16px;
+  padding: 0 0 0 16px;
   min-height: 0;
   background: transparent;
   color: var(--text-secondary);
@@ -1430,7 +1381,7 @@ html, body, #root {
 
   .header-new-project.modal-btn-submit {
     min-height: 44px;
-    padding: 0 16px;
+    padding: 0 0 0 16px;
     display: inline-flex;
     align-items: center;
     justify-content: center;

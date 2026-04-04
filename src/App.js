@@ -329,15 +329,6 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
 
   const clientDatalistId = useId();
 
-  const savedClientSelectRef = useRef(null);
-
-  const applySavedClient = (name) => {
-    if (!name) return;
-    setForm((f) => ({ ...f, client: name }));
-    const sel = savedClientSelectRef.current;
-    if (sel) sel.selectedIndex = 0;
-  };
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal--project">
@@ -355,8 +346,13 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
                 id="project-modal-client"
                 className="sheet-text-input sheet-text-input--left"
                 type="text"
-                placeholder="Client name"
+                placeholder="Client"
                 aria-label="Client"
+                title={
+                  existingClients.length > 0
+                    ? 'Type a new name or pick a suggestion from the list'
+                    : undefined
+                }
                 list={existingClients.length > 0 ? clientDatalistId : undefined}
                 autoComplete="off"
                 value={form.client}
@@ -368,33 +364,6 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
                     <option key={name} value={name} />
                   ))}
                 </datalist>
-              ) : null}
-              {existingClients.length > 0 ? (
-                <div className="sheet-client-saved-row">
-                  <label htmlFor="project-modal-saved-client" className="sheet-client-saved-label">
-                    Saved clients
-                  </label>
-                  <select
-                    ref={savedClientSelectRef}
-                    id="project-modal-saved-client"
-                    className="sheet-client-saved-select"
-                    aria-label="Insert saved client name"
-                    defaultValue=""
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v) applySavedClient(v);
-                    }}
-                  >
-                    <option value="">
-                      Choose a saved client…
-                    </option>
-                    {existingClients.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               ) : null}
             </div>
             <input
