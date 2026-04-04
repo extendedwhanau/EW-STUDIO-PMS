@@ -1501,7 +1501,7 @@ html, body, #root {
   width: 100%;
 }
 
-/* Line field like project sheet — underline reads clearly vs old bordered box */
+/* Dots only — no underline or border */
 .access-gate-input {
   width: 100%;
   font-family: inherit;
@@ -1512,9 +1512,8 @@ html, body, #root {
   color: var(--text-primary);
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border-strong);
   border-radius: 0;
-  padding: 4px 0 10px;
+  padding: 4px 0;
   min-height: 44px;
   margin: 0;
   outline: none;
