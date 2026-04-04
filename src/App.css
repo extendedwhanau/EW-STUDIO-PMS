@@ -745,8 +745,67 @@ html, body, #root {
 
 /* Client / project row: inputs only (no label column), still matches two-column grid */
 .sheet-grid-row--bare-fields > .sheet-text-input,
+.sheet-grid-row--bare-fields > .sheet-client-field,
 .sheet-grid-row--bare-fields > .sheet-designer-color-cell {
   min-width: 0;
+}
+
+/* Client combobox — same type as sheet inputs, list like a light dropdown */
+.sheet-client-field {
+  position: relative;
+  width: 100%;
+}
+
+.modal--project .sheet-client-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 20;
+  max-height: min(220px, 42vh);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-modal);
+}
+
+.modal--project .sheet-client-suggestion {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--sheet-pt);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.modal--project .sheet-client-suggestion:hover {
+  background: var(--bg);
+}
+
+.modal--project .sheet-client-suggestion--new {
+  color: var(--text-secondary);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 11px;
+  margin-bottom: 2px;
+}
+
+.modal--project .sheet-client-suggestion--new:hover {
+  color: var(--text-primary);
 }
 
 .sheet-designer-color-cell {

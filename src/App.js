@@ -1,5 +1,5 @@
 import React, {
-  useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback,
+  useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useId,
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
@@ -307,7 +307,7 @@ function Avatar({ designer, size = 32 }) {
 }
 
 // ── Project Modal ─────────────────────────────────────────────────────────────
-function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
+function ProjectModal({ project, designers, existingClients = [], onClose, onSave, onDelete }) {
   const [form, setForm] = useState(() => {
     if (project) {
       return {
@@ -327,6 +327,55 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
 
   const designer = designers.find(d => d.id === form.designerId);
 
+  const clientListId = useId();
+  const clientInputRef = useRef(null);
+  const clientBlurTimer = useRef(null);
+  const [clientSuggestOpen, setClientSuggestOpen] = useState(false);
+
+  const filteredClients = useMemo(() => {
+    const q = form.client.trim().toLowerCase();
+    let list = existingClients;
+    if (q) {
+      list = existingClients.filter((c) => c.toLowerCase().includes(q));
+    }
+    return list.slice(0, 24);
+  }, [existingClients, form.client]);
+
+  const showClientSuggest = clientSuggestOpen && existingClients.length > 0;
+
+  useEffect(() => {
+    if (!showClientSuggest) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setClientSuggestOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showClientSuggest]);
+
+  useEffect(() => () => {
+    if (clientBlurTimer.current != null) window.clearTimeout(clientBlurTimer.current);
+  }, []);
+
+  const clearClientBlurTimer = () => {
+    if (clientBlurTimer.current != null) {
+      window.clearTimeout(clientBlurTimer.current);
+      clientBlurTimer.current = null;
+    }
+  };
+
+  const onClientFocus = () => {
+    clearClientBlurTimer();
+    if (existingClients.length > 0) setClientSuggestOpen(true);
+  };
+
+  const onClientBlur = () => {
+    clearClientBlurTimer();
+    clientBlurTimer.current = window.setTimeout(() => {
+      setClientSuggestOpen(false);
+      clientBlurTimer.current = null;
+    }, 150);
+  };
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal--project">
@@ -339,15 +388,66 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
 
         <div className="modal-body modal-body--project">
           <div className="sheet-grid-row sheet-grid-row--bare-fields">
-            <input
-              id="project-modal-client"
-              className="sheet-text-input sheet-text-input--left"
-              type="text"
-              placeholder="Client"
-              aria-label="Client"
-              value={form.client}
-              onChange={e => set('client', e.target.value)}
-            />
+            <div className="sheet-client-field">
+              <input
+                ref={clientInputRef}
+                id="project-modal-client"
+                className="sheet-text-input sheet-text-input--left"
+                type="text"
+                placeholder="Client — pick existing or type new"
+                aria-label="Client"
+                aria-expanded={showClientSuggest}
+                aria-controls={showClientSuggest ? clientListId : undefined}
+                aria-autocomplete="list"
+                autoComplete="off"
+                value={form.client}
+                onChange={(e) => set('client', e.target.value)}
+                onFocus={onClientFocus}
+                onBlur={onClientBlur}
+              />
+              {showClientSuggest && (
+                <ul
+                  id={clientListId}
+                  className="sheet-client-suggestions"
+                  role="listbox"
+                  aria-label="Existing clients"
+                >
+                  <li role="presentation">
+                    <button
+                      type="button"
+                      className="sheet-client-suggestion sheet-client-suggestion--new"
+                      role="option"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        clearClientBlurTimer();
+                        setClientSuggestOpen(false);
+                        clientInputRef.current?.focus();
+                      }}
+                    >
+                      + New client name
+                    </button>
+                  </li>
+                  {filteredClients.map((name) => (
+                    <li key={name} role="presentation">
+                      <button
+                        type="button"
+                        className="sheet-client-suggestion"
+                        role="option"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          clearClientBlurTimer();
+                          set('client', name);
+                          setClientSuggestOpen(false);
+                          clientInputRef.current?.focus();
+                        }}
+                      >
+                        {name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <input
               id="project-modal-name"
               className="sheet-text-input sheet-text-input--left"
@@ -1217,6 +1317,21 @@ export default function App() {
   const activeCount = projects.filter(p => p.status !== 'Complete').length;
   const archivedCount = projects.filter(p => p.status === 'Complete').length;
 
+  const existingClientNames = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const p of projects) {
+      const raw = p?.client != null ? String(p.client).trim() : '';
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(raw);
+    }
+    out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    return out;
+  }, [projects]);
+
   if (!accessUnlocked) {
     return <AccessScreen onUnlock={() => setAccessUnlocked(true)} />;
   }
@@ -1492,6 +1607,7 @@ export default function App() {
         <ProjectModal
           project={null}
           designers={designers}
+          existingClients={existingClientNames}
           onClose={() => setShowNewProject(false)}
           onSave={saveProject}
           onDelete={deleteProject}
@@ -1501,6 +1617,7 @@ export default function App() {
         <ProjectModal
           project={editingProject}
           designers={designers}
+          existingClients={existingClientNames}
           onClose={() => setEditingProject(null)}
           onSave={saveProject}
           onDelete={deleteProject}
