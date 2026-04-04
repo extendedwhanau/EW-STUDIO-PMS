@@ -329,6 +329,13 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
 
   const clientDatalistId = useId();
 
+  const submitProject = (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    onSave(form);
+    onClose();
+  };
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal--project">
@@ -339,6 +346,7 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
+        <form className="modal-project-sheet-form" onSubmit={submitProject} noValidate>
         <div className="modal-body modal-body--project">
           <div className="sheet-grid-row sheet-grid-row--bare-fields">
             <div className="sheet-client-field">
@@ -494,7 +502,7 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
           </div>
         </div>
 
-        <div className="modal-footer modal-footer--project">
+        <div className="modal-footer modal-footer--project modal-footer--project-form">
           {project && (
             <button type="button" className="btn-delete" onClick={() => { onDelete(project.id); onClose(); }}>
               Delete
@@ -505,15 +513,15 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
               Close
             </button>
             <button
-              type="button"
+              type="submit"
               className="modal-btn-submit"
-              onClick={() => { onSave(form); onClose(); }}
               disabled={!form.name.trim()}
             >
-              {project ? 'Save changes' : 'Add project'}
+              {project ? 'Save' : 'Add project'}
             </button>
           </div>
         </div>
+        </form>
       </div>
     </div>
   );

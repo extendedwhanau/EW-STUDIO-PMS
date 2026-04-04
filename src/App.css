@@ -731,12 +731,22 @@ html, body, #root {
   box-shadow: none;
 }
 
+/* Wraps body + footer so Enter submits; fills modal below header */
+.modal-project-sheet-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .modal-body--project {
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 20px;
   overflow: visible;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Col 1: Designer, Start | Col 2: Priority, End, Status (last row) */
@@ -1014,8 +1024,44 @@ html, body, #root {
 
 .modal-footer--project {
   padding: 20px;
-  border-top: 1px solid var(--border);
   gap: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.modal-footer--project-form {
+  border-top: none;
+}
+
+/* Project sheet: Close = quiet text, Save = primary (swap from default modal chips) */
+.modal-footer--project-form .modal-btn-close {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 10px 16px;
+}
+
+.modal-footer--project-form .modal-btn-close:hover {
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.modal-footer--project-form .modal-btn-submit {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.modal-footer--project-form .modal-btn-submit:hover:not(:disabled) {
+  opacity: 0.88;
+  background: #1a1a1a;
+}
+
+.modal-footer--project-form .modal-btn-submit:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.modal-footer--project-form .modal-btn-submit:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--text-primary);
 }
 
 .modal-footer--project .modal-footer-actions {
