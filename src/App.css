@@ -667,6 +667,9 @@ html, body, #root {
   --text-tertiary: var(--sheet-muted);
   width: min(560px, 100vw - 32px);
   border-radius: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-header--project {
@@ -733,6 +736,7 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow: visible;
 }
 
 /* Col 1: Designer, Start | Col 2: Priority, End, Status (last row) */
@@ -750,21 +754,59 @@ html, body, #root {
   min-width: 0;
 }
 
-/* Client combobox — same type as sheet inputs, list like a light dropdown */
+/* Client combobox — same type as sheet inputs; list is portaled (fixed) so it isn’t clipped */
 .sheet-client-field {
   position: relative;
   width: 100%;
+}
+
+.sheet-client-combo-hit {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+
+.sheet-client-combo-hit .sheet-text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sheet-client-browse {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-height: 40px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sheet-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sheet-client-browse:hover {
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.sheet-client-browse:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--text-primary);
 }
 
 .modal--project .sheet-client-suggestions {
   list-style: none;
   margin: 0;
   padding: 4px 0;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 2px);
-  z-index: 20;
   max-height: min(220px, 42vh);
   overflow-y: auto;
   background: var(--surface);
