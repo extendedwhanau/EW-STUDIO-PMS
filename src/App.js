@@ -1033,11 +1033,7 @@ function AccessScreen({ onUnlock }) {
           }}
         />
         {error && <p className="access-gate-error">Code not recognised.</p>}
-        <button
-          type="submit"
-          className="modal-btn-close access-gate-continue"
-          disabled={!value.trim()}
-        >
+        <button type="submit" className="access-gate-continue" disabled={!value.trim()}>
           Continue
         </button>
       </form>
