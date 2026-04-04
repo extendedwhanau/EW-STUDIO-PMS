@@ -14,6 +14,11 @@ on conflict (id) do nothing;
 alter table public.studio_workspace enable row level security;
 
 -- Open access for anon key (your app in the browser). Tighten when you add login.
+-- Drop first so you can re-run this whole file without errors.
+drop policy if exists "studio_workspace_select" on public.studio_workspace;
+drop policy if exists "studio_workspace_insert" on public.studio_workspace;
+drop policy if exists "studio_workspace_update" on public.studio_workspace;
+
 create policy "studio_workspace_select"
   on public.studio_workspace for select
   using (true);

@@ -7,7 +7,7 @@ A minimal project management tool for small design studios.
 - Timeline / Gantt chart with designer colour coding
 - Checklist per project (brief, content, print quotes, approvals, etc.)
 - Dropbox folder link per project
-- Data persists in **localStorage** for now (Supabase wiring started; cloud sync comes next)
+- Data syncs to **Supabase** when configured (and still mirrors to **localStorage**); see **Supabase** section below
 
 ## Deploy to Netlify via GitHub
 
@@ -18,6 +18,15 @@ A minimal project management tool for small design studios.
    - Build command: `npm run build`
    - Publish directory: `build`
 5. Click Deploy — you'll have a live URL in ~2 minutes
+
+**So the live site uses the same cloud data as your computer**
+
+6. Netlify → your site → **Site configuration** → **Environment variables** → **Add a variable**:
+   - `REACT_APP_SUPABASE_URL` = your project URL (same as in `.env.local`)
+   - `REACT_APP_SUPABASE_ANON_KEY` = your anon / publishable key (same as in `.env.local`)
+7. **Deploys** → **Trigger deploy** → **Clear cache and deploy site** (env vars are baked in at build time).
+
+Anyone who opens your Netlify URL then shares the same **Supabase** `studio_workspace` row — no extra setup on their machine.
 
 ## Run locally
 
