@@ -826,13 +826,12 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const scrollTimelineBy = useCallback((direction) => {
     const el = scrollRef.current;
     if (!el) return;
-    const w = el.clientWidth;
-    const step =
-      viewportW > GANTT_MOBILE_BREAKPOINT_PX
-        ? Math.floor(w * 0.9)
-        : Math.max(240, Math.floor(w * 0.72));
+    /** One calendar week in chart pixels (same scale as day columns). */
+    const weekPx =
+      totalDays > 0 ? (chartMinWidthPx / totalDays) * 7 : 0;
+    const step = Math.max(1, Math.round(weekPx));
     el.scrollBy({ left: direction * step, behavior: 'smooth' });
-  }, [viewportW]);
+  }, [chartMinWidthPx, totalDays]);
 
   const scrollToToday = useCallback(() => {
     const el = scrollRef.current;
