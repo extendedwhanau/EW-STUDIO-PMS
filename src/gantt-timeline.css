@@ -427,27 +427,34 @@
     gap: 8px;
   }
 
-  .gantt-toolbar-inner {
-    gap: 2px;
+  /* Leave room for “Timeline” — toolbar + title share one row */
+  .main-header-actions:has(.gantt-toolbar--header) {
+    gap: 6px;
+    flex-wrap: nowrap;
   }
 
-  /* Match mobile .header-new-project.modal-btn-submit */
+  .gantt-toolbar-inner {
+    gap: 0;
+  }
+
+  /* Tight horizontal padding so the wordmark title is not clipped to “Tim…” */
   .gantt-nav-btn {
     font-size: var(--app-wordmark-size);
     font-weight: var(--app-wordmark-weight);
     letter-spacing: var(--app-wordmark-tracking);
     line-height: 1.2;
     min-height: 44px;
-    padding: 10px 14px;
+    padding: 8px 4px;
   }
 
   .gantt-nav-btn--arrow {
-    padding: 0 12px;
+    padding: 0 2px;
+    min-width: 36px;
     font-size: 1.12em;
   }
 
   .gantt-nav-btn--today {
-    padding: 0 16px;
+    padding: 0 6px;
   }
 
   .gantt-chart-header {
