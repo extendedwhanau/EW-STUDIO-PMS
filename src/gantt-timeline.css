@@ -139,21 +139,11 @@
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-/* Empty lead cell — width matches avatar column (no Jobs title) */
-.gantt-header-lead {
-  flex-shrink: 0;
-  width: var(--gantt-lead-w);
-  min-width: var(--gantt-lead-w);
-  position: sticky;
-  left: 0;
-  z-index: 6;
-  background-color: var(--gantt-sticky-bg);
-  box-shadow: 8px 0 0 0 var(--gantt-sticky-bg);
-}
-
 .gantt-ruler {
   flex: 1;
   min-width: 0;
+  box-sizing: border-box;
+  padding-left: var(--gantt-lead-w);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -417,7 +407,8 @@
 
 @media (max-width: 768px) {
   .gantt-frame {
-    padding-inline: 10px;
+    padding-left: max(var(--app-inline), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--app-inline), env(safe-area-inset-right, 0px));
   }
 
   .main-content:has(.gantt-frame) {

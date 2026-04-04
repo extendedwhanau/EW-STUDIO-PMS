@@ -903,7 +903,6 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
             </div>
           </div>
           <div className="gantt-chart-header">
-          <div className="gantt-header-lead" />
           <div className="gantt-ruler">
             <div className="gantt-ruler-months">
               {months.map((m, i) => (

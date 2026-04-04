@@ -381,7 +381,7 @@ html, body, #root {
 }
 
 .project-section:not(:first-child) {
-  margin-top: 96px;
+  margin-top: 36px;
 }
 
 .project-row {
@@ -1323,7 +1323,7 @@ html, body, #root {
     justify-content: center;
     width: 44px;
     height: 44px;
-    margin: 0 0 0 -4px;
+    margin: 0;
     border: none;
     border-radius: 10px;
     background: transparent;
@@ -1353,8 +1353,11 @@ html, body, #root {
     flex-wrap: wrap;
     align-items: center;
     row-gap: 10px;
-    /* Match drawer sidebar top inset */
-    padding: max(20px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 14px max(var(--app-inline), env(safe-area-inset-left, 0px));
+    /* Same horizontal inset as .main-content + project cards */
+    padding-top: max(20px, env(safe-area-inset-top, 0px));
+    padding-bottom: 14px;
+    padding-left: max(var(--app-inline), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--app-inline), env(safe-area-inset-right, 0px));
   }
 
   .main-header-title-row {
@@ -1471,7 +1474,7 @@ html, body, #root {
   }
 
   .empty-state {
-    padding: 40px 16px;
+    padding: 40px max(var(--app-inline), env(safe-area-inset-right, 0px)) 40px max(var(--app-inline), env(safe-area-inset-left, 0px));
   }
 }
 
