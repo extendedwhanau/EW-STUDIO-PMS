@@ -297,6 +297,14 @@ html, body, #root {
   display: none;
 }
 
+/* Count badge sits beside New Project; gap matches status row (.project-row-col--trail) dot → avatar */
+.main-header-trailing {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
 .page-title-cluster {
   display: flex;
   align-items: center;
@@ -358,6 +366,18 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Same voice as sidebar "TEAM" — small, light, uppercase */
+.project-feed-heading {
+  margin: 0 0 4px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
 }
 
 .project-section:not(:first-child) {
@@ -1416,16 +1436,20 @@ html, body, #root {
     font-weight: 700;
   }
 
+  /* Centered sheet — not pinned to the bottom (avoids cramped bottom-sheet + surprise keyboard) */
   .modal-overlay {
-    align-items: flex-end;
-    padding: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    align-items: center;
+    justify-content: center;
+    padding: max(12px, env(safe-area-inset-top, 0px))
+      max(12px, env(safe-area-inset-right, 0px))
+      max(12px, env(safe-area-inset-bottom, 0px))
+      max(12px, env(safe-area-inset-left, 0px));
   }
   .modal {
-    width: 100%;
-    max-width: 100%;
-    max-height: min(92vh, 100dvh);
-    border-radius: 14px 14px 0 0;
+    width: min(560px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    max-height: min(85dvh, calc(100vh - 32px));
+    border-radius: 16px;
     margin: 0;
   }
   .modal-narrow {
@@ -1444,7 +1468,7 @@ html, body, #root {
   }
 }
 
-/* ── Soft access gate (client-side only) ───────────────────────────────────── */
+/* ── Soft access gate (client-side only) — same voice as project sheet fields ─ */
 .access-gate {
   min-height: 100vh;
   min-height: 100dvh;
@@ -1452,73 +1476,80 @@ html, body, #root {
   align-items: center;
   justify-content: center;
   padding: max(24px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
-  background: var(--bg);
+  background: var(--surface);
 }
 
-.access-gate-card {
+.access-gate-form {
   width: 100%;
-  max-width: 320px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 28px 24px 24px;
-  box-shadow: var(--shadow);
+  max-width: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 0 var(--app-inline);
 }
 
 .access-gate-brand {
   font-size: var(--app-wordmark-size);
   font-weight: var(--app-wordmark-weight);
   letter-spacing: var(--app-wordmark-tracking);
-  text-align: center;
-  margin-bottom: 20px;
+  line-height: 1.2;
+  margin: 0;
   color: var(--text-primary);
 }
 
-.access-gate-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-tertiary);
-  margin-bottom: 8px;
-}
-
+/* Borderless line field like modal project sheet inputs */
 .access-gate-input {
   width: 100%;
   font-family: inherit;
-  font-size: 18px;
-  letter-spacing: 0.35em;
-  text-align: center;
-  padding: 13px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--control-radius);
-  background: var(--surface);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  line-height: 1.3;
   color: var(--text-primary);
-  margin-bottom: 8px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.access-gate-input:focus {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 0;
+  min-height: 44px;
+  margin: 0;
   outline: none;
-  border-color: var(--border-strong);
-  box-shadow: var(--control-focus-ring);
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+}
+
+.access-gate-input::placeholder {
+  color: #cccccc;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  opacity: 1;
+}
+
+.access-gate-input:focus {
+  box-shadow: none;
 }
 
 .access-gate-error {
   font-size: 12px;
+  font-weight: 500;
   color: #C53030;
-  margin-bottom: 12px;
-  text-align: center;
+  margin: 0;
+  line-height: 1.35;
 }
 
-.access-gate-submit {
+.access-gate-continue.modal-btn-close {
   width: 100%;
-  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.access-gate-note {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  text-align: center;
-  margin-top: 16px;
-  line-height: 1.45;
+.access-gate .modal-btn-close:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.access-gate .modal-btn-close:disabled:hover {
+  background: rgba(204, 204, 204, 0.5);
 }

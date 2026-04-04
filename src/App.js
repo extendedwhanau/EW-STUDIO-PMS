@@ -347,7 +347,6 @@ function ProjectModal({ project, designers, onClose, onSave, onDelete }) {
               aria-label="Client"
               value={form.client}
               onChange={e => set('client', e.target.value)}
-              autoFocus
             />
             <input
               id="project-modal-name"
@@ -550,7 +549,6 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
               aria-label="Name"
               value={name}
               onChange={e => setName(e.target.value)}
-              autoFocus
             />
             <div className="sheet-designer-color-cell">
               <label className="designer-color-custom-hit" title="Colour">
@@ -1017,9 +1015,8 @@ function AccessScreen({ onUnlock }) {
 
   return (
     <div className="access-gate">
-      <form className="access-gate-card" onSubmit={submit}>
+      <form className="access-gate-form" onSubmit={submit}>
         <p className="access-gate-brand">Extended Whānau</p>
-        <p className="access-gate-label">Access code</p>
         <input
           className="access-gate-input"
           type="password"
@@ -1028,6 +1025,7 @@ function AccessScreen({ onUnlock }) {
           autoCorrect="off"
           spellCheck={false}
           placeholder="••••"
+          aria-label="Access code"
           value={value}
           onChange={(e) => {
             setValue(e.target.value);
@@ -1035,10 +1033,13 @@ function AccessScreen({ onUnlock }) {
           }}
         />
         {error && <p className="access-gate-error">Code not recognised.</p>}
-        <button type="submit" className="btn-primary access-gate-submit" disabled={!value}>
+        <button
+          type="submit"
+          className="modal-btn-close access-gate-continue"
+          disabled={!value.trim()}
+        >
           Continue
         </button>
-        <p className="access-gate-note">Casual protection only — not for sensitive data.</p>
       </form>
     </div>
   );
@@ -1048,6 +1049,14 @@ function AccessScreen({ onUnlock }) {
 export default function App() {
   const [accessUnlocked, setAccessUnlocked] = useState(() => {
     try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('lock') || params.get('logout') === '1') {
+          localStorage.removeItem(STUDIO_ACCESS_STORAGE);
+          window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+          return false;
+        }
+      }
       return localStorage.getItem(STUDIO_ACCESS_STORAGE) === '1';
     } catch {
       return false;
@@ -1344,19 +1353,6 @@ export default function App() {
               <h1 className="page-title">
                 {view === 'projects' ? 'Projects' : view === 'archive' ? 'Archive' : 'Timeline'}
               </h1>
-              {view === 'projects' && activeCount > 0 && (
-                <span className="page-title-badge" aria-label={`${activeCount} active projects`}>
-                  {activeCount}
-                </span>
-              )}
-              {view === 'archive' && archivedCount > 0 && (
-                <span
-                  className="page-title-badge page-title-badge--muted"
-                  aria-label={`${archivedCount} archived projects`}
-                >
-                  {archivedCount}
-                </span>
-              )}
             </div>
           </div>
           <div className="main-header-actions">
@@ -1389,15 +1385,34 @@ export default function App() {
                 </div>
               </div>
             )}
-            {view !== 'archive' && (
-              <button
-                type="button"
-                className="modal-btn-submit header-new-project"
-                onClick={() => setShowNewProject(true)}
-                aria-label="New Project"
-              >
-                New Project
-              </button>
+            {((view === 'projects' && activeCount > 0)
+              || (view === 'archive' && archivedCount > 0)
+              || view !== 'archive') && (
+              <div className="main-header-trailing">
+                {view === 'projects' && activeCount > 0 && (
+                  <span className="page-title-badge" aria-label={`${activeCount} active projects`}>
+                    {activeCount}
+                  </span>
+                )}
+                {view === 'archive' && archivedCount > 0 && (
+                  <span
+                    className="page-title-badge page-title-badge--muted"
+                    aria-label={`${archivedCount} archived projects`}
+                  >
+                    {archivedCount}
+                  </span>
+                )}
+                {view !== 'archive' && (
+                  <button
+                    type="button"
+                    className="modal-btn-submit header-new-project"
+                    onClick={() => setShowNewProject(true)}
+                    aria-label="New Project"
+                  >
+                    New Project
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </header>
@@ -1413,6 +1428,7 @@ export default function App() {
                 <>
                   {priorityFeed.length > 0 && (
                     <div className="project-section">
+                      <h2 className="project-feed-heading">Priority</h2>
                       {priorityFeed.map(p => (
                         <ProjectRow
                           key={p.id}
@@ -1426,6 +1442,7 @@ export default function App() {
                   )}
                   {smallerJobsFeed.length > 0 && (
                     <div className="project-section">
+                      <h2 className="project-feed-heading">Secondary</h2>
                       {smallerJobsFeed.map(p => (
                         <ProjectRow
                           key={p.id}
