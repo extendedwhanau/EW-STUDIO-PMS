@@ -1,7 +1,6 @@
 import React, {
   useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useId,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 import './gantt-timeline.css';
@@ -328,144 +327,16 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
 
   const designer = designers.find(d => d.id === form.designerId);
 
-  const clientListId = useId();
-  const clientInputRef = useRef(null);
-  const clientFieldRef = useRef(null);
-  const suggestListRef = useRef(null);
-  const clientBlurTimer = useRef(null);
-  const [clientSuggestOpen, setClientSuggestOpen] = useState(false);
-  const [clientSuggestPos, setClientSuggestPos] = useState(null);
+  const clientDatalistId = useId();
 
-  const filteredClients = useMemo(() => {
-    const q = form.client.trim().toLowerCase();
-    let list = existingClients;
-    if (q) {
-      list = existingClients.filter((c) => c.toLowerCase().includes(q));
-    }
-    return list.slice(0, 24);
-  }, [existingClients, form.client]);
+  const savedClientSelectRef = useRef(null);
 
-  const showClientSuggest = clientSuggestOpen && existingClients.length > 0;
-
-  const measureClientSuggest = useCallback(() => {
-    const el = clientInputRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    setClientSuggestPos({
-      top: r.bottom + 4,
-      left: r.left,
-      width: Math.max(Math.round(r.width), 200),
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!showClientSuggest) {
-      setClientSuggestPos(null);
-      return undefined;
-    }
-    measureClientSuggest();
-    window.addEventListener('resize', measureClientSuggest);
-    window.addEventListener('scroll', measureClientSuggest, true);
-    return () => {
-      window.removeEventListener('resize', measureClientSuggest);
-      window.removeEventListener('scroll', measureClientSuggest, true);
-    };
-  }, [showClientSuggest, measureClientSuggest, form.client]);
-
-  useEffect(() => {
-    if (!showClientSuggest) return undefined;
-    const onKey = (e) => {
-      if (e.key === 'Escape') setClientSuggestOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [showClientSuggest]);
-
-  useEffect(() => {
-    if (!showClientSuggest) return undefined;
-    const onDocDown = (e) => {
-      if (clientFieldRef.current?.contains(e.target)) return;
-      if (suggestListRef.current?.contains(e.target)) return;
-      setClientSuggestOpen(false);
-    };
-    document.addEventListener('mousedown', onDocDown);
-    return () => document.removeEventListener('mousedown', onDocDown);
-  }, [showClientSuggest]);
-
-  useEffect(() => () => {
-    if (clientBlurTimer.current != null) window.clearTimeout(clientBlurTimer.current);
-  }, []);
-
-  const clearClientBlurTimer = () => {
-    if (clientBlurTimer.current != null) {
-      window.clearTimeout(clientBlurTimer.current);
-      clientBlurTimer.current = null;
-    }
+  const applySavedClient = (name) => {
+    if (!name) return;
+    setForm((f) => ({ ...f, client: name }));
+    const sel = savedClientSelectRef.current;
+    if (sel) sel.selectedIndex = 0;
   };
-
-  const onClientFocus = () => {
-    clearClientBlurTimer();
-    if (existingClients.length > 0) setClientSuggestOpen(true);
-  };
-
-  const onClientBlur = () => {
-    clearClientBlurTimer();
-    clientBlurTimer.current = window.setTimeout(() => {
-      setClientSuggestOpen(false);
-      clientBlurTimer.current = null;
-    }, 250);
-  };
-
-  const clientSuggestList = showClientSuggest && clientSuggestPos && typeof document !== 'undefined' && (
-    <ul
-      ref={suggestListRef}
-      id={clientListId}
-      className="sheet-client-suggestions sheet-client-suggestions--portal"
-      role="listbox"
-      aria-label="Existing clients"
-      style={{
-        position: 'fixed',
-        top: clientSuggestPos.top,
-        left: clientSuggestPos.left,
-        width: clientSuggestPos.width,
-        zIndex: 10000,
-      }}
-    >
-      <li role="presentation">
-        <button
-          type="button"
-          className="sheet-client-suggestion sheet-client-suggestion--new"
-          role="option"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            clearClientBlurTimer();
-            setClientSuggestOpen(false);
-            clientInputRef.current?.focus();
-          }}
-        >
-          + New client name
-        </button>
-      </li>
-      {filteredClients.map((name) => (
-        <li key={name} role="presentation">
-          <button
-            type="button"
-            className="sheet-client-suggestion"
-            role="option"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              clearClientBlurTimer();
-              set('client', name);
-              setClientSuggestOpen(false);
-              clientInputRef.current?.focus();
-            }}
-          >
-            {name}
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -478,45 +349,53 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
         </div>
 
         <div className="modal-body modal-body--project">
-          {clientSuggestList ? createPortal(clientSuggestList, document.body) : null}
           <div className="sheet-grid-row sheet-grid-row--bare-fields">
-            <div className="sheet-client-field" ref={clientFieldRef}>
-              <div className="sheet-client-combo-hit">
-                <input
-                  ref={clientInputRef}
-                  id="project-modal-client"
-                  className="sheet-text-input sheet-text-input--left"
-                  type="text"
-                  placeholder="Client — tap ▾ or type"
-                  aria-label="Client"
-                  aria-expanded={showClientSuggest}
-                  aria-controls={showClientSuggest ? clientListId : undefined}
-                  aria-autocomplete="list"
-                  autoComplete="off"
-                  value={form.client}
-                  onChange={(e) => set('client', e.target.value)}
-                  onFocus={onClientFocus}
-                  onBlur={onClientBlur}
-                />
-                {existingClients.length > 0 ? (
-                  <button
-                    type="button"
-                    className="sheet-client-browse"
-                    aria-label="Show existing clients"
-                    aria-expanded={showClientSuggest}
-                    aria-controls={clientListId}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearClientBlurTimer();
-                      setClientSuggestOpen((o) => !o);
-                      clientInputRef.current?.focus();
+            <div className="sheet-client-field">
+              <input
+                id="project-modal-client"
+                className="sheet-text-input sheet-text-input--left"
+                type="text"
+                placeholder="Client name"
+                aria-label="Client"
+                list={existingClients.length > 0 ? clientDatalistId : undefined}
+                autoComplete="off"
+                value={form.client}
+                onChange={(e) => set('client', e.target.value)}
+              />
+              {existingClients.length > 0 ? (
+                <datalist id={clientDatalistId}>
+                  {existingClients.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              ) : null}
+              {existingClients.length > 0 ? (
+                <div className="sheet-client-saved-row">
+                  <label htmlFor="project-modal-saved-client" className="sheet-client-saved-label">
+                    Saved clients
+                  </label>
+                  <select
+                    ref={savedClientSelectRef}
+                    id="project-modal-saved-client"
+                    className="sheet-client-saved-select"
+                    aria-label="Insert saved client name"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v) applySavedClient(v);
                     }}
                   >
-                    ▾
-                  </button>
-                ) : null}
-              </div>
+                    <option value="">
+                      Choose a saved client…
+                    </option>
+                    {existingClients.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
             </div>
             <input
               id="project-modal-name"
