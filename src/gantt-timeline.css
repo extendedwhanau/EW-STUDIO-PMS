@@ -86,13 +86,14 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding-inline: 32px;
+  padding-inline: 14px;
 }
 
 .gantt-wrapper {
   --gantt-sticky-bg: var(--surface);
   --gantt-track-bg: var(--surface);
-  --gantt-lead-w: calc(28px + 28px + 8px);
+  /* Lead = left pad + avatar column + gap before track (was 28+28+8) */
+  --gantt-lead-w: calc(10px + 28px + 4px);
   flex: 1;
   min-height: 0;
   overflow-x: auto;
@@ -147,7 +148,7 @@
   left: 0;
   z-index: 6;
   background-color: var(--gantt-sticky-bg);
-  box-shadow: 16px 0 0 0 var(--gantt-sticky-bg);
+  box-shadow: 8px 0 0 0 var(--gantt-sticky-bg);
 }
 
 .gantt-ruler {
@@ -300,7 +301,7 @@
   outline-offset: 2px;
 }
 
-/* Avatar: 28px inset from track edge; column width = avatar + trailing pad (not ~96px) */
+/* Avatar column — tight pads so more width stays on the timeline */
 .gantt-label {
   flex-shrink: 0;
   position: sticky;
@@ -310,8 +311,8 @@
   width: 28px;
   min-width: 28px;
   max-width: 28px;
-  margin-left: 28px;
-  margin-right: 8px;
+  margin-left: 10px;
+  margin-right: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -381,15 +382,15 @@
 
 /* Compact timeline (matches JS gantt-chart--compact) */
 .gantt-chart--compact {
-  --gantt-lead-w: calc(28px + 22px + 8px);
+  --gantt-lead-w: calc(10px + 22px + 4px);
 }
 
 .gantt-chart--compact .gantt-label {
   width: 22px;
   min-width: 22px;
   max-width: 22px;
-  margin-left: 28px;
-  margin-right: 8px;
+  margin-left: 10px;
+  margin-right: 4px;
 }
 
 .gantt-chart--compact .gantt-rows {
@@ -416,7 +417,7 @@
 
 @media (max-width: 768px) {
   .gantt-frame {
-    padding-inline: 16px;
+    padding-inline: 10px;
   }
 
   .main-content:has(.gantt-frame) {
