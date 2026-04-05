@@ -627,7 +627,17 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
 function ProjectRow({ project, designers, onClick, onStatusChange }) {
   const designer = designers.find(d => d.id === project.designerId);
   const accent = statusAccent(project.status);
-  const dueSeg = project.endDate ? formatDueDaysSegment(project.endDate) : '';
+  const isComplete = project.status === 'Complete';
+  const dateStr = isComplete
+    ? (project.completedAt || project.endDate)
+    : project.endDate;
+  const dueSeg = !isComplete && dateStr ? formatDueDaysSegment(dateStr) : '';
+  const dueTitle = isComplete
+    ? 'Date completed'
+    : 'Day count is working days (Mon–Fri)';
+  const dueAria = isComplete
+    ? (dateStr ? `Completed ${formatDueDateLong(dateStr)}` : 'No completion date')
+    : (dateStr ? `${dueSeg}, ${formatDueDateLong(dateStr)}. Working weekdays.` : '');
   return (
     <div className="project-row" onClick={() => onClick(project)}>
       <div className="project-row-inner">
@@ -638,14 +648,16 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
           <span className="project-name">{project.name}</span>
         </div>
         <div className="project-row-col project-row-col--due">
-          {project.endDate ? (
+          {dateStr ? (
             <div
               className="project-row-due-pair"
-              title="Day count is working days (Mon–Fri)"
-              aria-label={`${dueSeg}, ${formatDueDateLong(project.endDate)}. Working weekdays.`}
+              title={dueTitle}
+              aria-label={dueAria}
             >
-              <span className="project-due-date-main">{formatDueDateLong(project.endDate)}</span>
-              <span className="project-due-days">{formatDueDaysDisplay(project.endDate)}</span>
+              <span className="project-due-date-main">{formatDueDateLong(dateStr)}</span>
+              {!isComplete ? (
+                <span className="project-due-days">{formatDueDaysDisplay(dateStr)}</span>
+              ) : null}
             </div>
           ) : (
             <span className="project-due-date-main project-due-date-main--empty">—</span>
@@ -1194,11 +1206,17 @@ export default function App() {
   const closeSidebar = () => setSidebarOpen(false);
 
   const saveProject = (p) => {
-    const normalized = {
+    const base = {
       ...p,
       status: normalizeProjectStatus(p.status),
       priority: p.priority === 'background' ? 'background' : 'priority',
     };
+    const normalized = base.status === 'Complete'
+      ? { ...base, completedAt: base.completedAt || today() }
+      : (() => {
+          const { completedAt, ...rest } = base;
+          return rest;
+        })();
     setProjects(prev => {
       const exists = prev.find(x => x.id === normalized.id);
       return exists ? prev.map(x => x.id === normalized.id ? normalized : x) : [...prev, normalized];
@@ -1220,7 +1238,17 @@ export default function App() {
   };
 
   const updateProjectStatus = (id, status) => {
-    setProjects(prev => prev.map(p => (p.id === id ? { ...p, status } : p)));
+    setProjects(prev => prev.map((p) => {
+      if (p.id !== id) return p;
+      if (status === 'Complete' && p.status !== 'Complete') {
+        return { ...p, status, completedAt: today() };
+      }
+      if (status !== 'Complete' && p.status === 'Complete') {
+        const { completedAt, ...rest } = p;
+        return { ...rest, status };
+      }
+      return { ...p, status };
+    }));
   };
 
   const designerFiltered = filterDesigner === 'all'
@@ -1231,7 +1259,8 @@ export default function App() {
   const archivedProjects = designerFiltered
     .filter(p => p.status === 'Complete')
     .slice()
-    .sort((a, b) => (b.endDate || '').localeCompare(a.endDate || ''));
+    .sort((a, b) =>
+      (b.completedAt || b.endDate || '').localeCompare(a.completedAt || a.endDate || ''));
 
   const sortFeed = (list) =>
     list.slice().sort((a, b) => (a.endDate || '').localeCompare(b.endDate || ''));
