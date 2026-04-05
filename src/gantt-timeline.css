@@ -152,7 +152,6 @@
 .gantt-ruler-months {
   position: relative;
   height: 26px;
-  border-bottom: 1px solid var(--border);
 }
 
 .gantt-ruler-month {
