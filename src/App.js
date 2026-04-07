@@ -81,10 +81,18 @@ function designerWithNormalizedColor(d) {
   return { ...d, colorHex: normalizeHex(DESIGNER_COLORS[idx].bar), colorIdx: idx };
 }
 
-const STATUS_OPTIONS = ['In Progress', 'In Review', 'Complete'];
+const STATUS_OPTIONS = [
+  'Awaiting start',
+  'Content received',
+  'In Progress',
+  'In Review',
+  'Complete',
+];
 
-/** Row dot colours — green / amber / grey. */
+/** Row dot colours — blue / purple / green / amber / grey. */
 const STATUS_ACCENT = {
+  'Awaiting start': '#4F7FD9',
+  'Content received': '#8B6FD6',
   'In Progress': '#22A45A',
   'In Review': '#E5A50A',
   Complete: '#9CA3AF',
@@ -318,7 +326,7 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
     }
     return {
       id: uuidv4(), name: '', client: '', designerId: designers[0]?.id || '',
-      status: 'In Progress', startDate: today(), endDate: addDays(today(), 14),
+      status: 'Awaiting start', startDate: today(), endDate: addDays(today(), 14),
       notes: '', priority: 'priority',
     };
   });
@@ -972,6 +980,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
               const widthPct = endPct - startPct;
               const isWaiting = project.status === 'In Review';
               const isComplete = project.status === 'Complete';
+              const isAwaitingStart = project.status === 'Awaiting start';
 
               return (
                 <div
@@ -1001,10 +1010,12 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                         left: `${startPct}%`,
                         width: `${Math.max(widthPct, 0.35)}%`,
                         background: isComplete ? '#F2F2F7' : colors.bg,
-                        opacity: isWaiting ? 0.55 : 1,
+                        opacity: isWaiting ? 0.55 : isAwaitingStart ? 0.62 : 1,
                         backgroundImage: isWaiting
                           ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}18 4px, ${colors.bar}18 8px)`
-                          : 'none',
+                          : isAwaitingStart
+                            ? `repeating-linear-gradient(90deg, transparent, transparent 5px, ${colors.bar}14 5px, ${colors.bar}14 10px)`
+                            : 'none',
                       }}
                     >
                       <div
