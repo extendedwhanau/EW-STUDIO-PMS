@@ -1554,12 +1554,27 @@ html, body, #root {
     /* Same horizontal inset as .main-content + project cards */
     padding-top: max(20px, env(safe-area-inset-top, 0px));
     padding-bottom: 14px;
-    padding-left: max(var(--app-inline), env(safe-area-inset-left, 0px));
+    /* Flush-left hamburger on mobile */
+    padding-left: max(0px, env(safe-area-inset-left, 0px));
     padding-right: max(var(--app-inline), env(safe-area-inset-right, 0px));
   }
 
   .main-header-title-row {
     align-items: center;
+  }
+
+  .mobile-nav-toggle {
+    padding: 0;
+    border-radius: 0;
+    justify-content: flex-start;
+    width: 32px;
+    height: 32px;
+  }
+
+  .mobile-nav-bars {
+    width: 16px;
+    height: 1.5px;
+    box-shadow: 0 -5px 0 var(--text-primary), 0 5px 0 var(--text-primary);
   }
 
   .page-title {
@@ -1606,9 +1621,13 @@ html, body, #root {
       'client client'
       'name trail';
     column-gap: 14px;
-    row-gap: 4px;
+    row-gap: 2px;
     padding: 12px 14px 12px;
     align-items: start;
+  }
+
+  .project-client {
+    line-height: 1.1;
   }
 
   .project-row-col--due {
@@ -1652,7 +1671,7 @@ html, body, #root {
   }
 
   .project-row-col--trail .designer-avatar-stack {
-    transform: scale(0.86);
+    transform: scale(0.8);
     transform-origin: right center;
   }
 
