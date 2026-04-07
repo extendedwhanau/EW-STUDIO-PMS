@@ -930,7 +930,8 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const minStart = Math.min(...allStarts);
   const maxEnd = Math.max(...allEnds);
   const ganttLastDay = daysFromEpoch('2026-12-31');
-  let minDay = minStart - 14;
+  // Always start 1 week before today to avoid odd leading whitespace.
+  let minDay = todayDay - 7;
   // Room to plan ahead, but timeline never extends past 31 Dec 2026
   let maxDay = Math.min(
     Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
