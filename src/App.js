@@ -489,57 +489,59 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
             />
           </div>
 
-          <div className="sheet-grid-row">
-            <div className="sheet-pair sheet-pair--designers-assign">
-              <span id="project-modal-designers-label" className="sheet-field-label">
-                Designers
-              </span>
-              <div className="sheet-field-value sheet-field-value--designers-assign">
-                <div className="sheet-designer-assign" role="group" aria-labelledby="project-modal-designers-label">
-                  {form.designerIds.map((id) => {
-                    const d = designers.find((x) => x.id === id);
-                    if (!d) return null;
-                    return (
-                      <div key={id} className="sheet-designer-chip">
-                        <Avatar designer={d} size={28} />
-                        <span className="sheet-designer-chip-name">{d.name}</span>
-                        <button
-                          type="button"
-                          className="sheet-designer-chip-remove"
-                          onClick={() => removeDesignerId(id)}
-                          aria-label={`Remove ${d.name}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {designersAvailableToAdd.length > 0 ? (
-                    <div className="sheet-select-hit sheet-select-hit--designer sheet-designer-add-hit">
-                      <span className="sheet-select-visual" aria-hidden>
-                        <span className="sheet-value sheet-value--add-designer">Add</span>
-                      </span>
-                      <select
-                        className="sheet-select-native"
-                        value=""
-                        aria-label="Add designer"
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v) addDesignerId(v);
-                          e.target.value = '';
-                        }}
+          <div className="sheet-grid-row sheet-grid-row--designers-priority">
+            <div
+              className="sheet-designers-column"
+              role="group"
+              aria-labelledby="project-modal-designers-label"
+            >
+              <div className="sheet-designers-topline">
+                <span id="project-modal-designers-label" className="sheet-field-label">
+                  Designers
+                </span>
+                {designersAvailableToAdd.length > 0 ? (
+                  <div className="sheet-designer-add-inline">
+                    <span className="sheet-designer-add-inline-text" aria-hidden>Add</span>
+                    <select
+                      className="sheet-select-native sheet-select-native--add-inline"
+                      value=""
+                      aria-label="Add designer"
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v) addDesignerId(v);
+                        e.target.value = '';
+                      }}
+                    >
+                      <option value="">Add</option>
+                      {designersAvailableToAdd.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+              <div className="sheet-designer-assign sheet-designer-assign--chips">
+                {form.designerIds.map((id) => {
+                  const d = designers.find((x) => x.id === id);
+                  if (!d) return null;
+                  return (
+                    <div key={id} className="sheet-designer-chip">
+                      <Avatar designer={d} size={28} />
+                      <span className="sheet-designer-chip-name">{d.name}</span>
+                      <button
+                        type="button"
+                        className="sheet-designer-chip-remove"
+                        onClick={() => removeDesignerId(id)}
+                        aria-label={`Remove ${d.name}`}
                       >
-                        <option value="">Add</option>
-                        {designersAvailableToAdd.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
+                        ×
+                      </button>
                     </div>
-                  ) : null}
-                </div>
+                  );
+                })}
               </div>
             </div>
-            <div className="sheet-pair">
+            <div className="sheet-pair sheet-pair--priority-top">
               <label htmlFor="project-priority-yesno" className="sheet-field-label">
                 Priority
               </label>

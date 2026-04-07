@@ -929,13 +929,54 @@ html, body, #root {
   font-weight: 500;
 }
 
-.sheet-pair--designers-assign {
-  align-items: flex-start;
+.sheet-grid-row--designers-priority {
+  align-items: start;
 }
 
-.sheet-field-value--designers-assign {
-  align-items: flex-end;
+.sheet-designers-column {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sheet-designers-topline {
+  display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.sheet-designer-add-inline {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  flex-shrink: 0;
+}
+
+.sheet-designer-add-inline-text {
+  font-size: var(--sheet-pt);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--sheet-muted);
+  line-height: 1.3;
+  pointer-events: none;
+  transition: color 0.12s ease;
+}
+
+.sheet-designer-add-inline:hover .sheet-designer-add-inline-text {
+  color: var(--text-primary);
+}
+
+.sheet-select-native--add-inline {
+  cursor: pointer;
 }
 
 .sheet-designer-assign {
@@ -947,6 +988,19 @@ html, body, #root {
   gap: 8px;
   width: 100%;
   min-width: 0;
+}
+
+.sheet-designer-assign--chips {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.sheet-pair--priority-top {
+  align-items: flex-start;
+}
+
+.sheet-pair--priority-top .sheet-field-value {
+  align-items: flex-start;
 }
 
 .sheet-designer-chip {
@@ -997,12 +1051,6 @@ html, body, #root {
 .sheet-designer-chip-remove:hover {
   color: var(--text-primary);
   background: rgba(0, 0, 0, 0.06);
-}
-
-.sheet-designer-add-hit {
-  flex: 0 0 auto;
-  min-width: 120px;
-  max-width: 100%;
 }
 
 .sheet-field-value--date {
