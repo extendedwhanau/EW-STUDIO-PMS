@@ -1625,12 +1625,35 @@ html, body, #root {
     align-items: center;
     gap: 10px;
     align-self: center;
+    flex-wrap: nowrap;
   }
 
   .project-status-hit {
     flex: 0 1 auto;
     min-height: 0;
     min-width: 0;
+  }
+
+  .project-row-col--lead {
+    align-self: center;
+    min-width: 0;
+  }
+
+  .project-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Smaller right-side icons on mobile (status dot + avatar stack). */
+  .project-status-dot {
+    width: 9px;
+    height: 9px;
+  }
+
+  .project-row-col--trail .designer-avatar-stack {
+    transform: scale(0.86);
+    transform-origin: right center;
   }
 
   .row-status-select {
