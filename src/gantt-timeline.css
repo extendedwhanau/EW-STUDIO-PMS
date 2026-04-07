@@ -92,8 +92,8 @@
 .gantt-wrapper {
   --gantt-sticky-bg: var(--surface);
   --gantt-track-bg: var(--surface);
-  /* Lead = left pad + avatar column (room for stacked pair) + gap before track */
-  --gantt-lead-w: calc(10px + 44px + 4px);
+  /* Lead = left pad + avatar stack (up to 3 faces + +N) + gap before track */
+  --gantt-lead-w: calc(10px + 96px + 4px);
   flex: 1;
   min-height: 0;
   overflow-x: auto;
@@ -290,16 +290,16 @@
   outline-offset: 2px;
 }
 
-/* Avatar column — tight pads; wide enough for two stacked avatars */
+/* Avatar column — room for stacked avatars + overflow badge */
 .gantt-label {
   flex-shrink: 0;
   position: sticky;
   left: 0;
   z-index: 2;
   box-sizing: border-box;
-  width: 44px;
-  min-width: 44px;
-  max-width: 44px;
+  width: 96px;
+  min-width: 96px;
+  max-width: 96px;
   margin-left: 10px;
   margin-right: 4px;
   display: flex;
@@ -376,13 +376,13 @@
 
 /* Compact timeline (matches JS gantt-chart--compact) */
 .gantt-chart--compact {
-  --gantt-lead-w: calc(10px + 36px + 4px);
+  --gantt-lead-w: calc(10px + 78px + 4px);
 }
 
 .gantt-chart--compact .gantt-label {
-  width: 36px;
-  min-width: 36px;
-  max-width: 36px;
+  width: 78px;
+  min-width: 78px;
+  max-width: 78px;
   margin-left: 10px;
   margin-right: 4px;
 }

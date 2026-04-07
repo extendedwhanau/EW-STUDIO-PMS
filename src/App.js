@@ -133,16 +133,11 @@ function statusAccent(status) {
   return STATUS_ACCENT[status] || '#A8A8A8';
 }
 
-const MAX_PROJECT_DESIGNERS = 2;
-
-/** Stable list of designer ids (max 2); supports legacy `designerId` only. */
+/** Stable list of designer ids (any number, deduped); supports legacy `designerId` only. */
 function getProjectDesignerIds(project) {
   if (!project) return [];
   const raw = Array.isArray(project.designerIds) ? project.designerIds : [];
-  const fromArr = [...new Set(raw.filter((id) => id != null && String(id).trim() !== ''))].slice(
-    0,
-    MAX_PROJECT_DESIGNERS,
-  );
+  const fromArr = [...new Set(raw.filter((id) => id != null && String(id).trim() !== ''))];
   if (fromArr.length > 0) return fromArr;
   const leg = project.designerId != null && String(project.designerId).trim() !== '' ? project.designerId : '';
   return leg ? [leg] : [];
@@ -163,19 +158,43 @@ function getProjectDesigners(project, designers) {
     .filter(Boolean);
 }
 
-function DesignerAvatarStack({ designers: stackDesigners, size = 28, className = '' }) {
+/** `maxVisible` truncates with a +N badge (for dense rows). Omit to show everyone. */
+function DesignerAvatarStack({ designers: stackDesigners, size = 28, className = '', maxVisible }) {
   if (!stackDesigners?.length) return null;
+  const limit = maxVisible != null && Number.isFinite(maxVisible) ? maxVisible : stackDesigners.length;
+  const visible = stackDesigners.slice(0, Math.max(0, limit));
+  const extra = stackDesigners.length - visible.length;
+  const topZ = visible.length + (extra > 0 ? 1 : 0);
   return (
     <div className={['designer-avatar-stack', className].filter(Boolean).join(' ')}>
-      {stackDesigners.map((d, i) => (
+      {visible.map((d, i) => (
         <span
           key={d.id}
           className="designer-avatar-stack__slot"
-          style={{ zIndex: stackDesigners.length - i }}
+          style={{ zIndex: i + 1 }}
         >
           <Avatar designer={d} size={size} />
         </span>
       ))}
+      {extra > 0 ? (
+        <span
+          className="designer-avatar-stack__slot designer-avatar-stack__more"
+          style={{ zIndex: topZ }}
+          title={`${extra} more`}
+          aria-label={`${extra} more designers`}
+        >
+          <span
+            className="designer-avatar-stack__more-inner"
+            style={{
+              width: size,
+              height: size,
+              fontSize: Math.max(10, Math.round(size * 0.34)),
+            }}
+          >
+            +{extra}
+          </span>
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -397,15 +416,12 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const syncDesignerIds = (ids) => {
-    const clean = [...new Set(ids.filter((id) => id != null && String(id).trim() !== ''))].slice(
-      0,
-      MAX_PROJECT_DESIGNERS,
-    );
+    const clean = [...new Set(ids.filter((id) => id != null && String(id).trim() !== ''))];
     setForm((f) => ({ ...f, designerIds: clean, designerId: clean[0] || '' }));
   };
 
   const addDesignerId = (id) => {
-    if (!id || form.designerIds.includes(id) || form.designerIds.length >= MAX_PROJECT_DESIGNERS) return;
+    if (!id || form.designerIds.includes(id)) return;
     syncDesignerIds([...form.designerIds, id]);
   };
 
@@ -498,7 +514,7 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
                       </div>
                     );
                   })}
-                  {form.designerIds.length < MAX_PROJECT_DESIGNERS && designersAvailableToAdd.length > 0 ? (
+                  {designersAvailableToAdd.length > 0 ? (
                     <div className="sheet-select-hit sheet-select-hit--designer sheet-designer-add-hit">
                       <span className="sheet-select-visual" aria-hidden>
                         <span className="sheet-value sheet-value--add-designer">Add designer…</span>
@@ -800,7 +816,7 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <DesignerAvatarStack designers={assignedDesigners} size={28} />
+          <DesignerAvatarStack designers={assignedDesigners} size={28} maxVisible={4} />
         </div>
       </div>
     </div>
@@ -1117,6 +1133,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                       <DesignerAvatarStack
                         designers={assignedDesigners}
                         size={compactTimeline ? 22 : 28}
+                        maxVisible={3}
                         className="designer-avatar-stack--gantt"
                       />
                     </div>
