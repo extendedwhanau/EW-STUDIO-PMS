@@ -1448,6 +1448,16 @@ html, body, #root {
 }
 
 @media (max-width: 768px) {
+  /* Mobile type scale — slightly tighter across the app */
+  :root {
+    --app-wordmark-size: 13px;
+    --project-card-leading: 13px;
+  }
+
+  html, body {
+    font-size: 13px;
+  }
+
   html.app-nav-open {
     overflow: hidden;
   }
@@ -1651,6 +1661,10 @@ html, body, #root {
     max-height: min(85dvh, calc(100vh - 32px));
     border-radius: 16px;
     margin: 0;
+  }
+
+  .modal--project {
+    --sheet-pt: 13px;
   }
   .modal-narrow {
     max-width: 100%;
