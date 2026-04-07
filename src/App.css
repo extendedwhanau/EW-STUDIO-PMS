@@ -1649,3 +1649,55 @@ html, body, #root {
 .access-gate-continue:disabled:hover {
   background: rgba(204, 204, 204, 0.5);
 }
+
+/* Idle screensaver — full reload on click to pull latest shared data */
+.idle-screensaver {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: #000000;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  animation: idle-screensaver-fade-in 0.45s ease-out both;
+}
+
+.idle-screensaver:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: -4px;
+}
+
+.idle-screensaver__logo {
+  width: min(42vmin, 280px);
+  height: auto;
+  max-width: 90vw;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  animation: idle-screensaver-spin 28s linear infinite;
+  will-change: transform;
+}
+
+@keyframes idle-screensaver-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes idle-screensaver-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

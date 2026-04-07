@@ -1053,6 +1053,72 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
 const STUDIO_ACCESS_STORAGE = 'ew_studio_access';
 const STUDIO_ACCESS_CODE = '3131';
 
+const IDLE_SCREENSAVER_MS = 20_000;
+
+function useIdleScreensaver(enabled) {
+  const [visible, setVisible] = useState(false);
+  const timerRef = useRef(null);
+  const visibleRef = useRef(false);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current != null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const scheduleIdle = useCallback(() => {
+    clearTimer();
+    if (!enabled || visibleRef.current) return;
+    timerRef.current = window.setTimeout(() => {
+      visibleRef.current = true;
+      setVisible(true);
+    }, IDLE_SCREENSAVER_MS);
+  }, [enabled, clearTimer]);
+
+  useEffect(() => {
+    if (!enabled) {
+      clearTimer();
+      visibleRef.current = false;
+      setVisible(false);
+      return undefined;
+    }
+    scheduleIdle();
+    const onActivity = () => {
+      if (visibleRef.current) return;
+      scheduleIdle();
+    };
+    const opts = { passive: true, capture: true };
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'];
+    events.forEach((ev) => document.addEventListener(ev, onActivity, opts));
+    return () => {
+      clearTimer();
+      events.forEach((ev) => document.removeEventListener(ev, onActivity, opts));
+    };
+  }, [enabled, scheduleIdle, clearTimer]);
+
+  const dismissAndReload = useCallback(() => {
+    window.location.reload();
+  }, []);
+
+  return { screensaverVisible: visible, dismissAndReload };
+}
+
+function IdleScreensaverOverlay({ visible, onDismiss }) {
+  if (!visible) return null;
+  const src = `${process.env.PUBLIC_URL ?? ''}/ew-idle-tohu.png`;
+  return (
+    <button
+      type="button"
+      className="idle-screensaver"
+      aria-label="Click to refresh the app and return"
+      onClick={onDismiss}
+    >
+      <img src={src} alt="" className="idle-screensaver__logo" draggable={false} />
+    </button>
+  );
+}
+
 function AccessScreen({ onUnlock }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState(false);
@@ -1315,6 +1381,8 @@ export default function App() {
     out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     return out;
   }, [projects]);
+
+  const idleScreensaver = useIdleScreensaver(accessUnlocked);
 
   if (!accessUnlocked) {
     return <AccessScreen onUnlock={() => setAccessUnlocked(true)} />;
@@ -1684,6 +1752,10 @@ export default function App() {
           onDelete={deleteDesigner}
         />
       )}
+      <IdleScreensaverOverlay
+        visible={idleScreensaver.screensaverVisible}
+        onDismiss={idleScreensaver.dismissAndReload}
+      />
     </div>
   );
 }
