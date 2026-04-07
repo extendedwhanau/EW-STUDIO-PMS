@@ -1554,8 +1554,8 @@ html, body, #root {
     /* Same horizontal inset as .main-content + project cards */
     padding-top: max(20px, env(safe-area-inset-top, 0px));
     padding-bottom: 14px;
-    /* Flush-left hamburger on mobile */
-    padding-left: max(0px, env(safe-area-inset-left, 0px));
+    /* Align hamburger with project cards */
+    padding-left: max(var(--app-inline), env(safe-area-inset-left, 0px));
     padding-right: max(var(--app-inline), env(safe-area-inset-right, 0px));
   }
 
