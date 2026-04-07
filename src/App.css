@@ -1621,8 +1621,8 @@ html, body, #root {
       'client client'
       'name trail';
     column-gap: 14px;
-    row-gap: 0;
-    padding: 10px 12px 10px;
+    row-gap: 2px;
+    padding: 12px 14px 12px;
     align-items: start;
   }
 
