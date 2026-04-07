@@ -517,7 +517,7 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
                   {designersAvailableToAdd.length > 0 ? (
                     <div className="sheet-select-hit sheet-select-hit--designer sheet-designer-add-hit">
                       <span className="sheet-select-visual" aria-hidden>
-                        <span className="sheet-value sheet-value--add-designer">Add designer…</span>
+                        <span className="sheet-value sheet-value--add-designer">Add</span>
                       </span>
                       <select
                         className="sheet-select-native"
@@ -529,7 +529,7 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
                           e.target.value = '';
                         }}
                       >
-                        <option value="">Add designer…</option>
+                        <option value="">Add</option>
                         {designersAvailableToAdd.map((d) => (
                           <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
