@@ -114,6 +114,13 @@ function normalizeProjectStatus(status) {
   return 'In Progress';
 }
 
+const PIPELINE_STATUSES = new Set(['Scheduled', 'Ready to Start']);
+
+/** Upcoming / pre–in-progress — listed under Scheduled, hidden from main Projects. */
+function isPipelineStatus(status) {
+  return PIPELINE_STATUSES.has(normalizeProjectStatus(status));
+}
+
 /** Sentence case labels for sheet-style status display */
 function formatStatusForDisplay(status) {
   const s = normalizeProjectStatus(status);
@@ -1272,6 +1279,8 @@ export default function App() {
     : projects.filter(p => p.designerId === filterDesigner);
 
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
+  const mainProjects = activeProjects.filter(p => !isPipelineStatus(p.status));
+  const pipelineProjects = activeProjects.filter(p => isPipelineStatus(p.status));
   const archivedProjects = designerFiltered
     .filter(p => p.status === 'Complete')
     .slice()
@@ -1281,10 +1290,15 @@ export default function App() {
   const sortFeed = (list) =>
     list.slice().sort((a, b) => (a.endDate || '').localeCompare(b.endDate || ''));
 
-  const priorityFeed = sortFeed(activeProjects.filter(p => (p.priority || 'priority') === 'priority'));
-  const smallerJobsFeed = sortFeed(activeProjects.filter(p => (p.priority || 'priority') === 'background'));
+  const priorityFeed = sortFeed(mainProjects.filter(p => (p.priority || 'priority') === 'priority'));
+  const smallerJobsFeed = sortFeed(mainProjects.filter(p => (p.priority || 'priority') === 'background'));
+  const pipelinePriorityFeed = sortFeed(pipelineProjects.filter(p => (p.priority || 'priority') === 'priority'));
+  const pipelineSmallerJobsFeed = sortFeed(pipelineProjects.filter(p => (p.priority || 'priority') === 'background'));
 
-  const activeCount = projects.filter(p => p.status !== 'Complete').length;
+  const mainProjectCount = projects.filter(
+    p => p.status !== 'Complete' && !isPipelineStatus(p.status),
+  ).length;
+  const scheduledCount = projects.filter(p => isPipelineStatus(p.status)).length;
   const archivedCount = projects.filter(p => p.status === 'Complete').length;
 
   const existingClientNames = useMemo(() => {
@@ -1333,6 +1347,13 @@ export default function App() {
             onClick={() => { setView('projects'); closeSidebar(); }}
           >
             Projects
+          </button>
+          <button
+            type="button"
+            className={`nav-item ${view === 'scheduled' ? 'active' : ''}`}
+            onClick={() => { setView('scheduled'); closeSidebar(); }}
+          >
+            Scheduled
           </button>
           <button
             type="button"
@@ -1431,7 +1452,13 @@ export default function App() {
             </button>
             <div className="page-title-cluster">
               <h1 className="page-title">
-                {view === 'projects' ? 'Projects' : view === 'archive' ? 'Archive' : 'Timeline'}
+                {view === 'projects'
+                  ? 'Projects'
+                  : view === 'scheduled'
+                    ? 'Scheduled'
+                    : view === 'archive'
+                      ? 'Archive'
+                      : 'Timeline'}
               </h1>
             </div>
           </div>
@@ -1465,13 +1492,22 @@ export default function App() {
                 </div>
               </div>
             )}
-            {((view === 'projects' && activeCount > 0)
+            {((view === 'projects' && mainProjectCount > 0)
+              || (view === 'scheduled' && scheduledCount > 0)
               || (view === 'archive' && archivedCount > 0)
               || view !== 'archive') && (
               <div className="main-header-trailing">
-                {view === 'projects' && activeCount > 0 && (
-                  <span className="page-title-badge" aria-label={`${activeCount} active projects`}>
-                    {activeCount}
+                {view === 'projects' && mainProjectCount > 0 && (
+                  <span className="page-title-badge" aria-label={`${mainProjectCount} active projects`}>
+                    {mainProjectCount}
+                  </span>
+                )}
+                {view === 'scheduled' && scheduledCount > 0 && (
+                  <span
+                    className="page-title-badge page-title-badge--muted"
+                    aria-label={`${scheduledCount} scheduled jobs`}
+                  >
+                    {scheduledCount}
                   </span>
                 )}
                 {view === 'archive' && archivedCount > 0 && (
@@ -1500,9 +1536,11 @@ export default function App() {
         <div className="main-content">
           {view === 'projects' && (
             <div className="project-list">
-              {activeProjects.length === 0 ? (
+              {mainProjects.length === 0 ? (
                 <div className="empty-state">
-                  No active projects. Add one to get started, or check Archive for completed work.
+                  {pipelineProjects.length > 0
+                    ? 'Nothing in progress on this list. Open Scheduled for jobs that have not started yet.'
+                    : 'No active projects. Add one to get started—it appears under Scheduled until you move it forward—or check Archive for completed work.'}
                 </div>
               ) : (
                 <>
@@ -1524,6 +1562,47 @@ export default function App() {
                     <div className="project-section">
                       <h2 className="project-feed-heading">Secondary</h2>
                       {smallerJobsFeed.map(p => (
+                        <ProjectRow
+                          key={p.id}
+                          project={p}
+                          designers={designers}
+                          onClick={() => setEditingProject(p)}
+                          onStatusChange={updateProjectStatus}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {view === 'scheduled' && (
+            <div className="project-list">
+              {pipelineProjects.length === 0 ? (
+                <div className="empty-state">
+                  No scheduled jobs here. New projects start as Scheduled; move them to Ready to Start or In progress when work begins.
+                </div>
+              ) : (
+                <>
+                  {pipelinePriorityFeed.length > 0 && (
+                    <div className="project-section">
+                      <h2 className="project-feed-heading">Priority</h2>
+                      {pipelinePriorityFeed.map(p => (
+                        <ProjectRow
+                          key={p.id}
+                          project={p}
+                          designers={designers}
+                          onClick={() => setEditingProject(p)}
+                          onStatusChange={updateProjectStatus}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {pipelineSmallerJobsFeed.length > 0 && (
+                    <div className="project-section">
+                      <h2 className="project-feed-heading">Secondary</h2>
+                      {pipelineSmallerJobsFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
