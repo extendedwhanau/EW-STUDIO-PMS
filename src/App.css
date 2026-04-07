@@ -544,6 +544,23 @@ html, body, #root {
   box-shadow: none;
 }
 
+.designer-avatar-stack {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.designer-avatar-stack__slot {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.designer-avatar-stack__slot + .designer-avatar-stack__slot {
+  margin-left: -10px;
+}
+
 /* Gantt timeline: src/gantt-timeline.css (imported after this file in App.js) */
 
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
@@ -891,6 +908,87 @@ html, body, #root {
 
 .sheet-select-hit--designer:hover .sheet-value {
   color: var(--sheet-muted);
+}
+
+.sheet-value--add-designer {
+  color: var(--sheet-muted);
+  font-weight: 500;
+}
+
+.sheet-pair--designers-assign {
+  align-items: flex-start;
+}
+
+.sheet-field-value--designers-assign {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.sheet-designer-assign {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.sheet-designer-chip {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.05);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.sheet-designer-chip-name {
+  font-size: var(--sheet-pt);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.sheet-designer-chip-remove {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color 0.12s ease, background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sheet-designer-chip-remove:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.sheet-designer-add-hit {
+  flex: 0 0 auto;
+  min-width: 120px;
+  max-width: 100%;
 }
 
 .sheet-field-value--date {

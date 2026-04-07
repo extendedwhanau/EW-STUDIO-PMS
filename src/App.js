@@ -133,6 +133,53 @@ function statusAccent(status) {
   return STATUS_ACCENT[status] || '#A8A8A8';
 }
 
+const MAX_PROJECT_DESIGNERS = 2;
+
+/** Stable list of designer ids (max 2); supports legacy `designerId` only. */
+function getProjectDesignerIds(project) {
+  if (!project) return [];
+  const raw = Array.isArray(project.designerIds) ? project.designerIds : [];
+  const fromArr = [...new Set(raw.filter((id) => id != null && String(id).trim() !== ''))].slice(
+    0,
+    MAX_PROJECT_DESIGNERS,
+  );
+  if (fromArr.length > 0) return fromArr;
+  const leg = project.designerId != null && String(project.designerId).trim() !== '' ? project.designerId : '';
+  return leg ? [leg] : [];
+}
+
+function normalizeProjectDesignersOnProject(p) {
+  const ids = getProjectDesignerIds(p);
+  return {
+    ...p,
+    designerIds: ids,
+    designerId: ids[0] || '',
+  };
+}
+
+function getProjectDesigners(project, designers) {
+  return getProjectDesignerIds(project)
+    .map((id) => designers.find((d) => d.id === id))
+    .filter(Boolean);
+}
+
+function DesignerAvatarStack({ designers: stackDesigners, size = 28, className = '' }) {
+  if (!stackDesigners?.length) return null;
+  return (
+    <div className={['designer-avatar-stack', className].filter(Boolean).join(' ')}>
+      {stackDesigners.map((d, i) => (
+        <span
+          key={d.id}
+          className="designer-avatar-stack__slot"
+          style={{ zIndex: stackDesigners.length - i }}
+        >
+          <Avatar designer={d} size={size} />
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ── Sample data ───────────────────────────────────────────────────────────────
 const SAMPLE_DESIGNERS = [
   { id: 'd1', name: 'Tyrone', colorIdx: 0 },
@@ -145,7 +192,7 @@ const SAMPLE_DESIGNERS = [
 const SAMPLE_PROJECTS = [
   {
     id: 'p1', name: 'Annual Report', client: 'Meridian Co.',
-    designerId: 'd1', status: 'In Progress', priority: 'priority',
+    designerId: 'd1', designerIds: ['d1', 'd2'], status: 'In Progress', priority: 'priority',
     startDate: '2025-04-01', endDate: '2025-04-28',
     notes: 'Cover options due first.',
   },
@@ -330,14 +377,18 @@ function Avatar({ designer, size = 32 }) {
 function ProjectModal({ project, designers, existingClients = [], onClose, onSave, onDelete }) {
   const [form, setForm] = useState(() => {
     if (project) {
-      return {
+      const merged = normalizeProjectDesignersOnProject({
         ...project,
         status: normalizeProjectStatus(project.status),
         priority: project.priority || 'priority',
-      };
+      });
+      return merged;
     }
+    const firstId = designers[0]?.id || '';
     return {
-      id: uuidv4(), name: '', client: '', designerId: designers[0]?.id || '',
+      id: uuidv4(), name: '', client: '',
+      designerIds: firstId ? [firstId] : [],
+      designerId: firstId,
       status: 'Scheduled', startDate: today(), endDate: addDays(today(), 14),
       notes: '', priority: 'priority',
     };
@@ -345,7 +396,24 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const designer = designers.find(d => d.id === form.designerId);
+  const syncDesignerIds = (ids) => {
+    const clean = [...new Set(ids.filter((id) => id != null && String(id).trim() !== ''))].slice(
+      0,
+      MAX_PROJECT_DESIGNERS,
+    );
+    setForm((f) => ({ ...f, designerIds: clean, designerId: clean[0] || '' }));
+  };
+
+  const addDesignerId = (id) => {
+    if (!id || form.designerIds.includes(id) || form.designerIds.length >= MAX_PROJECT_DESIGNERS) return;
+    syncDesignerIds([...form.designerIds, id]);
+  };
+
+  const removeDesignerId = (id) => {
+    syncDesignerIds(form.designerIds.filter((x) => x !== id));
+  };
+
+  const designersAvailableToAdd = designers.filter((d) => !form.designerIds.includes(d.id));
 
   const clientDatalistId = useId();
 
@@ -406,26 +474,52 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
           </div>
 
           <div className="sheet-grid-row">
-            <div className="sheet-pair">
-              <label htmlFor="project-modal-designer" className="sheet-field-label">
-                Designer
-              </label>
-              <div className="sheet-field-value">
-                <div className="sheet-select-hit sheet-select-hit--designer">
-                  <span className="sheet-select-visual" aria-hidden>
-                    <span className="sheet-value">{designer?.name || 'Unassigned'}</span>
-                  </span>
-                  <select
-                    id="project-modal-designer"
-                    className="sheet-select-native"
-                    value={form.designerId}
-                    onChange={e => set('designerId', e.target.value)}
-                  >
-                    {designers.map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                    <option value="">Unassigned</option>
-                  </select>
+            <div className="sheet-pair sheet-pair--designers-assign">
+              <span id="project-modal-designers-label" className="sheet-field-label">
+                Designers
+              </span>
+              <div className="sheet-field-value sheet-field-value--designers-assign">
+                <div className="sheet-designer-assign" role="group" aria-labelledby="project-modal-designers-label">
+                  {form.designerIds.map((id) => {
+                    const d = designers.find((x) => x.id === id);
+                    if (!d) return null;
+                    return (
+                      <div key={id} className="sheet-designer-chip">
+                        <Avatar designer={d} size={28} />
+                        <span className="sheet-designer-chip-name">{d.name}</span>
+                        <button
+                          type="button"
+                          className="sheet-designer-chip-remove"
+                          onClick={() => removeDesignerId(id)}
+                          aria-label={`Remove ${d.name}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {form.designerIds.length < MAX_PROJECT_DESIGNERS && designersAvailableToAdd.length > 0 ? (
+                    <div className="sheet-select-hit sheet-select-hit--designer sheet-designer-add-hit">
+                      <span className="sheet-select-visual" aria-hidden>
+                        <span className="sheet-value sheet-value--add-designer">Add designer…</span>
+                      </span>
+                      <select
+                        className="sheet-select-native"
+                        value=""
+                        aria-label="Add designer"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v) addDesignerId(v);
+                          e.target.value = '';
+                        }}
+                      >
+                        <option value="">Add designer…</option>
+                        {designersAvailableToAdd.map((d) => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -645,7 +739,7 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
 
 // ── Project Row ───────────────────────────────────────────────────────────────
 function ProjectRow({ project, designers, onClick, onStatusChange }) {
-  const designer = designers.find(d => d.id === project.designerId);
+  const assignedDesigners = getProjectDesigners(project, designers);
   const accent = statusAccent(project.status);
   const isComplete = project.status === 'Complete';
   const dateStr = isComplete
@@ -706,7 +800,7 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          {designer ? <Avatar designer={designer} size={28} /> : null}
+          <DesignerAvatarStack designers={assignedDesigners} size={28} />
         </div>
       </div>
     </div>
@@ -759,17 +853,24 @@ function isFirstOfMonthNZ(epochDay) {
 const GANTT_DESKTOP_VIEWPORT_DAYS = 92;
 const GANTT_MOBILE_BREAKPOINT_PX = 768;
 
+function timelineDesignerRank(project, rank, tail) {
+  const ids = getProjectDesignerIds(project);
+  if (ids.length === 0) return tail;
+  let best = tail;
+  for (const id of ids) {
+    const r = rank[id];
+    if (r !== undefined && r < best) best = r;
+  }
+  return best;
+}
+
 /** Timeline rows: group by designer (sidebar roster order), then due date like project feed. */
 function sortTimelineProjectsByDesigner(projects, designers) {
   const rank = Object.fromEntries(designers.map((d, i) => [d.id, i]));
   const tail = designers.length;
   return projects.slice().sort((a, b) => {
-    const ra = a.designerId != null && a.designerId !== '' && rank[a.designerId] !== undefined
-      ? rank[a.designerId]
-      : tail;
-    const rb = b.designerId != null && b.designerId !== '' && rank[b.designerId] !== undefined
-      ? rank[b.designerId]
-      : tail;
+    const ra = timelineDesignerRank(a, rank, tail);
+    const rb = timelineDesignerRank(b, rank, tail);
     if (ra !== rb) return ra - rb;
     return (a.endDate || '').localeCompare(b.endDate || '');
   });
@@ -985,7 +1086,8 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
           <div className="gantt-chart-body">
           <div className="gantt-rows">
             {orderedProjects.map((project) => {
-              const designer = designers.find(d => d.id === project.designerId);
+              const assignedDesigners = getProjectDesigners(project, designers);
+              const designer = assignedDesigners[0];
               const colors = designer ? getDesignerPalette(designer) : { bg: '#EEE', bar: '#CCC', text: '#888' };
               const startPct = pct(daysFromEpoch(project.startDate));
               const endPct = pct(daysFromEpoch(project.endDate));
@@ -1012,7 +1114,11 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                 >
                   <div className="gantt-label">
                     <div className="gantt-avatar-float">
-                      <Avatar designer={designer} size={compactTimeline ? 22 : 28} />
+                      <DesignerAvatarStack
+                        designers={assignedDesigners}
+                        size={compactTimeline ? 22 : 28}
+                        className="designer-avatar-stack--gantt"
+                      />
                     </div>
                   </div>
                   <div className="gantt-track">
@@ -1194,7 +1300,9 @@ export default function App() {
       raw = null;
     }
     const list = Array.isArray(raw) && raw.length > 0 ? raw : SAMPLE_PROJECTS;
-    return list.map((p) => ({ ...p, status: normalizeProjectStatus(p.status) }));
+    return list.map((p) =>
+      normalizeProjectDesignersOnProject({ ...p, status: normalizeProjectStatus(p.status) }),
+    );
   });
   const [editingProject, setEditingProject] = useState(null);
   const [showNewProject, setShowNewProject] = useState(false);
@@ -1238,7 +1346,9 @@ export default function App() {
       if (remote.designers.length > 0 || remote.projects.length > 0) {
         setDesigners(remote.designers.map(designerWithNormalizedColor));
         setProjects(
-          remote.projects.map((p) => ({ ...p, status: normalizeProjectStatus(p.status) })),
+          remote.projects.map((p) =>
+            normalizeProjectDesignersOnProject({ ...p, status: normalizeProjectStatus(p.status) }),
+          ),
         );
       } else {
         await saveWorkspacePayload({
@@ -1295,10 +1405,11 @@ export default function App() {
   const closeSidebar = () => setSidebarOpen(false);
 
   const saveProject = (p) => {
+    const withDesigners = normalizeProjectDesignersOnProject(p);
     const base = {
-      ...p,
-      status: normalizeProjectStatus(p.status),
-      priority: p.priority === 'background' ? 'background' : 'priority',
+      ...withDesigners,
+      status: normalizeProjectStatus(withDesigners.status),
+      priority: withDesigners.priority === 'background' ? 'background' : 'priority',
     };
     const normalized = base.status === 'Complete'
       ? { ...base, completedAt: base.completedAt || today() }
@@ -1322,7 +1433,11 @@ export default function App() {
 
   const deleteDesigner = (id) => {
     setDesigners((prev) => prev.filter((x) => x.id !== id));
-    setProjects((prev) => prev.map((p) => (p.designerId === id ? { ...p, designerId: '' } : p)));
+    setProjects((prev) => prev.map((p) => {
+      if (!getProjectDesignerIds(p).includes(id)) return p;
+      const nextIds = getProjectDesignerIds(p).filter((x) => x !== id);
+      return normalizeProjectDesignersOnProject({ ...p, designerIds: nextIds });
+    }));
     setFilterDesigner((fd) => (fd === id ? 'all' : fd));
   };
 
@@ -1342,7 +1457,7 @@ export default function App() {
 
   const designerFiltered = filterDesigner === 'all'
     ? projects
-    : projects.filter(p => p.designerId === filterDesigner);
+    : projects.filter((p) => getProjectDesignerIds(p).includes(filterDesigner));
 
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
   const mainProjects = activeProjects.filter(p => !isPipelineStatus(p.status));
