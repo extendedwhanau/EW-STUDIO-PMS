@@ -116,7 +116,7 @@ function normalizeProjectStatus(status) {
 
 const PIPELINE_STATUSES = new Set(['Scheduled', 'Ready to Start']);
 
-/** Upcoming / pre–in-progress — listed under Scheduled, hidden from main Projects. */
+/** Upcoming / pre–in-progress — listed under Schedule, hidden from main Projects. */
 function isPipelineStatus(status) {
   return PIPELINE_STATUSES.has(normalizeProjectStatus(status));
 }
@@ -1350,17 +1350,17 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={`nav-item ${view === 'scheduled' ? 'active' : ''}`}
-            onClick={() => { setView('scheduled'); closeSidebar(); }}
-          >
-            Scheduled
-          </button>
-          <button
-            type="button"
             className={`nav-item ${view === 'gantt' ? 'active' : ''}`}
             onClick={() => { setView('gantt'); closeSidebar(); }}
           >
             Timeline
+          </button>
+          <button
+            type="button"
+            className={`nav-item ${view === 'scheduled' ? 'active' : ''}`}
+            onClick={() => { setView('scheduled'); closeSidebar(); }}
+          >
+            Schedule
           </button>
           <button
             type="button"
@@ -1455,7 +1455,7 @@ export default function App() {
                 {view === 'projects'
                   ? 'Projects'
                   : view === 'scheduled'
-                    ? 'Scheduled'
+                    ? 'Schedule'
                     : view === 'archive'
                       ? 'Archive'
                       : 'Timeline'}
@@ -1505,7 +1505,7 @@ export default function App() {
                 {view === 'scheduled' && scheduledCount > 0 && (
                   <span
                     className="page-title-badge page-title-badge--muted"
-                    aria-label={`${scheduledCount} scheduled jobs`}
+                    aria-label={`${scheduledCount} jobs on Schedule`}
                   >
                     {scheduledCount}
                   </span>
@@ -1539,8 +1539,8 @@ export default function App() {
               {mainProjects.length === 0 ? (
                 <div className="empty-state">
                   {pipelineProjects.length > 0
-                    ? 'Nothing in progress on this list. Open Scheduled for jobs that have not started yet.'
-                    : 'No active projects. Add one to get started—it appears under Scheduled until you move it forward—or check Archive for completed work.'}
+                    ? 'Nothing in progress on this list. Open Schedule for jobs that have not started yet.'
+                    : 'No active projects. Add one to get started—it appears on Schedule until you move it forward—or check Archive for completed work.'}
                 </div>
               ) : (
                 <>
@@ -1581,7 +1581,7 @@ export default function App() {
             <div className="project-list">
               {pipelineProjects.length === 0 ? (
                 <div className="empty-state">
-                  No scheduled jobs here. New projects start as Scheduled; move them to Ready to Start or In progress when work begins.
+                  Nothing on Schedule yet. New projects start with status Scheduled; move them to Ready to Start or In progress when work begins.
                 </div>
               ) : (
                 <>
