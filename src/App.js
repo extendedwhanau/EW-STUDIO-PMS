@@ -495,30 +495,32 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
               role="group"
               aria-labelledby="project-modal-designers-label"
             >
-              <div className="sheet-designers-topline">
+              <div className="sheet-pair sheet-pair--priority-top sheet-pair--designers-heading">
                 <span id="project-modal-designers-label" className="sheet-field-label">
                   Designers
                 </span>
-                {designersAvailableToAdd.length > 0 ? (
-                  <div className="sheet-designer-add-inline">
-                    <span className="sheet-designer-add-inline-text" aria-hidden>Add</span>
-                    <select
-                      className="sheet-select-native sheet-select-native--add-inline"
-                      value=""
-                      aria-label="Add designer"
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v) addDesignerId(v);
-                        e.target.value = '';
-                      }}
-                    >
-                      <option value="">Add</option>
-                      {designersAvailableToAdd.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
+                <div className="sheet-field-value">
+                  {designersAvailableToAdd.length > 0 ? (
+                    <div className="sheet-designer-add-yesno">
+                      <span className="priority-yesno sheet-designer-add-yesno-label" aria-hidden>Add</span>
+                      <select
+                        className="sheet-select-native sheet-select-native--add-yesno"
+                        value=""
+                        aria-label="Add designer"
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v) addDesignerId(v);
+                          e.target.value = '';
+                        }}
+                      >
+                        <option value="">Add</option>
+                        {designersAvailableToAdd.map((d) => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                </div>
               </div>
               <div className="sheet-designer-assign sheet-designer-assign--chips">
                 {form.designerIds.map((id) => {
