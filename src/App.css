@@ -1674,9 +1674,9 @@ html, body, #root {
 }
 
 .idle-screensaver__logo {
-  width: min(42vmin, 280px);
+  width: min(62vmin, 440px);
   height: auto;
-  max-width: 90vw;
+  max-width: 94vw;
   object-fit: contain;
   pointer-events: none;
   user-select: none;
