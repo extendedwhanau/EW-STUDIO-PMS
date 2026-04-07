@@ -1729,7 +1729,7 @@ export default function App() {
                     onClick={() => setShowNewProject(true)}
                     aria-label="New Project"
                   >
-                    New Project
+                    New
                   </button>
                 )}
               </div>

@@ -1594,32 +1594,27 @@ html, body, #root {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       'client client'
-      'name due'
-      'trail trail';
+      'name trail';
     column-gap: 14px;
-    row-gap: 6px;
-    padding: 18px 16px 18px;
+    row-gap: 4px;
+    padding: 12px 14px 12px;
     align-items: start;
   }
 
   .project-row-col--due {
-    justify-content: flex-end;
-    text-align: right;
-    align-self: start;
+    display: none;
   }
 
   .project-row-due-pair {
-    justify-content: flex-end;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 0 0.25em;
-    text-align: right;
+    display: none;
   }
 
   .project-row-col--trail {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    justify-content: flex-end;
     align-items: center;
+    gap: 10px;
+    align-self: center;
   }
 
   .project-status-hit {
