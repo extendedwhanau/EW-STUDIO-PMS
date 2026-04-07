@@ -82,8 +82,8 @@ function designerWithNormalizedColor(d) {
 }
 
 const STATUS_OPTIONS = [
-  'Awaiting start',
-  'Content received',
+  'Scheduled',
+  'Ready to Start',
   'In Progress',
   'In Review',
   'Complete',
@@ -91,8 +91,8 @@ const STATUS_OPTIONS = [
 
 /** Row dot colours — blue / purple / green / amber / grey. */
 const STATUS_ACCENT = {
-  'Awaiting start': '#4F7FD9',
-  'Content received': '#8B6FD6',
+  Scheduled: '#4F7FD9',
+  'Ready to Start': '#8B6FD6',
   'In Progress': '#22A45A',
   'In Review': '#E5A50A',
   Complete: '#9CA3AF',
@@ -101,6 +101,11 @@ const STATUS_ACCENT = {
 const LEGACY_STATUS_MAP = {
   'Waiting on Client': 'In Review',
   'Ready to Print': 'In Progress',
+  Schedule: 'Scheduled',
+  'Scheduled - Awaiting start': 'Scheduled',
+  'Awaiting start': 'Scheduled',
+  'Ready to Start - content received': 'Ready to Start',
+  'Content received': 'Ready to Start',
 };
 
 function normalizeProjectStatus(status) {
@@ -326,7 +331,7 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
     }
     return {
       id: uuidv4(), name: '', client: '', designerId: designers[0]?.id || '',
-      status: 'Awaiting start', startDate: today(), endDate: addDays(today(), 14),
+      status: 'Scheduled', startDate: today(), endDate: addDays(today(), 14),
       notes: '', priority: 'priority',
     };
   });
@@ -980,7 +985,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
               const widthPct = endPct - startPct;
               const isWaiting = project.status === 'In Review';
               const isComplete = project.status === 'Complete';
-              const isAwaitingStart = project.status === 'Awaiting start';
+              const isAwaitingStart = project.status === 'Scheduled';
 
               return (
                 <div
