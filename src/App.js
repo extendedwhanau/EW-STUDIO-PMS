@@ -930,8 +930,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const minStart = Math.min(...allStarts);
   const maxEnd = Math.max(...allEnds);
   const ganttLastDay = daysFromEpoch('2026-12-31');
-  // Always start 1 week before today to avoid odd leading whitespace.
-  let minDay = todayDay - 7;
+  let minDay = minStart - 14;
   // Room to plan ahead, but timeline never extends past 31 Dec 2026
   let maxDay = Math.min(
     Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
@@ -1493,8 +1492,20 @@ export default function App() {
   const sortFeed = (list) =>
     list.slice().sort((a, b) => (a.endDate || '').localeCompare(b.endDate || ''));
 
+  /** Secondary list: In progress first, then in review; within each group by due date. */
+  const SECONDARY_STATUS_ORDER = { 'In Progress': 0, 'In Review': 1 };
+  const sortSecondaryFeed = (list) =>
+    list.slice().sort((a, b) => {
+      const sa = normalizeProjectStatus(a.status);
+      const sb = normalizeProjectStatus(b.status);
+      const ra = SECONDARY_STATUS_ORDER[sa] ?? 99;
+      const rb = SECONDARY_STATUS_ORDER[sb] ?? 99;
+      if (ra !== rb) return ra - rb;
+      return (a.endDate || '').localeCompare(b.endDate || '');
+    });
+
   const priorityFeed = sortFeed(mainProjects.filter(p => (p.priority || 'priority') === 'priority'));
-  const smallerJobsFeed = sortFeed(mainProjects.filter(p => (p.priority || 'priority') === 'background'));
+  const smallerJobsFeed = sortSecondaryFeed(mainProjects.filter(p => (p.priority || 'priority') === 'background'));
   const pipelinePriorityFeed = sortFeed(pipelineProjects.filter(p => (p.priority || 'priority') === 'priority'));
   const pipelineSmallerJobsFeed = sortFeed(pipelineProjects.filter(p => (p.priority || 'priority') === 'background'));
 

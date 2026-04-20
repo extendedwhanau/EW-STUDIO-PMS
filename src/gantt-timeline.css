@@ -410,11 +410,6 @@
 }
 
 @media (max-width: 768px) {
-  /* Flush timeline icons to the left edge (no extra inset). */
-  .gantt-label {
-    margin-left: 0;
-  }
-
   .gantt-frame {
     padding-left: max(var(--app-inline), env(safe-area-inset-left, 0px));
     padding-right: max(var(--app-inline), env(safe-area-inset-right, 0px));
