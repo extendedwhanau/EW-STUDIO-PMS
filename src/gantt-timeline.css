@@ -263,31 +263,46 @@
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   padding: 14px 0 20px;
   background: transparent;
+}
+
+.gantt-designer-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .gantt-row {
   display: flex;
   align-items: stretch;
-  min-height: 44px;
+  min-height: 40px;
   border-radius: 10px;
   background: transparent;
   transition: background 0.12s ease;
 }
 
-.gantt-row[role='button'] {
+.gantt-row--lane {
+  min-height: 34px;
+}
+
+.gantt-row--lane .gantt-track {
+  min-height: 34px;
+}
+
+.gantt-bar[role='button'] {
   cursor: pointer;
 }
 
-.gantt-row[role='button']:hover {
-  background: rgba(0, 0, 0, 0.04);
+.gantt-bar[role='button']:hover {
+  filter: brightness(0.97);
 }
 
-.gantt-row[role='button']:focus-visible {
+.gantt-bar[role='button']:focus-visible {
   outline: 2px solid var(--text-primary);
-  outline-offset: 2px;
+  outline-offset: 1px;
+  z-index: 1;
 }
 
 /* Avatar column — room for stacked avatars + overflow badge */
@@ -419,13 +434,13 @@
   }
 
   .gantt-chart {
-    --gantt-lead-w: calc(10px + 78px + 4px);
+    --gantt-lead-w: calc(10px + 56px + 4px);
   }
 
   .gantt-chart .gantt-label {
-    width: 78px;
-    min-width: 78px;
-    max-width: 78px;
+    width: 56px;
+    min-width: 56px;
+    max-width: 56px;
     margin-left: 10px;
     margin-right: 4px;
   }
@@ -434,38 +449,50 @@
     z-index: 6;
   }
 
-  .gantt-ruler-months {
-    height: 22px;
-  }
-
-  .gantt-ruler-month {
-    font-size: 10px;
-  }
-
   .gantt-ruler-ticks {
-    height: 28px;
+    height: 24px;
+  }
+
+  .gantt-tick-label--mobile-month {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: lowercase;
   }
 
   .gantt-rows {
-    gap: 8px;
-    padding-top: 12px;
+    gap: 12px;
+    padding-top: 10px;
     padding-bottom: 16px;
   }
 
+  .gantt-designer-group {
+    gap: 4px;
+  }
+
+  .gantt-row,
+  .gantt-row--lane {
+    min-height: 30px;
+  }
+
+  .gantt-row--lane .gantt-track,
+  .gantt-track {
+    min-height: 30px;
+  }
+
   .gantt-bar {
-    min-height: 28px;
+    min-height: 26px;
     height: auto;
-    padding: 3px 8px;
+    padding: 2px 6px;
     border: none;
   }
 
   .gantt-bar-client {
-    font-size: 9px;
-    font-weight: 700;
+    display: none;
   }
 
   .gantt-bar-project {
     font-size: 11px;
-    font-weight: 400;
+    font-weight: 500;
   }
 }

@@ -876,29 +876,83 @@ function isFirstOfMonthNZ(epochDay) {
   return dom === '1';
 }
 
+/** Mobile ruler: "1 jul", "1 aug" on the first of each month. */
+function ganttMobileMonthLabelNZ(epochDay) {
+  const parts = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    day: 'numeric',
+    month: 'short',
+  }).formatToParts(new Date(ganttNzNoonMs(epochDay)));
+  const dayNum = parts.find((p) => p.type === 'day')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value?.toLowerCase();
+  return `${dayNum} ${month}`;
+}
+
+const GANTT_MOBILE_MQ = '(max-width: 768px)';
+
+function useGanttMobileLayout() {
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia(GANTT_MOBILE_MQ).matches
+  );
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mq = window.matchMedia(GANTT_MOBILE_MQ);
+    const sync = () => setMobile(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+  return mobile;
+}
+
 /** Pixels per day on the timeline (horizontal scroll width). */
 const GANTT_PX_PER_DAY = 3;
 
-function timelineDesignerRank(project, rank, tail) {
-  const ids = getProjectDesignerIds(project);
-  if (ids.length === 0) return tail;
-  let best = tail;
-  for (const id of ids) {
-    const r = rank[id];
-    if (r !== undefined && r < best) best = r;
-  }
-  return best;
-}
+/** Pack each designer's jobs into non-overlapping lanes — fewer rows than one job per line. */
+function groupTimelineByDesignerLanes(projects, designers) {
+  const byDesigner = new Map();
 
-/** Timeline rows: group by designer (sidebar roster order), then due date like project feed. */
-function sortTimelineProjectsByDesigner(projects, designers) {
-  const rank = Object.fromEntries(designers.map((d, i) => [d.id, i]));
-  const tail = designers.length;
-  return projects.slice().sort((a, b) => {
-    const ra = timelineDesignerRank(a, rank, tail);
-    const rb = timelineDesignerRank(b, rank, tail);
-    if (ra !== rb) return ra - rb;
-    return (a.endDate || '').localeCompare(b.endDate || '');
+  for (const project of projects) {
+    const ids = getProjectDesignerIds(project);
+    const key = ids[0] || '__unassigned__';
+    if (!byDesigner.has(key)) byDesigner.set(key, []);
+    byDesigner.get(key).push(project);
+  }
+
+  const orderedKeys = designers
+    .map((d) => d.id)
+    .filter((id) => byDesigner.has(id));
+  if (byDesigner.has('__unassigned__')) orderedKeys.push('__unassigned__');
+
+  return orderedKeys.map((designerId) => {
+    const designerProjects = byDesigner.get(designerId).slice().sort((a, b) => {
+      const startCmp = (a.startDate || '').localeCompare(b.startDate || '');
+      if (startCmp !== 0) return startCmp;
+      return (a.endDate || '').localeCompare(b.endDate || '');
+    });
+
+    const laneEnds = [];
+    const lanes = [];
+
+    for (const project of designerProjects) {
+      const start = daysFromEpoch(project.startDate);
+      const end = daysFromEpoch(project.endDate);
+      let laneIdx = laneEnds.findIndex((lastEnd) => lastEnd < start);
+      if (laneIdx === -1) {
+        laneIdx = laneEnds.length;
+        laneEnds.push(end);
+        lanes.push([project]);
+      } else {
+        laneEnds[laneIdx] = Math.max(laneEnds[laneIdx], end);
+        lanes[laneIdx].push(project);
+      }
+    }
+
+    const designer = designerId === '__unassigned__'
+      ? null
+      : designers.find((d) => d.id === designerId) || null;
+
+    return { designerId, designer, lanes };
   });
 }
 
@@ -928,10 +982,11 @@ function GanttChart({ projects, designers, onSelectProject, onRegisterNav, previ
 
 function GanttChartInner({ projects: validProjects, designers, onSelectProject, onRegisterNav }) {
   const scrollRef = useRef(null);
+  const mobileLayout = useGanttMobileLayout();
   const todayDay = daysFromEpoch(today());
 
-  const orderedProjects = useMemo(
-    () => sortTimelineProjectsByDesigner(validProjects, designers),
+  const designerGroups = useMemo(
+    () => groupTimelineByDesignerLanes(validProjects, designers),
     [validProjects, designers]
   );
 
@@ -941,9 +996,9 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const maxEnd = Math.max(...allEnds);
   const ganttLastDay = daysFromEpoch('2026-12-31');
   let minDay = minStart - 14;
-  // Room to plan ahead, but timeline never extends past 31 Dec 2026
+  // Enough room to plan ahead without a huge empty scroll area
   let maxDay = Math.min(
-    Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
+    Math.max(maxEnd + 45, todayDay + 120, minStart + 60),
     ganttLastDay
   );
   if (maxDay <= minDay) {
@@ -972,21 +1027,38 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     cur.setMonth(cur.getMonth() + 1);
   }
 
-  const gridLines = [];
-  let prevFridayYm = null;
-  for (let day = minDay; day <= maxDay; day++) {
-    if (!isFridayNZ(day)) continue;
-    const ym = nzYearMonthKey(day);
-    const firstFridayOfMonth = prevFridayYm === null || ym !== prevFridayYm;
-    prevFridayYm = ym;
-    gridLines.push({
-      day,
-      left: pct(day),
-      monthStart: isFirstOfMonthNZ(day),
-      firstFridayOfMonth,
-      showLabel: true,
-    });
-  }
+  const gridLines = useMemo(() => {
+    if (mobileLayout) {
+      const lines = [];
+      for (let day = minDay; day <= maxDay; day++) {
+        if (!isFirstOfMonthNZ(day)) continue;
+        lines.push({
+          day,
+          left: pct(day),
+          monthStart: true,
+          label: ganttMobileMonthLabelNZ(day),
+        });
+      }
+      return lines;
+    }
+
+    const lines = [];
+    let prevFridayYm = null;
+    for (let day = minDay; day <= maxDay; day++) {
+      if (!isFridayNZ(day)) continue;
+      const ym = nzYearMonthKey(day);
+      const firstFridayOfMonth = prevFridayYm === null || ym !== prevFridayYm;
+      prevFridayYm = ym;
+      lines.push({
+        day,
+        left: pct(day),
+        monthStart: isFirstOfMonthNZ(day),
+        firstFridayOfMonth,
+        label: ganttTickDayNumberNZ(day),
+      });
+    }
+    return lines;
+  }, [mobileLayout, minDay, maxDay, totalDays]);
 
   const todayPct = pct(todayDay);
 
@@ -1018,7 +1090,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     <div className="gantt-frame">
       <div className="gantt-wrapper" ref={scrollRef}>
         <div
-          className="gantt-chart"
+          className={`gantt-chart${mobileLayout ? ' gantt-chart--mobile' : ''}`}
           style={{ minWidth: chartMinWidthPx }}
         >
           <div className="gantt-chart-lines" aria-hidden>
@@ -1041,6 +1113,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
           </div>
           <div className="gantt-chart-header">
           <div className="gantt-ruler">
+            {!mobileLayout && (
             <div className="gantt-ruler-months">
               {months.map((m, i) => (
                 <span
@@ -1052,6 +1125,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                 </span>
               ))}
             </div>
+            )}
             <div className="gantt-ruler-ticks">
               {todayPct >= 0 && todayPct <= 100 && (
                 <div
@@ -1066,13 +1140,11 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                   className="gantt-tick"
                   style={{ left: `${line.left}%` }}
                 >
-                  {line.showLabel && (
-                    <span
-                      className={`gantt-tick-label${line.firstFridayOfMonth ? ' gantt-tick-label--month' : ''}`}
-                    >
-                      {ganttTickDayNumberNZ(line.day)}
-                    </span>
-                  )}
+                  <span
+                    className={`gantt-tick-label${line.firstFridayOfMonth ? ' gantt-tick-label--month' : ''}${mobileLayout ? ' gantt-tick-label--mobile-month' : ''}`}
+                  >
+                    {line.label}
+                  </span>
                 </div>
               ))}
             </div>
@@ -1081,70 +1153,81 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
 
           <div className="gantt-chart-body">
           <div className="gantt-rows">
-            {orderedProjects.map((project) => {
-              const assignedDesigners = getProjectDesigners(project, designers);
-              const designer = assignedDesigners[0];
-              const colors = designer ? getDesignerPalette(designer) : { bg: '#EEE', bar: '#CCC', text: '#888' };
-              const startPct = pct(daysFromEpoch(project.startDate));
-              const endPct = pct(daysFromEpoch(project.endDate));
-              const widthPct = endPct - startPct;
-              const isWaiting = project.status === 'In Review';
-              const isComplete = project.status === 'Complete';
-              const isAwaitingStart = project.status === 'Scheduled';
+            {designerGroups.map(({ designerId, designer, lanes }) => (
+              <div key={designerId} className="gantt-designer-group">
+                {lanes.map((laneProjects, laneIdx) => (
+                  <div
+                    key={`${designerId}-lane-${laneIdx}`}
+                    className={`gantt-row${lanes.length > 1 ? ' gantt-row--lane' : ''}`}
+                  >
+                    <div className="gantt-label">
+                      {laneIdx === 0 && (
+                        <div className="gantt-avatar-float">
+                          <DesignerAvatarStack
+                            designers={designer ? [designer] : getProjectDesigners(laneProjects[0], designers)}
+                            size={26}
+                            maxVisible={1}
+                            className="designer-avatar-stack--gantt"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="gantt-track">
+                      {laneProjects.map((project) => {
+                        const assignedDesigners = getProjectDesigners(project, designers);
+                        const leadDesigner = assignedDesigners[0];
+                        const colors = leadDesigner
+                          ? getDesignerPalette(leadDesigner)
+                          : { bg: '#EEE', bar: '#CCC', text: '#888' };
+                        const startPct = pct(daysFromEpoch(project.startDate));
+                        const endPct = pct(daysFromEpoch(project.endDate));
+                        const widthPct = endPct - startPct;
+                        const isWaiting = project.status === 'In Review';
+                        const isComplete = project.status === 'Complete';
+                        const isAwaitingStart = project.status === 'Scheduled';
 
-              return (
-                <div
-                  key={project.id}
-                  className="gantt-row"
-                  role={onSelectProject ? 'button' : undefined}
-                  tabIndex={onSelectProject ? 0 : undefined}
-                  aria-label={onSelectProject ? `Edit ${project.name}` : undefined}
-                  onClick={() => onSelectProject?.(project)}
-                  onKeyDown={(e) => {
-                    if (!onSelectProject) return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onSelectProject(project);
-                    }
-                  }}
-                >
-                  <div className="gantt-label">
-                    <div className="gantt-avatar-float">
-                      <DesignerAvatarStack
-                        designers={assignedDesigners}
-                        size={26}
-                        maxVisible={3}
-                        className="designer-avatar-stack--gantt"
-                      />
+                        return (
+                          <div
+                            key={project.id}
+                            className="gantt-bar"
+                            role={onSelectProject ? 'button' : undefined}
+                            tabIndex={onSelectProject ? 0 : undefined}
+                            aria-label={onSelectProject ? `Edit ${project.name}` : undefined}
+                            onClick={() => onSelectProject?.(project)}
+                            onKeyDown={(e) => {
+                              if (!onSelectProject) return;
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onSelectProject(project);
+                              }
+                            }}
+                            style={{
+                              left: `${startPct}%`,
+                              width: `${Math.max(widthPct, 0.35)}%`,
+                              background: isComplete ? '#F2F2F7' : colors.bg,
+                              opacity: isWaiting ? 0.55 : isAwaitingStart ? 0.62 : 1,
+                              backgroundImage: isWaiting
+                                ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}18 4px, ${colors.bar}18 8px)`
+                                : isAwaitingStart
+                                  ? `repeating-linear-gradient(90deg, transparent, transparent 5px, ${colors.bar}14 5px, ${colors.bar}14 10px)`
+                                  : 'none',
+                            }}
+                          >
+                            <div
+                              className="gantt-bar-label-stack"
+                              style={{ color: isComplete ? 'rgba(60, 60, 67, 0.45)' : colors.text }}
+                            >
+                              <span className="gantt-bar-client">{project.client}</span>
+                              <span className="gantt-bar-project">{project.name}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                  <div className="gantt-track">
-                    <div
-                      className="gantt-bar"
-                      style={{
-                        left: `${startPct}%`,
-                        width: `${Math.max(widthPct, 0.35)}%`,
-                        background: isComplete ? '#F2F2F7' : colors.bg,
-                        opacity: isWaiting ? 0.55 : isAwaitingStart ? 0.62 : 1,
-                        backgroundImage: isWaiting
-                          ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}18 4px, ${colors.bar}18 8px)`
-                          : isAwaitingStart
-                            ? `repeating-linear-gradient(90deg, transparent, transparent 5px, ${colors.bar}14 5px, ${colors.bar}14 10px)`
-                            : 'none',
-                      }}
-                    >
-                      <div
-                        className="gantt-bar-label-stack"
-                        style={{ color: isComplete ? 'rgba(60, 60, 67, 0.45)' : colors.text }}
-                      >
-                        <span className="gantt-bar-client">{project.client}</span>
-                        <span className="gantt-bar-project">{project.name}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            ))}
           </div>
           </div>
         </div>
