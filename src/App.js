@@ -1028,13 +1028,15 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   }
 
   const gridLines = useMemo(() => {
+    const toPct = (day) => ((day - minDay) / totalDays) * 100;
+
     if (mobileLayout) {
       const lines = [];
       for (let day = minDay; day <= maxDay; day++) {
         if (!isFirstOfMonthNZ(day)) continue;
         lines.push({
           day,
-          left: pct(day),
+          left: toPct(day),
           monthStart: true,
           label: ganttMobileMonthLabelNZ(day),
         });
@@ -1051,7 +1053,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
       prevFridayYm = ym;
       lines.push({
         day,
-        left: pct(day),
+        left: toPct(day),
         monthStart: isFirstOfMonthNZ(day),
         firstFridayOfMonth,
         label: ganttTickDayNumberNZ(day),
