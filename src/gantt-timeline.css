@@ -263,46 +263,31 @@
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   padding: 14px 0 20px;
   background: transparent;
-}
-
-.gantt-designer-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .gantt-row {
   display: flex;
   align-items: stretch;
-  min-height: 40px;
+  min-height: 44px;
   border-radius: 10px;
   background: transparent;
   transition: background 0.12s ease;
 }
 
-.gantt-row--lane {
-  min-height: 34px;
-}
-
-.gantt-row--lane .gantt-track {
-  min-height: 34px;
-}
-
-.gantt-bar[role='button'] {
+.gantt-row[role='button'] {
   cursor: pointer;
 }
 
-.gantt-bar[role='button']:hover {
-  filter: brightness(0.97);
+.gantt-row[role='button']:hover {
+  background: rgba(0, 0, 0, 0.04);
 }
 
-.gantt-bar[role='button']:focus-visible {
+.gantt-row[role='button']:focus-visible {
   outline: 2px solid var(--text-primary);
-  outline-offset: 1px;
-  z-index: 1;
+  outline-offset: 2px;
 }
 
 /* Avatar column — room for stacked avatars + overflow badge */
@@ -461,21 +446,15 @@
   }
 
   .gantt-rows {
-    gap: 12px;
-    padding-top: 10px;
+    gap: 8px;
+    padding-top: 12px;
     padding-bottom: 16px;
   }
 
-  .gantt-designer-group {
-    gap: 4px;
-  }
-
-  .gantt-row,
-  .gantt-row--lane {
+  .gantt-row {
     min-height: 30px;
   }
 
-  .gantt-row--lane .gantt-track,
   .gantt-track {
     min-height: 30px;
   }
