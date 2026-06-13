@@ -9,6 +9,10 @@ import {
   loadWorkspacePayload,
   saveWorkspacePayload,
 } from './supabaseData';
+import {
+  getDevTimelinePreviewProjects,
+  shouldUseDevTimelinePreview,
+} from './devTimelinePreview';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -208,33 +212,6 @@ const SAMPLE_DESIGNERS = [
   { id: 'd5', name: 'Poi', colorIdx: 4 },
 ];
 
-const SAMPLE_PROJECTS = [
-  {
-    id: 'p1', name: 'Annual Report', client: 'Meridian Co.',
-    designerId: 'd1', designerIds: ['d1', 'd2'], status: 'In Progress', priority: 'priority',
-    startDate: '2025-04-01', endDate: '2025-04-28',
-    notes: 'Cover options due first.',
-  },
-  {
-    id: 'p2', name: 'Brand Identity', client: 'Volta Studio',
-    designerId: 'd2', status: 'In Review', priority: 'priority',
-    startDate: '2025-04-05', endDate: '2025-05-10',
-    notes: 'Awaiting logo feedback.',
-  },
-  {
-    id: 'p3', name: 'Packaging Suite', client: 'Bloom Foods',
-    designerId: 'd3', status: 'In Review', priority: 'background',
-    startDate: '2025-04-10', endDate: '2025-04-24',
-    notes: '',
-  },
-  {
-    id: 'p4', name: 'Campaign Collateral', client: 'Meridian Co.',
-    designerId: 'd5', status: 'In Progress', priority: 'background',
-    startDate: '2025-04-15', endDate: '2025-05-05',
-    notes: 'Three formats needed.',
-  },
-];
-
 /** Bump when default roster names/order change — triggers one-time sync for built-in ids (d1–d5). */
 const TEAM_SCHEMA_VERSION = '2';
 
@@ -372,6 +349,36 @@ function today() {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function buildSampleProjects() {
+  const t = today();
+  return [
+    {
+      id: 'p1', name: 'Annual Report', client: 'Meridian Co.',
+      designerId: 'd1', designerIds: ['d1', 'd2'], status: 'In Progress', priority: 'priority',
+      startDate: addDays(t, -14), endDate: addDays(t, 21),
+      notes: 'Cover options due first.',
+    },
+    {
+      id: 'p2', name: 'Brand Identity', client: 'Volta Studio',
+      designerId: 'd2', status: 'In Review', priority: 'priority',
+      startDate: addDays(t, -7), endDate: addDays(t, 28),
+      notes: 'Awaiting logo feedback.',
+    },
+    {
+      id: 'p3', name: 'Packaging Suite', client: 'Bloom Foods',
+      designerId: 'd3', status: 'Scheduled', priority: 'background',
+      startDate: addDays(t, 3), endDate: addDays(t, 24),
+      notes: '',
+    },
+    {
+      id: 'p4', name: 'Campaign Collateral', client: 'Meridian Co.',
+      designerId: 'd5', status: 'In Progress', priority: 'background',
+      startDate: addDays(t, -10), endDate: addDays(t, 14),
+      notes: 'Three formats needed.',
+    },
+  ];
 }
 
 // ── Components ────────────────────────────────────────────────────────────────
@@ -869,9 +876,8 @@ function isFirstOfMonthNZ(epochDay) {
   return dom === '1';
 }
 
-/** ~3 calendar months of days shown across the scroll viewport (desktop). */
-const GANTT_DESKTOP_VIEWPORT_DAYS = 92;
-const GANTT_MOBILE_BREAKPOINT_PX = 768;
+/** Pixels per day on the timeline (horizontal scroll width). */
+const GANTT_PX_PER_DAY = 3;
 
 function timelineDesignerRank(project, rank, tail) {
   const ids = getProjectDesignerIds(project);
@@ -897,27 +903,31 @@ function sortTimelineProjectsByDesigner(projects, designers) {
 }
 
 // ── Gantt Chart ───────────────────────────────────────────────────────────────
-function GanttChart({ projects, designers, onSelectProject, onRegisterNav }) {
+function GanttChart({ projects, designers, onSelectProject, onRegisterNav, previewMode }) {
   const validProjects = projects.filter(p => p.startDate && p.endDate);
   if (!validProjects.length) {
     return <div className="empty-state">No projects with timelines yet.</div>;
   }
   return (
-    <GanttChartInner
-      projects={validProjects}
-      designers={designers}
-      onSelectProject={onSelectProject}
-      onRegisterNav={onRegisterNav}
-    />
+    <>
+      {previewMode && (
+        <div className="dev-timeline-banner" role="status">
+          Local preview data — add Supabase keys to <code>.env.local</code> for live projects, or use{' '}
+          <code>?preview=timeline</code> to force this view.
+        </div>
+      )}
+      <GanttChartInner
+        projects={validProjects}
+        designers={designers}
+        onSelectProject={previewMode ? undefined : onSelectProject}
+        onRegisterNav={onRegisterNav}
+      />
+    </>
   );
 }
 
 function GanttChartInner({ projects: validProjects, designers, onSelectProject, onRegisterNav }) {
   const scrollRef = useRef(null);
-  const mobileTodayScrollDone = useRef(false);
-  const [viewportW, setViewportW] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth : 1200
-  );
   const todayDay = daysFromEpoch(today());
 
   const orderedProjects = useMemo(
@@ -940,28 +950,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     minDay = maxDay - 365;
   }
   const totalDays = Math.max(7, maxDay - minDay);
-
-  /** Desktop: ~3 months per viewport width; mobile: dense chart + horizontal pan. */
-  const chartMinWidthPx = useMemo(() => {
-    if (viewportW <= GANTT_MOBILE_BREAKPOINT_PX) {
-      return Math.max(1280, Math.ceil(totalDays * 2.65));
-    }
-    const w = Math.max(480, viewportW);
-    const pxPerDay = w / GANTT_DESKTOP_VIEWPORT_DAYS;
-    return Math.ceil(totalDays * pxPerDay);
-  }, [viewportW, totalDays]);
-
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect?.width;
-      if (w > 0) setViewportW(w);
-    });
-    ro.observe(el);
-    setViewportW(el.clientWidth);
-    return () => ro.disconnect();
-  }, []);
+  const chartMinWidthPx = Math.ceil(totalDays * GANTT_PX_PER_DAY);
 
   const pct = (day) => ((day - minDay) / totalDays) * 100;
 
@@ -1000,7 +989,6 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   }
 
   const todayPct = pct(todayDay);
-  const compactTimeline = viewportW <= GANTT_MOBILE_BREAKPOINT_PX;
 
   const scrollTimelineBy = useCallback((direction) => {
     const el = scrollRef.current;
@@ -1026,23 +1014,11 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     return () => onRegisterNav(null);
   }, [onRegisterNav, scrollTimelineBy, scrollToToday]);
 
-  useLayoutEffect(() => {
-    if (mobileTodayScrollDone.current) return;
-    const el = scrollRef.current;
-    if (!el || typeof window === 'undefined') return;
-    if (!window.matchMedia('(max-width: 768px)').matches) return;
-    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
-    if (maxScroll <= 0) return;
-    const x = (todayPct / 100) * el.scrollWidth - el.clientWidth / 2;
-    el.scrollLeft = Math.max(0, Math.min(maxScroll, x));
-    mobileTodayScrollDone.current = true;
-  }, [todayPct, chartMinWidthPx]);
-
   return (
     <div className="gantt-frame">
       <div className="gantt-wrapper" ref={scrollRef}>
         <div
-          className={`gantt-chart${compactTimeline ? ' gantt-chart--compact' : ''}`}
+          className="gantt-chart"
           style={{ minWidth: chartMinWidthPx }}
         >
           <div className="gantt-chart-lines" aria-hidden>
@@ -1136,7 +1112,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                     <div className="gantt-avatar-float">
                       <DesignerAvatarStack
                         designers={assignedDesigners}
-                        size={compactTimeline ? 22 : 28}
+                        size={26}
                         maxVisible={3}
                         className="designer-avatar-stack--gantt"
                       />
@@ -1320,7 +1296,7 @@ export default function App() {
     } catch {
       raw = null;
     }
-    const list = Array.isArray(raw) && raw.length > 0 ? raw : SAMPLE_PROJECTS;
+    const list = Array.isArray(raw) && raw.length > 0 ? raw : buildSampleProjects();
     return list.map((p) =>
       normalizeProjectDesignersOnProject({ ...p, status: normalizeProjectStatus(p.status) }),
     );
@@ -1481,6 +1457,10 @@ export default function App() {
     : projects.filter((p) => getProjectDesignerIds(p).includes(filterDesigner));
 
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
+  const devTimelinePreview = shouldUseDevTimelinePreview(activeProjects);
+  const ganttProjects = devTimelinePreview
+    ? getDevTimelinePreviewProjects(designers)
+    : activeProjects;
   const mainProjects = activeProjects.filter(p => !isPipelineStatus(p.status));
   const pipelineProjects = activeProjects.filter(p => isPipelineStatus(p.status));
   const archivedProjects = designerFiltered
@@ -1858,10 +1838,11 @@ export default function App() {
 
           {view === 'gantt' && (
             <GanttChart
-              projects={activeProjects}
+              projects={ganttProjects}
               designers={designers}
               onSelectProject={setEditingProject}
               onRegisterNav={registerGanttNav}
+              previewMode={devTimelinePreview}
             />
           )}
         </div>
