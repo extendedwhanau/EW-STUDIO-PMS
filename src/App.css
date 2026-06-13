@@ -301,11 +301,11 @@ html, body, #root {
   display: none;
 }
 
-/* Count badge flush against New Project */
+/* Count badge + add button — same gap as timeline nav cluster and + */
 .main-header-trailing {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 10px;
   flex-shrink: 0;
 }
 
@@ -1574,6 +1574,10 @@ html, body, #root {
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+  }
+
+  .main-header-trailing {
+    gap: 6px;
   }
 
   .header-new-project.sidebar-add-btn {
