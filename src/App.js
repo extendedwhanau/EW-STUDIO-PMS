@@ -1800,11 +1800,11 @@ export default function App() {
                 {view !== 'archive' && (
                   <button
                     type="button"
-                    className="modal-btn-submit header-new-project"
+                    className="sidebar-add-btn header-new-project"
                     onClick={() => setShowNewProject(true)}
                     aria-label="New Project"
                   >
-                    New
+                    +
                   </button>
                 )}
               </div>

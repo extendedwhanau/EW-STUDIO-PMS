@@ -159,9 +159,13 @@ html, body, #root {
   background: none; border: none; cursor: pointer;
   color: var(--text-tertiary); font-size: 18px; line-height: 1;
   width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
-  border-radius: 4px; transition: background 0.15s;
+  border-radius: 4px; transition: background 0.15s, color 0.15s;
 }
 .sidebar-add-btn:hover { background: var(--bg); color: var(--text-primary); }
+.sidebar-add-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--text-primary);
+}
 
 .designer-list { display: flex; flex-direction: column; gap: 2px; }
 
@@ -1275,31 +1279,8 @@ html, body, #root {
   box-shadow: 0 0 0 2px var(--text-primary);
 }
 
-/*
- * Header NEW PROJECT — same type/size/line box as .logo-text & .page-title so it
- * sits on one line with Extended Whānau / Projects (modal Save still uses 44px submit).
- */
-.header-new-project.modal-btn-submit {
-  font-size: var(--app-wordmark-size);
-  font-weight: var(--app-wordmark-weight);
-  letter-spacing: var(--app-wordmark-tracking);
-  line-height: 1.2;
-  text-transform: none;
-  padding: 0 0 0 16px;
-  min-height: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.header-new-project.modal-btn-submit:hover:not(:disabled) {
-  background: transparent;
-  color: var(--text-primary);
-}
-
-.header-new-project.modal-btn-submit:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--text-primary);
+.header-new-project.sidebar-add-btn {
+  flex-shrink: 0;
 }
 
 .modal-body {
@@ -1595,13 +1576,12 @@ html, body, #root {
     flex-wrap: wrap;
   }
 
-  .header-new-project.modal-btn-submit {
+  .header-new-project.sidebar-add-btn {
     min-height: 44px;
-    padding: 0 0 0 16px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
   }
 
   .btn-primary {

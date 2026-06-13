@@ -34,7 +34,7 @@
   box-shadow: none;
 }
 
-/* Match .header-new-project.modal-btn-submit (desktop: wordmark line, 0 16px padding) */
+/* Match .sidebar-add-btn (header new project + team add) */
 .gantt-nav-btn {
   font-family: inherit;
   font-size: var(--app-wordmark-size);
