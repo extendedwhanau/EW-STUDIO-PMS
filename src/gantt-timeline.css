@@ -683,23 +683,28 @@ button.gantt-focus-copy:focus-visible {
   }
 
   .gantt-chart {
-    --gantt-lead-w: calc(10px + 72px + 4px);
+    --gantt-lead-w: 0;
   }
 
   .gantt-chart .gantt-label,
   .gantt-row--has-milestones .gantt-label,
   .gantt-label--nested {
-    width: 72px;
-    min-width: 72px;
-    max-width: 72px;
-    margin-left: 10px;
-    margin-right: 4px;
+    display: none;
   }
 
   .gantt-section-header {
-    width: 72px;
-    min-width: 72px;
-    max-width: 72px;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 8px 4px 4px;
+    position: static;
+  }
+
+  .gantt-section-header-title {
+    font-size: 12px;
+    letter-spacing: 0.06em;
   }
 
   .gantt-chart-header {
@@ -707,14 +712,18 @@ button.gantt-focus-copy:focus-visible {
   }
 
   .gantt-ruler-ticks {
-    height: 24px;
+    height: 28px;
   }
 
   .gantt-tick-label--mobile-month {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: capitalize;
+  }
+
+  .gantt-today-marker {
+    width: 2px;
   }
 
   /* Mobile grid — month-start + weekly Monday lines (not every day) */
@@ -732,21 +741,21 @@ button.gantt-focus-copy:focus-visible {
   }
 
   .gantt-rows {
-    gap: 8px;
+    gap: 10px;
     padding-top: 6px;
     padding-bottom: 10px;
   }
 
   .gantt-row {
-    min-height: 26px;
+    min-height: 30px;
   }
 
   .gantt-track {
-    min-height: 26px;
+    min-height: 30px;
   }
 
   .gantt-bar {
-    min-height: 20px;
+    min-height: 22px;
     height: auto;
     padding: 1px 6px;
     border: none;
@@ -757,8 +766,109 @@ button.gantt-focus-copy:focus-visible {
   }
 
   .gantt-bar-project {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .gantt-lane-label--job {
     font-size: 11px;
-    font-weight: 500;
+    max-width: min(72vw, 280px);
+    line-height: 1.25;
+    padding-right: 12px;
+  }
+
+  .gantt-lane-label--job-expandable {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .gantt-mobile-job-chevron {
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    line-height: 1;
+    transform: rotate(0deg);
+    transition: transform 0.15s ease;
+  }
+
+  .gantt-mobile-job-chevron--open {
+    transform: rotate(90deg);
+  }
+
+  .gantt-lane-label-client {
+    font-size: 11px;
+  }
+
+  .gantt-lane-label-project {
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .gantt-track--job-lane .gantt-bar--job {
+    top: 18px;
+  }
+
+  .gantt-bar--job,
+  .gantt-chart--mobile .gantt-bar--phase,
+  .gantt-chart--mobile .gantt-bar--task,
+  .gantt-chart--mobile .gantt-bar--overview {
+    height: 8px;
+    min-height: 8px !important;
+    max-height: 8px;
+  }
+
+  .gantt-lane-label--expandable {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: min(68vw, 260px);
+  }
+
+  .gantt-lane-label-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .gantt-phase-chevron {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    line-height: 1;
+    transform: rotate(0deg);
+    transition: transform 0.15s ease;
+  }
+
+  .gantt-phase-chevron--open {
+    transform: rotate(90deg);
+  }
+
+  .gantt-row--phase-expandable[role='button'] {
+    cursor: pointer;
+  }
+
+  .gantt-row--phase-expandable[role='button']:active {
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .gantt-row--readonly {
+    pointer-events: none;
+  }
+
+  .gantt-task-stack--mobile {
+    background: rgba(0, 0, 0, 0.015);
+  }
+
+  .gantt-mobile-job-chevron {
+    display: inline;
+  }
+
+  .gantt-job-phases {
+    margin-left: 0;
   }
 }
 
@@ -1115,6 +1225,10 @@ body.gantt-phase-resize-active * {
   font-size: 10px;
 }
 
+.gantt-mobile-job-chevron {
+  display: none;
+}
+
 .gantt-task-stack {
   display: flex;
   flex-direction: column;
@@ -1128,13 +1242,11 @@ body.gantt-phase-resize-active * {
   }
 
   .gantt-chart--focused .gantt-job-focus-wrap {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .gantt-chart--focused .gantt-focus-sidecol {
-    width: 38px;
-    min-width: 38px;
-    padding: 6px 2px 0 4px;
+    display: none;
   }
 
   .gantt-frame--focused {
@@ -1213,16 +1325,18 @@ body.gantt-phase-resize-active * {
   }
 
   .gantt-lane-label--phase {
-    font-size: 9px;
-  }
-
-  .gantt-lane-label--job {
-    font-size: 9px;
-    max-width: min(50vw, 200px);
+    font-size: 11px;
+    font-weight: 600;
   }
 
   .gantt-lane-label--task {
-    font-size: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .gantt-track--phase-lane .gantt-bar--phase {
+    top: 17px;
   }
 
   /* Touch feedback for clickable job / phase / task rows (no hover on touch) */
@@ -1232,15 +1346,19 @@ body.gantt-phase-resize-active * {
 
   /* Slightly taller tap areas for nested rows on touch */
   .gantt-row--phase {
-    min-height: 30px;
+    min-height: 34px;
   }
   .gantt-row--task {
-    min-height: 28px;
+    min-height: 30px;
   }
   .gantt-row--task-checklist {
-    min-height: 18px;
+    min-height: 22px;
   }
   .gantt-track--task-checklist {
-    min-height: 18px;
+    min-height: 22px;
+  }
+
+  .gantt-track--phase-lane {
+    min-height: 28px;
   }
 }

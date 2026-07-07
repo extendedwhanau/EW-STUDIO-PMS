@@ -2020,7 +2020,11 @@ const GANTT_FOCUS_BACK_DESKTOP_W = 54;
 const GANTT_FOCUS_BANNER_GAP = 12;
 const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
 
-function defaultMainZoomStep() {
+function defaultMainZoomStep(mobile = false) {
+  if (mobile) {
+    const mobileIdx = FOCUS_ZOOM_STEPS.indexOf(8);
+    if (mobileIdx >= 0) return mobileIdx;
+  }
   const idx = FOCUS_ZOOM_STEPS.indexOf(GANTT_PX_PER_DAY);
   return idx >= 0 ? idx : 1;
 }
@@ -2099,7 +2103,11 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const mobileLayout = useGanttMobileLayout();
   const todayDay = daysFromEpoch(today());
   const [expandedProjectId, setExpandedProjectId] = useState(null);
-  const [mainZoomStep, setMainZoomStep] = useState(defaultMainZoomStep);
+  const [mobileExpandedPhases, setMobileExpandedPhases] = useState(() => new Set());
+  const [mainZoomStep, setMainZoomStep] = useState(() => defaultMainZoomStep(
+    typeof window !== 'undefined' && window.matchMedia(GANTT_MOBILE_MQ).matches,
+  ));
+  const centerOnTodayPendingRef = useRef(true);
   const [focusZoomStep, setFocusZoomStep] = useState(0);
   const focusCopyMarginLockedForRef = useRef(null);
   const focusBackRef = useRef(null);
@@ -2339,18 +2347,77 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     el.scrollBy({ left: direction * step, behavior: 'smooth' });
   }, [chartMinWidthPx, totalDays]);
 
-  const scrollToToday = useCallback(() => {
+  const scrollToToday = useCallback((behavior = 'smooth') => {
     const el = scrollRef.current;
     if (!el) return;
+    if (todayPct < 0 || todayPct > 100) {
+      el.scrollTo({ left: 0, behavior });
+      return;
+    }
     const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
     const x = (todayPct / 100) * el.scrollWidth - el.clientWidth / 2;
-    el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior: 'smooth' });
+    el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior });
   }, [todayPct]);
 
   useLayoutEffect(() => {
+    if (!mobileLayout) return;
+    centerOnTodayPendingRef.current = true;
+    setMainZoomStep((step) => {
+      const desktopDefault = defaultMainZoomStep(false);
+      const mobileDefault = defaultMainZoomStep(true);
+      return step === desktopDefault ? mobileDefault : step;
+    });
+  }, [mobileLayout]);
+
+  useLayoutEffect(() => {
+    if (!centerOnTodayPendingRef.current || !scrollRef.current) return;
+    scrollToToday('auto');
+    centerOnTodayPendingRef.current = false;
+  }, [chartMinWidthPx, todayPct, scrollToToday, focusMode, expandedProjectId]);
+
+  useLayoutEffect(() => {
     if (!focusMode || !scrollRef.current) return;
+    if (mobileLayout) {
+      centerOnTodayPendingRef.current = true;
+      return;
+    }
     scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
-  }, [focusMode, expandedProjectId]);
+  }, [focusMode, expandedProjectId, mobileLayout]);
+
+  useEffect(() => {
+    if (!expandedProjectId) {
+      setMobileExpandedPhases(new Set());
+      centerOnTodayPendingRef.current = true;
+      return;
+    }
+    if (!mobileLayout) return;
+    const project = orderedProjects.find((p) => p.id === expandedProjectId);
+    if (!project?.milestones?.length) return;
+    const todayIso = today();
+    const activePhaseIds = project.milestones
+      .filter((phase) => phase.startDate && phase.endDate
+        && phase.startDate <= todayIso
+        && phase.endDate >= todayIso)
+      .map((phase) => `${project.id}:${phase.id}`);
+    if (activePhaseIds.length > 0) {
+      setMobileExpandedPhases(new Set(activePhaseIds));
+    }
+  }, [expandedProjectId, mobileLayout, orderedProjects]);
+
+  const toggleMobilePhaseTasks = useCallback((projectId, phaseId) => {
+    const key = `${projectId}:${phaseId}`;
+    setMobileExpandedPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const isMobilePhaseTasksOpen = useCallback(
+    (projectId, phaseId) => mobileExpandedPhases.has(`${projectId}:${phaseId}`),
+    [mobileExpandedPhases],
+  );
 
   useLayoutEffect(() => {
     if (!onRegisterNav) return undefined;
@@ -2492,21 +2559,33 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     );
   };
 
-  const renderLaneLabel = (startDate, text, variant = 'phase') => {
+  const renderLaneLabel = (startDate, text, variant = 'phase', { showExpand = false, expanded = false } = {}) => {
     if (!startDate || !text?.trim()) return null;
     const left = pct(daysFromEpoch(startDate));
     return (
       <div
-        className={`gantt-lane-label gantt-lane-label--${variant}`}
+        className={[
+          'gantt-lane-label',
+          `gantt-lane-label--${variant}`,
+          showExpand ? 'gantt-lane-label--expandable' : '',
+        ].filter(Boolean).join(' ')}
         style={{ left: `${left}%` }}
         title={text}
       >
-        {text}
+        {showExpand ? (
+          <span
+            className={`gantt-phase-chevron${expanded ? ' gantt-phase-chevron--open' : ''}`}
+            aria-hidden
+          >
+            ›
+          </span>
+        ) : null}
+        <span className="gantt-lane-label-text">{text}</span>
       </div>
     );
   };
 
-  const renderJobLaneLabel = (startDate, client, projectName) => {
+  const renderJobLaneLabel = (startDate, client, projectName, { showExpand = false, expanded = false } = {}) => {
     if (!startDate) return null;
     const clientText = client?.trim() || '';
     const projectText = projectName?.trim() || '';
@@ -2515,15 +2594,71 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     const title = [clientText, projectText].filter(Boolean).join(' — ');
     return (
       <div
-        className="gantt-lane-label gantt-lane-label--job"
+        className={[
+          'gantt-lane-label',
+          'gantt-lane-label--job',
+          showExpand ? 'gantt-lane-label--job-expandable' : '',
+        ].filter(Boolean).join(' ')}
         style={{ left: `${left}%` }}
         title={title}
       >
+        {showExpand ? (
+          <span
+            className={`gantt-mobile-job-chevron${expanded ? ' gantt-mobile-job-chevron--open' : ''}`}
+            aria-hidden
+          >
+            ›
+          </span>
+        ) : null}
         {clientText ? <span className="gantt-lane-label-client">{clientText}</span> : null}
         {clientText && projectText ? (
           <span className="gantt-lane-label-sep" aria-hidden> </span>
         ) : null}
         {projectText ? <span className="gantt-lane-label-project">{projectText}</span> : null}
+      </div>
+    );
+  };
+
+  const renderMobilePhaseTasks = (project, phase) => {
+    if (!mobileLayout || phase.tasks.length === 0) return null;
+    if (!isMobilePhaseTasksOpen(project.id, phase.id)) return null;
+    return (
+      <div className="gantt-task-stack gantt-task-stack--mobile">
+        {phase.tasks.map((task) => {
+          const taskTitle = task.title.trim() || 'Task';
+          return (
+            <div
+              key={task.id}
+              className="gantt-row gantt-row--task gantt-row--task-checklist gantt-row--track-only gantt-row--readonly"
+            >
+              <div className="gantt-track gantt-track--lane gantt-track--task-checklist">
+                {renderLaneLabel(phase.startDate, taskTitle, 'task')}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderDesktopPhaseTasks = (project, phase) => {
+    if (phase.tasks.length === 0) return null;
+    return (
+      <div className="gantt-task-stack">
+        {phase.tasks.map((task) => {
+          const taskTitle = task.title.trim() || 'Task';
+          return (
+            <div
+              key={task.id}
+              className="gantt-row gantt-row--task gantt-row--task-checklist gantt-row--track-only"
+              {...editableRowProps(project, `Edit ${project.name} — ${taskTitle}`)}
+            >
+              <div className="gantt-track gantt-track--lane gantt-track--task-checklist">
+                {renderLaneLabel(phase.startDate, taskTitle, 'task')}
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -2546,6 +2681,31 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           openProjectEdit(project);
+        }
+      },
+    };
+  };
+
+  const mobilePhaseRowProps = (project, phase, phaseTitle) => {
+    if (!mobileLayout) {
+      return editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`);
+    }
+    if (phase.tasks.length === 0) return {};
+    const tasksOpen = isMobilePhaseTasksOpen(project.id, phase.id);
+    const taskCount = phase.tasks.length;
+    return {
+      role: 'button',
+      tabIndex: 0,
+      'aria-expanded': tasksOpen,
+      'aria-label': `${tasksOpen ? 'Hide' : 'Show'} ${taskCount} task${taskCount !== 1 ? 's' : ''} for ${phaseTitle}`,
+      onClick: (e) => {
+        e.stopPropagation();
+        toggleMobilePhaseTasks(project.id, phase.id);
+      },
+      onKeyDown: (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleMobilePhaseTasks(project.id, phase.id);
         }
       },
     };
@@ -2756,20 +2916,24 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                 >
                   {focusMode && isExpanded && hasMilestones ? (
                     <div className="gantt-job-focus-wrap">
-                      <div className="gantt-focus-sidecol">
-                        <div className="gantt-avatar-float">
-                          <DesignerAvatarStack
-                            designers={assignedDesigners}
-                            size={22}
-                            maxVisible={3}
-                            className="designer-avatar-stack--gantt"
-                          />
+                      {!mobileLayout ? (
+                        <div className="gantt-focus-sidecol">
+                          <div className="gantt-avatar-float">
+                            <DesignerAvatarStack
+                              designers={assignedDesigners}
+                              size={22}
+                              maxVisible={3}
+                              className="designer-avatar-stack--gantt"
+                            />
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
                       <div className="gantt-job-focus-body">
                         <div
                           className="gantt-row gantt-row--job gantt-row--track-only"
-                          {...editableRowProps(project, `Edit ${project.name}`)}
+                          {...(!mobileLayout
+                            ? editableRowProps(project, `Edit ${project.name}`)
+                            : {})}
                         >
                           <div className="gantt-track">
                             {renderGanttBar({
@@ -2787,14 +2951,25 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                         <div className="gantt-job-phases">
                           {project.milestones.map((phase, phaseIndex) => {
                             const phaseTitle = phase.title.trim() || `Phase ${phaseIndex + 1}`;
+                            const phaseTasksOpen = isMobilePhaseTasksOpen(project.id, phase.id);
                             return (
                               <div key={phase.id} className="gantt-phase-group">
                                 <div
-                                  className="gantt-row gantt-row--phase gantt-row--track-only"
-                                  {...editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`)}
+                                  className={[
+                                    'gantt-row',
+                                    'gantt-row--phase',
+                                    'gantt-row--track-only',
+                                    mobileLayout && phase.tasks.length > 0 ? 'gantt-row--phase-expandable' : '',
+                                  ].filter(Boolean).join(' ')}
+                                  {...(mobileLayout
+                                    ? mobilePhaseRowProps(project, phase, phaseTitle)
+                                    : editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`))}
                                 >
                                   <div className="gantt-track gantt-track--lane gantt-track--phase-lane">
-                                    {renderLaneLabel(phase.startDate, phaseTitle, 'phase')}
+                                    {renderLaneLabel(phase.startDate, phaseTitle, 'phase', {
+                                      showExpand: mobileLayout && phase.tasks.length > 0,
+                                      expanded: phaseTasksOpen,
+                                    })}
                                     {renderGanttBar({
                                       startDate: phase.startDate,
                                       endDate: phase.endDate,
@@ -2810,24 +2985,9 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                                     })}
                                   </div>
                                 </div>
-                                {phase.tasks.length > 0 ? (
-                                  <div className="gantt-task-stack">
-                                    {phase.tasks.map((task) => {
-                                      const taskTitle = task.title.trim() || 'Task';
-                                      return (
-                                        <div
-                                          key={task.id}
-                                          className="gantt-row gantt-row--task gantt-row--task-checklist gantt-row--track-only"
-                                          {...editableRowProps(project, `Edit ${project.name} — ${taskTitle}`)}
-                                        >
-                                          <div className="gantt-track gantt-track--lane gantt-track--task-checklist">
-                                            {renderLaneLabel(phase.startDate, taskTitle, 'task')}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : null}
+                                {mobileLayout
+                                  ? renderMobilePhaseTasks(project, phase)
+                                  : renderDesktopPhaseTasks(project, phase)}
                               </div>
                             );
                           })}
@@ -2858,15 +3018,17 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                     }}
                   >
                     <div className="gantt-label">
-                      <div className="gantt-avatar-float">
-                        <DesignerAvatarStack
-                          designers={assignedDesigners}
-                          size={22}
-                          maxVisible={3}
-                          className="designer-avatar-stack--gantt"
-                        />
-                      </div>
-                      {hasMilestones && !focusMode ? (
+                      {!mobileLayout ? (
+                        <div className="gantt-avatar-float">
+                          <DesignerAvatarStack
+                            designers={assignedDesigners}
+                            size={22}
+                            maxVisible={3}
+                            className="designer-avatar-stack--gantt"
+                          />
+                        </div>
+                      ) : null}
+                      {hasMilestones && !focusMode && !mobileLayout ? (
                         <span className={`gantt-expand-chevron${isExpanded ? ' gantt-expand-chevron--open' : ''}`} aria-hidden>
                           ›
                         </span>
@@ -2878,7 +3040,10 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                         !isExpanded ? 'gantt-track--lane gantt-track--job-lane' : '',
                       ].filter(Boolean).join(' ')}
                     >
-                      {!isExpanded ? renderJobLaneLabel(project.startDate, project.client, project.name) : null}
+                      {!isExpanded ? renderJobLaneLabel(project.startDate, project.client, project.name, {
+                        showExpand: mobileLayout && hasMilestones && !focusMode,
+                        expanded: isExpanded,
+                      }) : null}
                       {renderGanttBar({
                         startDate: project.startDate,
                         endDate: project.endDate,
@@ -2900,15 +3065,25 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                     <div className="gantt-job-phases">
                       {project.milestones.map((phase, phaseIndex) => {
                         const phaseTitle = phase.title.trim() || `Phase ${phaseIndex + 1}`;
+                        const phaseTasksOpen = isMobilePhaseTasksOpen(project.id, phase.id);
                         return (
                         <div key={phase.id} className="gantt-phase-group">
                           <div
-                            className="gantt-row gantt-row--phase"
-                            {...editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`)}
+                            className={[
+                              'gantt-row',
+                              'gantt-row--phase',
+                              mobileLayout && phase.tasks.length > 0 ? 'gantt-row--phase-expandable' : '',
+                            ].filter(Boolean).join(' ')}
+                            {...(mobileLayout
+                              ? mobilePhaseRowProps(project, phase, phaseTitle)
+                              : editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`))}
                           >
                             <div className="gantt-label gantt-label--ghost" aria-hidden />
                             <div className="gantt-track gantt-track--lane gantt-track--phase-lane">
-                              {renderLaneLabel(phase.startDate, phaseTitle, 'phase')}
+                              {renderLaneLabel(phase.startDate, phaseTitle, 'phase', {
+                                showExpand: mobileLayout && phase.tasks.length > 0,
+                                expanded: phaseTasksOpen,
+                              })}
                               {renderGanttBar({
                                 startDate: phase.startDate,
                                 endDate: phase.endDate,
@@ -2918,25 +3093,9 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                               })}
                             </div>
                           </div>
-                          {phase.tasks.length > 0 ? (
-                            <div className="gantt-task-stack">
-                              {phase.tasks.map((task) => {
-                                const taskTitle = task.title.trim() || 'Task';
-                                return (
-                                <div
-                                  key={task.id}
-                                  className="gantt-row gantt-row--task gantt-row--task-checklist"
-                                  {...editableRowProps(project, `Edit ${project.name} — ${taskTitle}`)}
-                                >
-                                  <div className="gantt-label gantt-label--ghost" aria-hidden />
-                                  <div className="gantt-track gantt-track--lane gantt-track--task-checklist">
-                                    {renderLaneLabel(phase.startDate, taskTitle, 'task')}
-                                  </div>
-                                </div>
-                                );
-                              })}
-                            </div>
-                          ) : null}
+                          {mobileLayout
+                            ? renderMobilePhaseTasks(project, phase)
+                            : renderDesktopPhaseTasks(project, phase)}
                         </div>
                         );
                       })}
