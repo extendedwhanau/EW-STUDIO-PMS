@@ -3415,7 +3415,7 @@ export default function App() {
   const [designerModalOpen, setDesignerModalOpen] = useState(false);
   const [designerBeingEdited, setDesignerBeingEdited] = useState(null);
   const [filterDesigner, setFilterDesigner] = useState('all');
-  const [teamOpen, setTeamOpen] = useState(true);
+  const [teamOpen, setTeamOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ganttFocusProjectId, setGanttFocusProjectId] = useState(null);
   /** After first Supabase pull (or immediately if Supabase off), cloud saves are allowed. */
@@ -3711,10 +3711,10 @@ export default function App() {
               aria-expanded={teamOpen}
               aria-controls="sidebar-team-list"
             >
+              <span>Team</span>
               <span className={`sidebar-section-chevron${teamOpen ? ' sidebar-section-chevron--open' : ''}`} aria-hidden>
                 ›
               </span>
-              <span>Team</span>
             </button>
             <button
               type="button"

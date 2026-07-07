@@ -154,7 +154,7 @@ html, body, #root {
 .sidebar-section-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 0;
   flex: 1;
   min-width: 0;
   margin: 0;
@@ -180,11 +180,16 @@ html, body, #root {
   outline: none;
   box-shadow: 0 0 0 2px var(--text-primary);
 }
+.sidebar-section-toggle > span:first-child {
+  padding-left: 10px;
+}
 .sidebar-section-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 12px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 10px;
   font-size: 14px;
   font-weight: 400;
   line-height: 1;
