@@ -344,7 +344,7 @@ function formatDueDaysSegment(endDateStr) {
 function formatDueDateLong(str) {
   if (!str) return '';
   const d = new Date(str + 'T00:00:00');
-  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long' });
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 /** e.g. "14 Days", "Today" — same scale as due date in project cards */
@@ -1685,11 +1685,11 @@ function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'de
     : (dateStr ? `${dueSeg}, ${formatDueDateLong(dateStr)}. Working weekdays.` : '');
   const hasMilestones = projectHasMilestones(project);
   const feedDateLabel = isProjectsCard
-    ? formatMilestoneDateShort(project.endDate)
+    ? formatDueDateLong(project.endDate)
     : formatScheduleStartDate(project.startDate);
   const feedDateTitle = isProjectsCard ? 'Due date' : 'Start date';
   const feedDateAria = isProjectsCard && project.endDate
-    ? `Due ${formatMilestoneDateShort(project.endDate)}`
+    ? `Due ${formatDueDateLong(project.endDate)}`
     : undefined;
 
   const trailCol = (
