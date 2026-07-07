@@ -2979,6 +2979,16 @@ html, body, #root {
     max-width: 100%;
   }
 
+  .modal-body {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .modal-body--project {
+    padding: 10px;
+    gap: 10px;
+  }
+
   .empty-state {
     padding: 40px max(var(--app-inline), env(safe-area-inset-right, 0px)) 40px max(var(--app-inline), env(safe-area-inset-left, 0px));
   }
