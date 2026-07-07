@@ -17,11 +17,6 @@ export const MILESTONE_PHASE_CATALOG = [
     tasks: ['Photography', 'Animation', 'Video'],
   },
   {
-    key: 'publication',
-    title: 'Publication',
-    tasks: ['Concept', 'Refinement', 'Flow through', 'Mark-ups', 'Art working', 'Print Management'],
-  },
-  {
     key: 'rollout',
     title: 'Rollout',
     tasks: ['Audit & scoping', 'Concept', 'Refinement', 'Artworking & Documentation', 'Quality Control'],
@@ -30,6 +25,11 @@ export const MILESTONE_PHASE_CATALOG = [
     key: 'signage',
     title: 'Signage',
     tasks: ['Site audit & scoping', 'Concept', 'Refinement', 'Artworking & Documentation', 'Quality Control'],
+  },
+  {
+    key: 'publication',
+    title: 'Publication',
+    tasks: ['Concept', 'Refinement', 'Flow through', 'Mark-ups', 'Art working', 'Print Management'],
   },
 ];
 
