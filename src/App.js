@@ -1769,28 +1769,30 @@ function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'de
               <span className="project-client">{project.client}</span>
             </div>
             <div className="project-row-col project-row-col--lead">
-              <span className="project-name">{project.name}</span>
-              {hasMilestones ? (
-                <span className="project-milestone-range">
-                  {formatMilestoneDateRange(project.startDate, project.endDate)}
-                </span>
-              ) : null}
-            </div>
-            <div className="project-row-col project-row-col--due">
-              {dateStr ? (
-                <div
-                  className="project-row-due-pair"
-                  title={dueTitle}
-                  aria-label={dueAria}
-                >
-                  <span className="project-due-date-main">{formatDueDateLong(dateStr)}</span>
-                  {!isComplete ? (
-                    <span className="project-due-days">{formatDueDaysDisplay(dateStr)}</span>
-                  ) : null}
-                </div>
-              ) : (
-                <span className="project-due-date-main project-due-date-main--empty">—</span>
-              )}
+              <div className="project-row-lead-main">
+                <span className="project-name">{project.name}</span>
+                {hasMilestones ? (
+                  <span className="project-milestone-range">
+                    {formatMilestoneDateRange(project.startDate, project.endDate)}
+                  </span>
+                ) : null}
+              </div>
+              <div className="project-row-col project-row-col--due">
+                {dateStr ? (
+                  <div
+                    className="project-row-due-pair"
+                    title={dueTitle}
+                    aria-label={dueAria}
+                  >
+                    <span className="project-due-date-main">{formatDueDateLong(dateStr)}</span>
+                    {!isComplete ? (
+                      <span className="project-due-days">{formatDueDaysDisplay(dateStr)}</span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="project-due-date-main project-due-date-main--empty">—</span>
+                )}
+              </div>
             </div>
             {trailCol}
           </>

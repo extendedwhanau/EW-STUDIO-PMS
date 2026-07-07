@@ -472,6 +472,38 @@ html, body, #root {
   text-align: left;
 }
 
+.project-row-col--lead > .project-name,
+.project-row-col--lead > .project-milestone-range,
+.project-row-lead-main > .project-name,
+.project-row-lead-main > .project-milestone-range {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.project-row-lead-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+@media (min-width: 769px) {
+  .project-row-inner:not(.project-row-inner--schedule) .project-row-col--lead {
+    display: contents;
+  }
+
+  .project-row-inner:not(.project-row-inner--schedule) .project-row-lead-main {
+    grid-area: name;
+  }
+
+  .project-row-inner:not(.project-row-inner--schedule) .project-row-col--lead > .project-row-col--due {
+    grid-area: due;
+  }
+}
+
 .project-row-col--due {
   grid-area: due;
   display: flex;
@@ -2593,7 +2625,7 @@ html, body, #root {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       'client client'
-      'name trail';
+      'name   trail';
     column-gap: 14px;
     row-gap: 2px;
     padding: 12px 14px 12px;
@@ -2640,8 +2672,11 @@ html, body, #root {
   }
 
   .project-schedule-title {
+    flex-direction: column;
+    align-items: flex-start;
     flex-wrap: nowrap;
-    overflow: hidden;
+    gap: 2px;
+    overflow: visible;
     max-width: 100%;
   }
 
@@ -2679,11 +2714,30 @@ html, body, #root {
   }
 
   .project-row-col--due {
-    display: none;
+    display: flex;
+    justify-content: flex-start;
+    text-align: left;
+    align-items: flex-start;
   }
 
   .project-row-due-pair {
-    display: none;
+    display: inline-flex;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0 0.25em;
+  }
+
+  .project-due-date-main,
+  .project-due-date-main--empty,
+  .project-due-days {
+    font-weight: 400;
+  }
+
+  .project-schedule-start,
+  .project-schedule-start--empty {
+    font-weight: 400;
   }
 
   .project-row-col--trail {
@@ -2704,6 +2758,12 @@ html, body, #root {
   .project-row-col--lead {
     align-self: center;
     min-width: 0;
+    gap: 3px;
+  }
+
+  .project-row-col--lead > .project-row-col--due {
+    margin-top: 0;
+    padding: 0;
   }
 
   .project-name {
