@@ -1976,16 +1976,12 @@ function isFirstOfMonthNZ(epochDay) {
   return dom === '1';
 }
 
-/** Mobile ruler: "1 Jul", "1 Aug" on the first of each month. */
-function ganttMobileMonthLabelNZ(epochDay) {
-  const parts = new Intl.DateTimeFormat('en-NZ', {
-    timeZone: GANTT_NZ_TZ,
-    day: 'numeric',
-    month: 'short',
-  }).formatToParts(new Date(ganttNzNoonMs(epochDay)));
-  const dayNum = parts.find((p) => p.type === 'day')?.value;
-  const month = parts.find((p) => p.type === 'month')?.value;
-  return `${dayNum} ${month}`;
+/** Mobile ruler month row: "Jul", "Aug" (optional year when range spans years). */
+function ganttMobileMonthNameNZ(epochDay, includeYear = false) {
+  const opts = includeYear
+    ? { timeZone: GANTT_NZ_TZ, month: 'short', year: '2-digit' }
+    : { timeZone: GANTT_NZ_TZ, month: 'short' };
+  return new Intl.DateTimeFormat('en-NZ', opts).format(new Date(ganttNzNoonMs(epochDay)));
 }
 
 const GANTT_MOBILE_MQ = '(max-width: 768px)';
@@ -2022,7 +2018,7 @@ const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
 
 function defaultMainZoomStep(mobile = false) {
   if (mobile) {
-    const mobileIdx = FOCUS_ZOOM_STEPS.indexOf(8);
+    const mobileIdx = FOCUS_ZOOM_STEPS.indexOf(12);
     if (mobileIdx >= 0) return mobileIdx;
   }
   const idx = FOCUS_ZOOM_STEPS.indexOf(GANTT_PX_PER_DAY);
@@ -2246,27 +2242,45 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     return list;
   }, [minDay, maxDay, monthLabelSpansYears]);
 
+  const mobileMonthMarkers = useMemo(() => {
+    if (!mobileLayout) return [];
+    const toPct = (day) => ((day - minDay) / totalDays) * 100;
+    const markers = [];
+    let monthCur = new Date(minDay * 86400000);
+    monthCur.setDate(1);
+    while (daysFromEpoch(monthCur.toISOString().slice(0, 10)) <= maxDay) {
+      const day = daysFromEpoch(monthCur.toISOString().slice(0, 10));
+      if (day >= minDay && day <= maxDay && isFirstOfMonthNZ(day)) {
+        markers.push({
+          day,
+          left: toPct(day),
+          label: ganttMobileMonthNameNZ(day, monthLabelSpansYears),
+        });
+      }
+      monthCur.setMonth(monthCur.getMonth() + 1);
+    }
+    return markers;
+  }, [mobileLayout, minDay, maxDay, totalDays, monthLabelSpansYears]);
+
   const gridLines = useMemo(() => {
     const toPct = (day) => ((day - minDay) / totalDays) * 100;
 
     if (mobileLayout) {
-      const lines = [];
-      let prevMonthYm = null;
+      const tickDays = new Map();
       for (let day = minDay; day <= maxDay; day += 1) {
-        if (!isMondayNZ(day)) continue;
-        const ym = nzYearMonthKey(day);
-        const firstMondayOfMonth = prevMonthYm === null || ym !== prevMonthYm;
-        if (!firstMondayOfMonth) continue;
-        prevMonthYm = ym;
-        lines.push({
+        if (isFirstOfMonthNZ(day)) continue;
+        if (isMondayNZ(day)) tickDays.set(day, 'mon');
+        else if (isFridayNZ(day)) tickDays.set(day, 'fri');
+      }
+
+      return [...tickDays.entries()]
+        .sort(([dayA], [dayB]) => dayA - dayB)
+        .map(([day, weekDay]) => ({
           day,
           left: toPct(day),
-          monthStart: true,
-          firstMondayOfMonth: true,
-          label: ganttMobileMonthLabelNZ(day),
-        });
-      }
-      return lines;
+          weekDay,
+          label: ganttTickDayNumberNZ(day),
+        }));
     }
 
     const lines = [];
@@ -2290,21 +2304,20 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const verticalGridLines = useMemo(() => {
     const toPct = (day) => ((day - minDay) / totalDays) * 100;
     if (!mobileLayout) return gridLines;
-    const lines = [];
-    let prevMonthYm = null;
+
+    const byDay = new Map();
+    const addLine = (day, patch) => {
+      const cur = byDay.get(day) || { day, left: toPct(day) };
+      byDay.set(day, { ...cur, ...patch });
+    };
+
     for (let day = minDay; day <= maxDay; day += 1) {
-      if (!isMondayNZ(day)) continue;
-      const ym = nzYearMonthKey(day);
-      const firstMondayOfMonth = prevMonthYm === null || ym !== prevMonthYm;
-      if (firstMondayOfMonth) prevMonthYm = ym;
-      lines.push({
-        day,
-        left: toPct(day),
-        monthStart: firstMondayOfMonth,
-        weekStart: true,
-      });
+      if (isFirstOfMonthNZ(day)) addLine(day, { monthStart: true });
+      if (isMondayNZ(day)) addLine(day, { weekStart: true });
+      if (isFridayNZ(day)) addLine(day, { weekEnd: true });
     }
-    return lines;
+
+    return [...byDay.values()].sort((a, b) => a.day - b.day);
   }, [mobileLayout, gridLines, minDay, maxDay, totalDays]);
 
   useEffect(() => {
@@ -2750,6 +2763,29 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     </div>
   );
 
+  const renderVerticalGrid = (keyPrefix) => (
+    <>
+      {verticalGridLines.map((line) => (
+        <div
+          key={`${keyPrefix}-${line.day}`}
+          className={[
+            'gantt-vline',
+            line.monthStart ? 'gantt-vline-month' : '',
+            line.weekEnd ? 'gantt-vline-friday' : '',
+            line.weekStart && !line.monthStart ? 'gantt-vline-week' : '',
+          ].filter(Boolean).join(' ')}
+          style={{ left: `${line.left}%` }}
+        />
+      ))}
+      {todayPct >= 0 && todayPct <= 100 && (
+        <div
+          className="gantt-today-line"
+          style={{ left: `${todayPct}%` }}
+        />
+      )}
+    </>
+  );
+
   return (
     <div className={`gantt-frame${focusMode ? ' gantt-frame--focused' : ''}`}>
       {focusMode && timelineFocusProject ? (
@@ -2811,26 +2847,14 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
           style={{ minWidth: chartMinWidthPx }}
         >
           <div className="gantt-chart-lines" aria-hidden>
-            {(!focusMode || !mobileLayout) ? <div className="gantt-lines-spacer" /> : null}
-            <div className="gantt-vgrid">
-              {verticalGridLines.map((line) => (
-                <div
-                  key={`v-full-${line.day}`}
-                  className={[
-                    'gantt-vline',
-                    line.monthStart ? 'gantt-vline-month' : '',
-                    line.weekStart && !line.monthStart ? 'gantt-vline-week' : '',
-                  ].filter(Boolean).join(' ')}
-                  style={{ left: `${line.left}%` }}
-                />
-              ))}
-              {todayPct >= 0 && todayPct <= 100 && (
-                <div
-                  className="gantt-today-line"
-                  style={{ left: `${todayPct}%` }}
-                />
-              )}
-            </div>
+            {!mobileLayout ? (
+              <>
+                {!focusMode ? <div className="gantt-lines-spacer" /> : null}
+                <div className="gantt-vgrid">
+                  {renderVerticalGrid('full')}
+                </div>
+              </>
+            ) : null}
           </div>
           <div className={`gantt-chart-header${focusMode ? ' gantt-chart-header--focus' : ''}`}>
           {!mobileLayout ? (
@@ -2839,7 +2863,19 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
             </div>
           ) : null}
           <div className="gantt-ruler">
-            {!mobileLayout && (
+            {mobileLayout ? (
+              <div className="gantt-ruler-months gantt-ruler-months--mobile">
+                {mobileMonthMarkers.map((m) => (
+                  <span
+                    key={m.day}
+                    className="gantt-ruler-month gantt-ruler-month--mobile"
+                    style={{ left: `${m.left}%` }}
+                  >
+                    {m.label}
+                  </span>
+                ))}
+              </div>
+            ) : (
             <div className="gantt-ruler-months">
               {months.map((m, i) => (
                 <span
@@ -2852,7 +2888,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
               ))}
             </div>
             )}
-            <div className="gantt-ruler-ticks">
+            <div className={`gantt-ruler-ticks${mobileLayout ? ' gantt-ruler-ticks--mobile' : ''}`}>
               {todayPct >= 0 && todayPct <= 100 && (
                 <div
                   className="gantt-today-marker"
@@ -2863,11 +2899,22 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
               {gridLines.map((line) => (
                 <div
                   key={line.day}
-                  className="gantt-tick"
+                  className={[
+                    'gantt-tick',
+                    mobileLayout && line.weekDay === 'mon' ? 'gantt-tick--mon' : '',
+                    mobileLayout && line.weekDay === 'fri' ? 'gantt-tick--fri' : '',
+                  ].filter(Boolean).join(' ')}
                   style={{ left: `${line.left}%` }}
                 >
                   <span
-                    className={`gantt-tick-label${line.firstFridayOfMonth || line.firstMondayOfMonth ? ' gantt-tick-label--month' : ''}${mobileLayout ? ' gantt-tick-label--mobile-month' : ''}`}
+                    className={[
+                      'gantt-tick-label',
+                      !mobileLayout && (line.firstFridayOfMonth || line.firstMondayOfMonth)
+                        ? 'gantt-tick-label--month'
+                        : '',
+                      mobileLayout && line.weekDay === 'mon' ? 'gantt-tick-label--mobile-mon' : '',
+                      mobileLayout && line.weekDay === 'fri' ? 'gantt-tick-label--mobile-fri' : '',
+                    ].filter(Boolean).join(' ')}
                   >
                     {line.label}
                   </span>
@@ -2878,6 +2925,11 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
           </div>
 
           <div className="gantt-chart-body">
+          {mobileLayout ? (
+            <div className="gantt-body-vgrid gantt-vgrid" aria-hidden>
+              {renderVerticalGrid('body')}
+            </div>
+          ) : null}
           <div className="gantt-rows">
             {sectionsToRender.map((section, sectionIndex) => (
               <Fragment key={section.key}>

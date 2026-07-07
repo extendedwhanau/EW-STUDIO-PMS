@@ -442,11 +442,18 @@ button.gantt-focus-copy:focus-visible {
   box-shadow: 0 0 0 1px rgba(232, 93, 74, 0.25);
 }
 
-.gantt-chart-body {
-  position: relative;
-  z-index: 1;
-  background: transparent;
-}
+  .gantt-chart-body {
+    position: relative;
+    z-index: 1;
+    background: transparent;
+  }
+
+  .gantt-body-vgrid {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
 
 .gantt-vgrid {
   flex: 1;
@@ -711,28 +718,71 @@ button.gantt-focus-copy:focus-visible {
     z-index: 6;
   }
 
-  .gantt-ruler-ticks {
-    height: 28px;
+  .gantt-ruler-months--mobile {
+    height: 22px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   }
 
-  .gantt-tick-label--mobile-month {
+  .gantt-ruler-month--mobile {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    text-transform: capitalize;
+  }
+
+  .gantt-ruler-ticks--mobile {
+    height: 26px;
+  }
+
+  .gantt-chart--mobile .gantt-tick {
+    border-left: none;
+  }
+
+  .gantt-tick--mon {
+    border-left-color: rgba(0, 0, 0, 0.06);
+  }
+
+  .gantt-tick--fri {
+    border-left-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .gantt-tick-label--mobile-mon {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 6px;
+    font-size: 10px;
+    font-weight: 500;
+    font-family: 'DM Mono', ui-monospace, monospace;
+    color: var(--text-tertiary);
+  }
+
+  .gantt-tick-label--mobile-fri {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 5px;
     font-size: 11px;
     font-weight: 600;
+    font-family: 'DM Mono', ui-monospace, monospace;
     color: var(--text-secondary);
-    text-transform: capitalize;
   }
 
   .gantt-today-marker {
     width: 2px;
   }
 
-  /* Mobile grid — month-start + weekly Monday lines (not every day) */
+  /* Mobile grid — Monday week starts + Friday mid-week anchors */
   .gantt-chart--mobile .gantt-vline-week {
-    border-left-color: rgba(0, 0, 0, 0.045);
+    border-left-color: rgba(0, 0, 0, 0.055);
+  }
+
+  .gantt-chart--mobile .gantt-vline-friday {
+    border-left-color: rgba(0, 0, 0, 0.085);
   }
 
   .gantt-chart--mobile .gantt-vline-month {
-    border-left-color: rgba(0, 0, 0, 0.1);
+    border-left-color: rgba(0, 0, 0, 0.12);
   }
 
   .gantt-main-zoom-bar {
