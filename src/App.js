@@ -1129,6 +1129,7 @@ function MilestonesPanel({ form, setForm }) {
   const phases = form.milestones || [];
   const [importError, setImportError] = useState('');
   const csvInputRef = useRef(null);
+  const projectNameSize = Math.max(10, (form.name.trim() || 'Project name').length + 1);
 
   const setPhases = (next) => setForm((f) => ({ ...f, milestones: next }));
 
@@ -1206,16 +1207,31 @@ function MilestonesPanel({ form, setForm }) {
 
   return (
     <>
-      <div className="sheet-modal-section sheet-modal-section--project">
-        <NameDatesRow
-          name={form.name}
-          startDate={form.startDate}
-          endDate={form.endDate}
-          onNameChange={(v) => setForm((f) => ({ ...f, name: v }))}
-          onDatesChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
-          namePlaceholder="Project name"
-          ariaLabelDates={`Set dates for ${form.name.trim() || 'project'}`}
-        />
+      <div className="sheet-modal-section sheet-modal-section--project-name">
+        <div className="sheet-project-name-row">
+          <input
+            className="sheet-name-dates-name sheet-project-name-input"
+            type="text"
+            placeholder="Project name"
+            aria-label="Project name"
+            value={form.name}
+            size={projectNameSize}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+        </div>
+      </div>
+
+      <div className="sheet-modal-section sheet-modal-section--project-dates">
+        <div className="sheet-project-dates-row">
+          <div className="sheet-modal-section-label sheet-project-dates-label">Date</div>
+          <MilestoneDateRangePickerWithRef
+            startDate={form.startDate}
+            endDate={form.endDate}
+            onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+            className="sheet-name-dates-range sheet-project-dates-btn"
+            ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
+          />
+        </div>
       </div>
 
       <div className="sheet-pair sheet-pair--priority-top">
@@ -1280,87 +1296,28 @@ function ProjectDetailsPanel({
   removeDesignerId,
   existingClients,
 }) {
+  const projectNameSize = Math.max(10, (form.name.trim() || 'Project name').length + 1);
+
   return (
     <>
-      <div className="sheet-client-row">
-        <input
-          id="project-modal-client"
-          className="sheet-text-input sheet-text-input--left sheet-client-input"
-          type="text"
-          placeholder="Client"
-          aria-label="Client"
-          autoComplete="off"
-          value={form.client}
-          onChange={(e) => set('client', e.target.value)}
-        />
-        {existingClients.length > 0 ? (
-          <div className="sheet-designer-add-wrap sheet-client-add-wrap">
-            <button
-              type="button"
-              className="sheet-milestone-add-task"
-              aria-label="Choose client"
-              tabIndex={-1}
-            >
-              +
-            </button>
-            <select
-              className="sheet-designer-add-select"
-              value=""
-              aria-label="Choose client"
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v) set('client', v);
-                e.target.value = '';
-              }}
-            >
-              <option value="" disabled>Choose client</option>
-              {existingClients.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="sheet-modal-section">
-        <NameDatesRow
-          name={form.name}
-          startDate={form.startDate}
-          endDate={form.endDate}
-          onNameChange={(v) => set('name', v)}
-          onDatesChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
-          namePlaceholder="Project name"
-          ariaLabelDates={`Set dates for ${form.name.trim() || 'project'}`}
-        />
-      </div>
-
-      <div className="sheet-modal-section">
-        <div className="sheet-modal-section-label">Designers</div>
-        <div className="sheet-designer-chips-row">
-          {form.designerIds.map((id) => {
-            const d = designers.find((x) => x.id === id);
-            if (!d) return null;
-            return (
-              <div key={id} className="sheet-designer-chip">
-                <Avatar designer={d} size={28} />
-                <span className="sheet-designer-chip-name">{d.name}</span>
-                <button
-                  type="button"
-                  className="sheet-designer-chip-remove"
-                  onClick={() => removeDesignerId(id)}
-                  aria-label={`Remove ${d.name}`}
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-          {designersAvailableToAdd.length > 0 ? (
-            <div className="sheet-designer-add-wrap">
+      <div className="sheet-modal-section sheet-modal-section--project-client">
+        <div className="sheet-client-row">
+          <input
+            id="project-modal-client"
+            className="sheet-text-input sheet-text-input--left sheet-client-input"
+            type="text"
+            placeholder="Client"
+            aria-label="Client"
+            autoComplete="off"
+            value={form.client}
+            onChange={(e) => set('client', e.target.value)}
+          />
+          {existingClients.length > 0 ? (
+            <div className="sheet-designer-add-wrap sheet-client-add-wrap">
               <button
                 type="button"
                 className="sheet-milestone-add-task"
-                aria-label="Add designer"
+                aria-label="Choose client"
                 tabIndex={-1}
               >
                 +
@@ -1368,22 +1325,105 @@ function ProjectDetailsPanel({
               <select
                 className="sheet-designer-add-select"
                 value=""
-                aria-label="Add designer"
+                aria-label="Choose client"
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v) addDesignerId(v);
+                  if (v) set('client', v);
                   e.target.value = '';
                 }}
               >
-                <option value="" disabled>Add designer</option>
-                {designersAvailableToAdd.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                <option value="" disabled>Choose client</option>
+                {existingClients.map((name) => (
+                  <option key={name} value={name}>{name}</option>
                 ))}
               </select>
             </div>
           ) : null}
         </div>
+      </div>
 
+      <div className="sheet-modal-section sheet-modal-section--project-name">
+        <div className="sheet-project-name-row">
+          <input
+            id="project-modal-name"
+            className="sheet-name-dates-name sheet-project-name-input"
+            type="text"
+            placeholder="Project name"
+            aria-label="Project name"
+            value={form.name}
+            size={projectNameSize}
+            onChange={(e) => set('name', e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="sheet-modal-section sheet-modal-section--project-dates">
+        <div className="sheet-project-dates-row">
+          <div className="sheet-modal-section-label sheet-project-dates-label">Date</div>
+          <MilestoneDateRangePickerWithRef
+            startDate={form.startDate}
+            endDate={form.endDate}
+            onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+            className="sheet-name-dates-range sheet-project-dates-btn"
+            ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
+          />
+        </div>
+      </div>
+
+      <div className="sheet-modal-section sheet-modal-section--project-designers">
+        <div className="sheet-project-designers-row">
+          <div className="sheet-modal-section-label sheet-project-designers-label">Designers</div>
+          <div className="sheet-designer-chips-row">
+            {form.designerIds.map((id) => {
+              const d = designers.find((x) => x.id === id);
+              if (!d) return null;
+              return (
+                <div key={id} className="sheet-designer-chip">
+                  <Avatar designer={d} size={20} />
+                  <span className="sheet-designer-chip-name">{d.name}</span>
+                  <button
+                    type="button"
+                    className="sheet-designer-chip-remove"
+                    onClick={() => removeDesignerId(id)}
+                    aria-label={`Remove ${d.name}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+            {designersAvailableToAdd.length > 0 ? (
+              <div className="sheet-designer-add-wrap">
+                <button
+                  type="button"
+                  className="sheet-milestone-add-task"
+                  aria-label="Add designer"
+                  tabIndex={-1}
+                >
+                  +
+                </button>
+                <select
+                  className="sheet-designer-add-select"
+                  value=""
+                  aria-label="Add designer"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) addDesignerId(v);
+                    e.target.value = '';
+                  }}
+                >
+                  <option value="" disabled>Add designer</option>
+                  {designersAvailableToAdd.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="sheet-modal-section sheet-modal-section--project-meta">
         <div className="sheet-project-meta">
           <div className="sheet-project-meta-group">
             <label htmlFor="project-modal-category" className="sheet-modal-section-sublabel">
@@ -1430,7 +1470,9 @@ function ProjectDetailsPanel({
             </div>
           </div>
         </div>
+      </div>
 
+      <div className="sheet-modal-section sheet-modal-section--project-notes">
         <div className="sheet-project-notes">
           <label htmlFor="project-modal-notes" className="sheet-modal-section-sublabel">
             Notes

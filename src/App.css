@@ -1658,8 +1658,160 @@ html, body, #root {
   background: rgba(0, 0, 0, 0.035);
 }
 
-.sheet-modal-section--project {
+.sheet-modal-section--project-client,
+.sheet-modal-section--project-name,
+.sheet-modal-section--project-dates,
+.sheet-modal-section--project-meta {
   gap: 0;
+}
+
+.modal--project .sheet-modal-section--project-client,
+.modal--project .sheet-modal-section--project-name {
+  padding: 12px;
+}
+
+.modal--project .sheet-modal-section--project-client .sheet-client-row,
+.modal--project .sheet-modal-section--project-name .sheet-project-name-row {
+  align-items: center;
+  min-height: calc(var(--sheet-pt) * 1.25);
+}
+
+.modal--project .sheet-modal-section--project-client .sheet-text-input {
+  min-height: 0;
+  padding: 0;
+  line-height: 1.25;
+}
+
+.modal--project .sheet-modal-section--project-client .sheet-milestone-add-task {
+  width: calc(var(--sheet-pt) * 1.25);
+  height: calc(var(--sheet-pt) * 1.25);
+  min-width: calc(var(--sheet-pt) * 1.25);
+  font-size: calc(var(--sheet-pt) * 0.9);
+}
+
+.modal--project .sheet-modal-section--project-dates,
+.modal--project .sheet-modal-section--project-designers,
+.modal--project .sheet-modal-section--project-meta {
+  padding: 12px;
+  gap: 0;
+}
+
+.modal--project .sheet-project-dates-row,
+.modal--project .sheet-project-designers-row,
+.modal--project .sheet-modal-section--project-meta .sheet-project-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: calc(var(--sheet-pt) * 1.25);
+  width: 100%;
+  min-width: 0;
+}
+
+.modal--project .sheet-project-dates-label,
+.modal--project .sheet-project-designers-label {
+  flex-shrink: 0;
+  line-height: 1.25;
+}
+
+.modal--project .sheet-modal-section--project-designers .sheet-designer-chips-row {
+  flex: 1;
+  min-width: 0;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.modal--project .sheet-modal-section--project-designers .sheet-designer-chips-row::-webkit-scrollbar {
+  display: none;
+}
+
+.modal--project .sheet-modal-section--project-designers .sheet-designer-chip {
+  padding: 1px 4px 1px 2px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.modal--project .sheet-modal-section--project-designers .sheet-designer-chip-name {
+  font-size: calc(var(--sheet-pt) * 0.9);
+  font-weight: 600;
+  line-height: 1.25;
+  max-width: 96px;
+}
+
+.modal--project .sheet-modal-section--project-designers .sheet-designer-chip-remove {
+  width: calc(var(--sheet-pt) * 1.1);
+  height: calc(var(--sheet-pt) * 1.1);
+  min-width: calc(var(--sheet-pt) * 1.1);
+  font-size: calc(var(--sheet-pt) * 0.85);
+}
+
+.modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task {
+  width: calc(var(--sheet-pt) * 1.25);
+  height: calc(var(--sheet-pt) * 1.25);
+  min-width: calc(var(--sheet-pt) * 1.25);
+  font-size: calc(var(--sheet-pt) * 0.9);
+}
+
+.modal--project .sheet-modal-section--project-meta .sheet-project-meta {
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  padding-top: 0;
+}
+
+.modal--project .sheet-modal-section--project-meta .sheet-project-meta-group {
+  gap: 8px;
+}
+
+.modal--project .sheet-modal-section--project-meta .sheet-modal-section-sublabel {
+  line-height: 1.25;
+}
+
+.modal--project .sheet-modal-section--project-meta .sheet-select-hit {
+  min-height: 0;
+  height: auto;
+  width: auto;
+}
+
+.modal--project .sheet-modal-section--project-meta .sheet-value {
+  line-height: 1.25;
+}
+
+.sheet-project-name-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.sheet-project-name-input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.modal--project .sheet-modal-section--project-name .sheet-project-name-input {
+  line-height: 1.25;
+}
+
+.sheet-modal-section--project-client .sheet-client-row {
+  width: 100%;
+}
+
+.modal--project .sheet-modal-section--project-dates .sheet-project-dates-btn {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.modal--project .sheet-modal-section--project-dates .sheet-project-dates-btn.sheet-date-range-btn--empty {
+  font-weight: 600;
+}
+
+.sheet-modal-section--project-meta .sheet-project-meta,
+.sheet-modal-section--project-notes .sheet-project-notes {
+  padding-top: 0;
 }
 
 .sheet-modal-section-label,
@@ -2865,6 +3017,20 @@ html, body, #root {
     width: 34px;
     height: 34px;
     font-size: 18px;
+  }
+
+  .modal--project .sheet-modal-section--project-client .sheet-milestone-add-task {
+    width: calc(var(--sheet-pt) * 1.25);
+    height: calc(var(--sheet-pt) * 1.25);
+    min-width: calc(var(--sheet-pt) * 1.25);
+    font-size: calc(var(--sheet-pt) * 0.9);
+  }
+
+  .modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task {
+    width: calc(var(--sheet-pt) * 1.25);
+    height: calc(var(--sheet-pt) * 1.25);
+    min-width: calc(var(--sheet-pt) * 1.25);
+    font-size: calc(var(--sheet-pt) * 0.9);
   }
   .modal--project .sheet-milestone-add-task--label {
     width: auto;
