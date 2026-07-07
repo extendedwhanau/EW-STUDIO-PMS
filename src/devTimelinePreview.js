@@ -23,20 +23,30 @@ export function getDevTimelinePreviewProjects(designers) {
   const ids = designers.length > 0 ? designers.map((x) => x.id) : ['d1', 'd2', 'd3'];
   const pick = (i) => ids[i % ids.length];
 
-  const rows = [
+  const activeRows = [
     ['Annual Report', 'Meridian Co.', 'In Progress', -10, 18],
     ['Brand Identity', 'Volta Studio', 'In Review', -5, 24],
-    ['Packaging Suite', 'Bloom Foods', 'Scheduled', 3, 21],
     ['Campaign Collateral', 'Meridian Co.', 'In Progress', -14, 7],
-    ['Website Refresh', 'North & Co.', 'Ready to Start', 0, 28],
     ['Event Signage', 'Harbour Trust', 'In Progress', -7, 14],
-    ['Social Templates', 'Volta Studio', 'Scheduled', 7, 35],
     ['Print Catalogue', 'Bloom Foods', 'In Review', -21, -2],
-    ['Logo Refresh', 'Studio Nine', 'In Progress', 5, 42],
-    ['Newsletter Q3', 'Meridian Co.', 'Scheduled', 14, 49],
     ['Pitch Deck', 'North & Co.', 'In Progress', -3, 11],
-    ['Wayfinding System', 'Harbour Trust', 'Ready to Start', 10, 56],
+    ['Logo Refresh', 'Studio Nine', 'In Progress', 5, 42],
   ];
+
+  const scheduledRows = [
+    ['Packaging Suite', 'Bloom Foods', 'Scheduled', 3, 21],
+    ['Website Refresh', 'North & Co.', 'Ready to Start', 0, 28],
+    ['Social Templates', 'Volta Studio', 'Scheduled', 7, 35],
+    ['Wayfinding System', 'Harbour Trust', 'Ready to Start', 10, 56],
+    ['Newsletter Q3', 'Meridian Co.', 'Scheduled', 14, 49],
+    ['Q4 Report', 'North & Co.', 'Ready to Start', 21, 52],
+    ['Product Launch', 'Studio Nine', 'Scheduled', 28, 70],
+    ['Annual Gala', 'Harbour Trust', 'Scheduled', 56, 98],
+    ['Brand Guidelines', 'Volta Studio', 'Scheduled', 90, 130],
+    ['Exhibition Kit', 'Bloom Foods', 'Scheduled', 120, 160],
+  ];
+
+  const rows = [...activeRows, ...scheduledRows];
 
   return rows.map(([name, client, status, startOff, endOff], i) => ({
     id: `preview-${i + 1}`,
@@ -45,7 +55,7 @@ export function getDevTimelinePreviewProjects(designers) {
     designerId: pick(i),
     designerIds: [pick(i), pick(i + 1)].filter((v, idx, arr) => arr.indexOf(v) === idx),
     status,
-    priority: i % 3 === 0 ? 'priority' : 'background',
+    priority: i % 2 === 0 ? 'priority' : 'secondary',
     startDate: d(startOff),
     endDate: d(endOff),
     notes: 'Local preview — not saved to cloud.',

@@ -1,5 +1,6 @@
 import React, {
-  useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useId,
+  useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback,
+  forwardRef, useImperativeHandle, Fragment,
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
@@ -119,6 +120,27 @@ function normalizeProjectStatus(status) {
 }
 
 const PIPELINE_STATUSES = new Set(['Scheduled', 'Ready to Start']);
+
+const CATEGORY_OPTIONS = ['priority', 'secondary'];
+
+const CATEGORY_LABELS = {
+  priority: 'Priority',
+  secondary: 'Secondary',
+};
+
+function normalizeProjectCategory(category) {
+  if (category === 'background' || category === 'pro-bono') return 'secondary';
+  if (CATEGORY_OPTIONS.includes(category)) return category;
+  return 'secondary';
+}
+
+function formatCategoryForDisplay(category) {
+  return CATEGORY_LABELS[normalizeProjectCategory(category)] || CATEGORY_LABELS.priority;
+}
+
+function getProjectCategory(project) {
+  return normalizeProjectCategory(project?.priority);
+}
 
 /** Upcoming / pre–in-progress — listed under Schedule, hidden from main Projects. */
 function isPipelineStatus(status) {
@@ -335,6 +357,200 @@ function formatDueDaysDisplay(endDateStr) {
   return days === 1 ? '1 Day' : `${days} Days`;
 }
 
+/** Short date for milestone ranges, e.g. "07 Jul 26". */
+function formatMilestoneDateShort(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' });
+}
+
+/** Compact date for milestone UI, e.g. "31-01-26". */
+function formatMilestoneDateCompact(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}-${month}-${year}`;
+}
+
+function formatMilestoneDateRangeCompact(start, end) {
+  if (!start && !end) return '';
+  if (start && end) {
+    return `${formatMilestoneDateCompact(start)} — ${formatMilestoneDateCompact(end)}`;
+  }
+  return formatMilestoneDateCompact(start || end);
+}
+
+function formatMilestoneDateRange(start, end) {
+  if (!start && !end) return '';
+  if (start && end) return `${formatMilestoneDateShort(start)}—${formatMilestoneDateShort(end)}`;
+  return formatMilestoneDateShort(start || end);
+}
+
+function emptyMilestonePhase() {
+  return { id: uuidv4(), title: '', startDate: today(), endDate: addDays(today(), 28), tasks: [] };
+}
+
+function emptyMilestoneTask() {
+  return { id: uuidv4(), title: '', startDate: today(), endDate: addDays(today(), 7) };
+}
+
+function splitCsvLine(line) {
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out.map((s) => s.trim());
+}
+
+function parseMilestoneCsvDate(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const short = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})$/);
+  if (short) {
+    const day = short[1].padStart(2, '0');
+    const monthIdx = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+      .indexOf(short[2].toLowerCase());
+    if (monthIdx >= 0) {
+      let year = parseInt(short[3], 10);
+      if (year < 100) year += 2000;
+      const month = String(monthIdx + 1).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  }
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return '';
+}
+
+function normalizeCsvHeader(header) {
+  return String(header || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function parseMilestoneCsv(text) {
+  const normalized = String(text || '').replace(/^\uFEFF/, '').trim();
+  if (!normalized) throw new Error('CSV file is empty.');
+
+  const lines = normalized.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) throw new Error('CSV must include a header row and at least one data row.');
+
+  const headers = splitCsvLine(lines[0]).map(normalizeCsvHeader);
+  const col = (row, ...names) => {
+    for (let i = 0; i < names.length; i += 1) {
+      const idx = headers.indexOf(names[i]);
+      if (idx >= 0) return (row[idx] || '').trim();
+    }
+    return '';
+  };
+
+  if (!headers.includes('type') || !headers.includes('title')) {
+    throw new Error('CSV must include Type and Title columns.');
+  }
+
+  const phases = [];
+  const phaseByTitle = new Map();
+
+  for (let i = 1; i < lines.length; i += 1) {
+    const cells = splitCsvLine(lines[i]);
+    const type = col(cells, 'type').toLowerCase();
+    const title = col(cells, 'title');
+    const phaseName = col(cells, 'phase');
+    const startDate = parseMilestoneCsvDate(col(cells, 'start date'));
+    const endDate = parseMilestoneCsvDate(col(cells, 'end date'));
+
+    if (!type) continue;
+
+    if (type === 'phase') {
+      if (!title) throw new Error(`Row ${i + 1}: Phase rows need a Title.`);
+      const phase = {
+        id: uuidv4(),
+        title,
+        startDate,
+        endDate,
+        tasks: [],
+      };
+      phases.push(phase);
+      phaseByTitle.set(title.toLowerCase(), phase);
+      continue;
+    }
+
+    if (type === 'task') {
+      if (!title) throw new Error(`Row ${i + 1}: Task rows need a Title.`);
+      if (!phaseName) throw new Error(`Row ${i + 1}: Task rows need a Phase.`);
+      const parent = phaseByTitle.get(phaseName.toLowerCase());
+      if (!parent) {
+        throw new Error(`Row ${i + 1}: Unknown phase "${phaseName}".`);
+      }
+      parent.tasks.push({
+        id: uuidv4(),
+        title,
+        startDate,
+        endDate,
+      });
+      continue;
+    }
+
+    throw new Error(`Row ${i + 1}: Unknown type "${type}". Use Phase or Task.`);
+  }
+
+  if (phases.length === 0) throw new Error('No phases found in CSV.');
+  return phases;
+}
+
+function milestoneScheduleBounds(phases) {
+  const dates = [];
+  phases.forEach((phase) => {
+    if (phase.startDate) dates.push(phase.startDate);
+    if (phase.endDate) dates.push(phase.endDate);
+    (phase.tasks || []).forEach((task) => {
+      if (task.startDate) dates.push(task.startDate);
+      if (task.endDate) dates.push(task.endDate);
+    });
+  });
+  dates.sort();
+  return { startDate: dates[0] || '', endDate: dates[dates.length - 1] || '' };
+}
+
+function normalizeProjectMilestones(p) {
+  const raw = Array.isArray(p.milestones) ? p.milestones : [];
+  const milestones = raw.map((phase) => ({
+    id: phase.id || uuidv4(),
+    title: String(phase.title || ''),
+    startDate: phase.startDate || '',
+    endDate: phase.endDate || '',
+    tasks: (Array.isArray(phase.tasks) ? phase.tasks : []).map((t) => ({
+      id: t.id || uuidv4(),
+      title: String(t.title || ''),
+      startDate: t.startDate || '',
+      endDate: t.endDate || '',
+    })),
+  }));
+  const { milestonesEnabled, ...rest } = p;
+  return { ...rest, milestones };
+}
+
+function projectHasMilestones(project) {
+  return Boolean(project.milestones?.length > 0);
+}
+
 function daysFromEpoch(str) {
   return Math.floor(new Date(str + 'T00:00:00').getTime() / 86400000);
 }
@@ -368,15 +584,61 @@ function buildSampleProjects() {
     },
     {
       id: 'p3', name: 'Packaging Suite', client: 'Bloom Foods',
-      designerId: 'd3', status: 'Scheduled', priority: 'background',
+      designerId: 'd3', status: 'Scheduled', priority: 'secondary',
       startDate: addDays(t, 3), endDate: addDays(t, 24),
       notes: '',
     },
     {
       id: 'p4', name: 'Campaign Collateral', client: 'Meridian Co.',
-      designerId: 'd5', status: 'In Progress', priority: 'background',
+      designerId: 'd5', status: 'In Progress', priority: 'secondary',
       startDate: addDays(t, -10), endDate: addDays(t, 14),
       notes: 'Three formats needed.',
+    },
+    {
+      id: 'p5', name: 'Matarongo Campaign', client: 'Matarongo',
+      designerId: 'd1', designerIds: ['d1', 'd3'], status: 'In Progress', priority: 'priority',
+      startDate: '2026-07-07', endDate: '2027-02-03',
+      notes: 'Long-form campaign with phased delivery.',
+      milestones: [
+        {
+          id: 'ms1', title: 'Campaign Concept', startDate: '2026-07-07', endDate: '2026-08-27',
+          tasks: [
+            { id: 'ms1t1', title: 'Concept Development', startDate: '2026-07-07', endDate: '2026-07-28' },
+            { id: 'ms1t2', title: 'Developed Design', startDate: '2026-07-29', endDate: '2026-08-27' },
+          ],
+        },
+        {
+          id: 'ms2', title: 'Content Creation', startDate: '2026-09-01', endDate: '2026-10-16',
+          tasks: [
+            { id: 'ms2t1', title: 'Design Development', startDate: '2026-09-01', endDate: '2026-09-19' },
+            { id: 'ms2t2', title: 'Shooting Animation - Final Assets', startDate: '2026-09-21', endDate: '2026-10-02' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'p6', name: 'Q4 Report', client: 'North & Co.',
+      designerId: 'd2', status: 'Ready to Start', priority: 'secondary',
+      startDate: addDays(t, 14), endDate: addDays(t, 45),
+      notes: 'Awaiting client content.',
+    },
+    {
+      id: 'p7', name: 'Product Launch', client: 'Studio Nine',
+      designerId: 'd4', status: 'Scheduled', priority: 'secondary',
+      startDate: addDays(t, 28), endDate: addDays(t, 70),
+      notes: '',
+    },
+    {
+      id: 'p8', name: 'Annual Gala', client: 'Harbour Trust',
+      designerId: 'd3', designerIds: ['d3', 'd5'], status: 'Scheduled', priority: 'priority',
+      startDate: addDays(t, 56), endDate: addDays(t, 98),
+      notes: 'Invitation suite + signage.',
+    },
+    {
+      id: 'p9', name: 'Brand Guidelines', client: 'Volta Studio',
+      designerId: 'd1', status: 'Scheduled', priority: 'secondary',
+      startDate: addDays(t, 90), endDate: addDays(t, 130),
+      notes: '',
     },
   ];
 }
@@ -400,14 +662,664 @@ function Avatar({ designer, size = 32 }) {
 }
 
 // ── Project Modal ─────────────────────────────────────────────────────────────
-function ProjectModal({ project, designers, existingClients = [], onClose, onSave, onDelete }) {
+// ── Milestones panel (project modal) ─────────────────────────────────────────
+function MilestoneDateRangePicker({
+  startDate,
+  endDate,
+  onChange,
+  className = '',
+  emptyLabel = 'Add dates',
+  ariaLabel = 'Set dates',
+}, ref) {
+  const startRef = useRef(null);
+  const endRef = useRef(null);
+  const transitioningRef = useRef(false);
+  const sessionSnapshotRef = useRef(null);
+  const sessionDraftRef = useRef(null);
+  const [step, setStep] = useState(null);
+
+  const openPicker = (input, delayMs = 0) => {
+    const run = () => {
+      if (!input) return;
+      if (typeof input.showPicker === 'function') {
+        try {
+          input.showPicker();
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+      input.focus();
+    };
+    if (delayMs > 0) {
+      window.setTimeout(run, delayMs);
+    } else {
+      requestAnimationFrame(run);
+    }
+  };
+
+  const beginPick = useCallback(() => {
+    const snap = {
+      startDate: startDate || '',
+      endDate: endDate || '',
+    };
+    sessionSnapshotRef.current = snap;
+    sessionDraftRef.current = { ...snap };
+    if (startDate && !endDate) {
+      setStep('end');
+      openPicker(endRef.current);
+      return;
+    }
+    setStep('start');
+    openPicker(startRef.current);
+  }, [startDate, endDate]);
+
+  useImperativeHandle(ref, () => ({ beginPick }), [beginPick]);
+
+  const endPickSession = () => {
+    const snap = sessionSnapshotRef.current;
+    const draft = sessionDraftRef.current;
+    sessionSnapshotRef.current = null;
+    sessionDraftRef.current = null;
+    setStep(null);
+    if (!snap) return;
+
+    const draftStart = draft?.startDate ?? '';
+    const draftEnd = draft?.endDate ?? '';
+    const snapStart = snap.startDate || '';
+    const snapEnd = snap.endDate || '';
+
+    if (draftStart === snapStart && draftEnd === snapEnd) return;
+
+    onChange({
+      startDate: snapStart || undefined,
+      endDate: snapEnd || undefined,
+    });
+  };
+
+  const handleStartChange = (value) => {
+    if (!value) return;
+    if (sessionDraftRef.current) {
+      sessionDraftRef.current = { ...sessionDraftRef.current, startDate: value };
+    }
+    onChange({ startDate: value });
+    transitioningRef.current = true;
+    setStep('end');
+    openPicker(endRef.current, 80);
+    window.setTimeout(() => {
+      transitioningRef.current = false;
+    }, 200);
+  };
+
+  const handleEndChange = (value) => {
+    if (!value) return;
+    let nextEnd = value;
+    if (startDate && nextEnd && nextEnd < startDate) nextEnd = startDate;
+    if (sessionDraftRef.current) {
+      sessionDraftRef.current = { ...sessionDraftRef.current, endDate: nextEnd };
+    }
+    onChange({ endDate: nextEnd });
+    sessionSnapshotRef.current = null;
+    sessionDraftRef.current = null;
+    setStep(null);
+  };
+
+  const handleStartBlur = () => {
+    if (transitioningRef.current) return;
+    if (step === 'start') endPickSession();
+  };
+
+  const handleEndBlur = () => {
+    if (step === 'end') endPickSession();
+  };
+
+  const savedRangeLabel = formatMilestoneDateRangeCompact(startDate, endDate) || emptyLabel;
+
+  const statusText = step === 'start'
+    ? (startDate || endDate ? savedRangeLabel : 'Select start date')
+    : savedRangeLabel;
+
+  const pickingClass = step === 'start'
+    ? 'sheet-milestone-range-btn--pick-start'
+    : step === 'end' || (startDate && !endDate)
+      ? 'sheet-milestone-range-btn--pick-end'
+      : '';
+
+  const showEndPrompt = (step === 'end' || (step === null && startDate && !endDate)) && startDate;
+
+  return (
+    <>
+      <button
+        type="button"
+        className={[
+          'sheet-milestone-range-btn',
+          pickingClass,
+          className,
+        ].filter(Boolean).join(' ')}
+        onClick={beginPick}
+        aria-label={ariaLabel}
+        aria-live="polite"
+      >
+        {showEndPrompt ? (
+          <>
+            <span className="sheet-range-part sheet-range-part--set">
+              {formatMilestoneDateCompact(startDate)}
+            </span>
+            <span className="sheet-range-sep"> — </span>
+            <span className="sheet-range-part sheet-range-part--active">Select end date</span>
+          </>
+        ) : (
+          statusText
+        )}
+      </button>
+      <input
+        ref={startRef}
+        type="date"
+        className="sheet-milestone-date-hidden"
+        value={startDate || ''}
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => handleStartChange(e.target.value)}
+        onBlur={handleStartBlur}
+      />
+      <input
+        ref={endRef}
+        type="date"
+        className="sheet-milestone-date-hidden"
+        value={endDate || ''}
+        min={startDate || undefined}
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => handleEndChange(e.target.value)}
+        onBlur={handleEndBlur}
+      />
+    </>
+  );
+}
+
+const MilestoneDateRangePickerWithRef = forwardRef(MilestoneDateRangePicker);
+
+function NameDatesRow({
+  name,
+  startDate,
+  endDate,
+  onNameChange,
+  onDatesChange,
+  namePlaceholder = 'Name',
+  ariaLabelDates = 'Set dates',
+  pickerRef: externalPickerRef,
+}) {
+  const internalPickerRef = useRef(null);
+  const pickerRef = externalPickerRef || internalPickerRef;
+  const nameSize = Math.max(10, (name.trim() || namePlaceholder).length + 1);
+
+  return (
+    <div className="sheet-name-dates-row">
+      <input
+        className="sheet-name-dates-name"
+        type="text"
+        placeholder={namePlaceholder}
+        aria-label={namePlaceholder}
+        value={name}
+        size={nameSize}
+        onChange={(e) => onNameChange(e.target.value)}
+      />
+      <MilestoneDateRangePickerWithRef
+        ref={pickerRef}
+        startDate={startDate}
+        endDate={endDate}
+        onChange={onDatesChange}
+        className="sheet-name-dates-range"
+        ariaLabel={ariaLabelDates}
+      />
+    </div>
+  );
+}
+
+function MilestonePhaseTitle({ phase, onUpdateTitle, onUpdateDates, pickerRef }) {
+  return (
+    <NameDatesRow
+      name={phase.title}
+      startDate={phase.startDate}
+      endDate={phase.endDate}
+      onNameChange={onUpdateTitle}
+      onDatesChange={onUpdateDates}
+      namePlaceholder="Phase name"
+      ariaLabelDates={`Set dates for ${phase.title.trim() || 'phase'}`}
+      pickerRef={pickerRef}
+    />
+  );
+}
+
+function MilestoneTaskChip({
+  task,
+  onUpdate,
+  onRemove,
+}) {
+  const label = task.title.trim() || 'Task';
+  const nameSize = Math.max(4, label.length + 1);
+
+  return (
+    <div className="sheet-task-chip">
+      <input
+        className="sheet-task-chip-name"
+        type="text"
+        value={task.title}
+        placeholder="Task"
+        aria-label="Task name"
+        size={nameSize}
+        onChange={(e) => onUpdate({ title: e.target.value })}
+      />
+      <MilestoneDateRangePickerWithRef
+        startDate={task.startDate}
+        endDate={task.endDate}
+        onChange={onUpdate}
+        className="sheet-task-chip-range"
+        emptyLabel="Dates"
+        ariaLabel={`Set dates for ${label}`}
+      />
+      <button
+        type="button"
+        className="sheet-designer-chip-remove sheet-task-chip-remove"
+        onClick={onRemove}
+        aria-label={`Remove ${label}`}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function MilestonePhaseBlock({
+  phase,
+  onUpdatePhase,
+  onRemovePhase,
+  onAddTask,
+  onUpdateTask,
+  onRemoveTask,
+}) {
+  const pickerRef = useRef(null);
+
+  return (
+    <div className="sheet-milestone-block">
+      <div className="sheet-milestone-phase-head">
+        <MilestonePhaseTitle
+          phase={phase}
+          pickerRef={pickerRef}
+          onUpdateTitle={(title) => onUpdatePhase({ title })}
+          onUpdateDates={(patch) => onUpdatePhase(patch)}
+        />
+        <button
+          type="button"
+          className="sheet-designer-chip-remove sheet-milestone-phase-remove"
+          onClick={onRemovePhase}
+          aria-label="Remove phase"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="sheet-milestone-tasks">
+        <div className="sheet-milestone-task-chips">
+          {phase.tasks.map((task) => (
+            <MilestoneTaskChip
+              key={task.id}
+              task={task}
+              onUpdate={(patch) => onUpdateTask(task.id, patch)}
+              onRemove={() => onRemoveTask(task.id)}
+            />
+          ))}
+          <button
+            type="button"
+            className="sheet-milestone-add-task"
+            onClick={onAddTask}
+            aria-label="Add task"
+          >
+            +
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MilestonesPanel({ form, setForm }) {
+  const phases = form.milestones || [];
+  const [importError, setImportError] = useState('');
+  const csvInputRef = useRef(null);
+
+  const setPhases = (next) => setForm((f) => ({ ...f, milestones: next }));
+
+  const updatePhase = (phaseId, patch) => {
+    setPhases(phases.map((ph) => (ph.id === phaseId ? { ...ph, ...patch } : ph)));
+  };
+
+  const removePhase = (phaseId) => {
+    setPhases(phases.filter((ph) => ph.id !== phaseId));
+  };
+
+  const addPhase = () => {
+    setPhases([...phases, emptyMilestonePhase()]);
+  };
+
+  const updateTask = (phaseId, taskId, patch) => {
+    setPhases(phases.map((ph) => {
+      if (ph.id !== phaseId) return ph;
+      return {
+        ...ph,
+        tasks: ph.tasks.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+      };
+    }));
+  };
+
+  const removeTask = (phaseId, taskId) => {
+    setPhases(phases.map((ph) => {
+      if (ph.id !== phaseId) return ph;
+      return { ...ph, tasks: ph.tasks.filter((t) => t.id !== taskId) };
+    }));
+  };
+
+  const addTask = (phaseId) => {
+    const task = emptyMilestoneTask();
+    setPhases(phases.map((ph) => {
+      if (ph.id !== phaseId) return ph;
+      return { ...ph, tasks: [...ph.tasks, task] };
+    }));
+  };
+
+  const applyImportedPhases = (imported) => {
+    const bounds = milestoneScheduleBounds(imported);
+    setForm((f) => ({
+      ...f,
+      milestones: imported,
+      startDate: bounds.startDate || f.startDate,
+      endDate: bounds.endDate || f.endDate,
+    }));
+    setImportError('');
+  };
+
+  const handleCsvUpload = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = parseMilestoneCsv(String(reader.result || ''));
+        if (phases.length > 0) {
+          const replace = window.confirm(
+            'Replace existing phases with the imported CSV schedule?',
+          );
+          if (!replace) return;
+        }
+        applyImportedPhases(imported);
+      } catch (err) {
+        setImportError(err.message || 'Could not parse CSV.');
+      }
+    };
+    reader.onerror = () => setImportError('Could not read file.');
+    reader.readAsText(file);
+  };
+
+  return (
+    <>
+      <div className="sheet-modal-section sheet-modal-section--project">
+        <NameDatesRow
+          name={form.name}
+          startDate={form.startDate}
+          endDate={form.endDate}
+          onNameChange={(v) => setForm((f) => ({ ...f, name: v }))}
+          onDatesChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+          namePlaceholder="Project name"
+          ariaLabelDates={`Set dates for ${form.name.trim() || 'project'}`}
+        />
+      </div>
+
+      <div className="sheet-pair sheet-pair--priority-top">
+        <span className="sheet-field-label">Phases</span>
+        <div className="sheet-field-value sheet-milestone-phase-actions">
+          <button
+            type="button"
+            className="sheet-milestone-add-task sheet-milestone-add-task--label"
+            onClick={() => csvInputRef.current?.click()}
+            aria-label="Import CSV"
+          >
+            Import
+          </button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="sheet-csv-import-input"
+            onChange={handleCsvUpload}
+            aria-hidden
+            tabIndex={-1}
+          />
+          <button
+            type="button"
+            className="sheet-milestone-add-task"
+            onClick={addPhase}
+            aria-label="Add phase"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      {importError ? (
+        <p className="sheet-csv-import-error" role="alert">{importError}</p>
+      ) : null}
+
+      <div className="sheet-milestone-list">
+      {phases.map((phase) => (
+        <MilestonePhaseBlock
+          key={phase.id}
+          phase={phase}
+          onUpdatePhase={(patch) => updatePhase(phase.id, patch)}
+          onRemovePhase={() => removePhase(phase.id)}
+          onAddTask={() => addTask(phase.id)}
+          onUpdateTask={(taskId, patch) => updateTask(phase.id, taskId, patch)}
+          onRemoveTask={(taskId) => removeTask(phase.id, taskId)}
+        />
+      ))}
+      </div>
+    </>
+  );
+}
+
+function ProjectDetailsPanel({
+  form,
+  set,
+  setForm,
+  designers,
+  designersAvailableToAdd,
+  addDesignerId,
+  removeDesignerId,
+  existingClients,
+}) {
+  return (
+    <>
+      <div className="sheet-client-row">
+        <input
+          id="project-modal-client"
+          className="sheet-text-input sheet-text-input--left sheet-client-input"
+          type="text"
+          placeholder="Client"
+          aria-label="Client"
+          autoComplete="off"
+          value={form.client}
+          onChange={(e) => set('client', e.target.value)}
+        />
+        {existingClients.length > 0 ? (
+          <div className="sheet-designer-add-wrap sheet-client-add-wrap">
+            <button
+              type="button"
+              className="sheet-milestone-add-task"
+              aria-label="Choose client"
+              tabIndex={-1}
+            >
+              +
+            </button>
+            <select
+              className="sheet-designer-add-select"
+              value=""
+              aria-label="Choose client"
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v) set('client', v);
+                e.target.value = '';
+              }}
+            >
+              <option value="" disabled>Choose client</option>
+              {existingClients.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="sheet-modal-section">
+        <NameDatesRow
+          name={form.name}
+          startDate={form.startDate}
+          endDate={form.endDate}
+          onNameChange={(v) => set('name', v)}
+          onDatesChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+          namePlaceholder="Project name"
+          ariaLabelDates={`Set dates for ${form.name.trim() || 'project'}`}
+        />
+      </div>
+
+      <div className="sheet-modal-section">
+        <div className="sheet-modal-section-label">Designers</div>
+        <div className="sheet-designer-chips-row">
+          {form.designerIds.map((id) => {
+            const d = designers.find((x) => x.id === id);
+            if (!d) return null;
+            return (
+              <div key={id} className="sheet-designer-chip">
+                <Avatar designer={d} size={28} />
+                <span className="sheet-designer-chip-name">{d.name}</span>
+                <button
+                  type="button"
+                  className="sheet-designer-chip-remove"
+                  onClick={() => removeDesignerId(id)}
+                  aria-label={`Remove ${d.name}`}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          {designersAvailableToAdd.length > 0 ? (
+            <div className="sheet-designer-add-wrap">
+              <button
+                type="button"
+                className="sheet-milestone-add-task"
+                aria-label="Add designer"
+                tabIndex={-1}
+              >
+                +
+              </button>
+              <select
+                className="sheet-designer-add-select"
+                value=""
+                aria-label="Add designer"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) addDesignerId(v);
+                  e.target.value = '';
+                }}
+              >
+                <option value="" disabled>Add designer</option>
+                {designersAvailableToAdd.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="sheet-project-meta">
+          <div className="sheet-project-meta-group">
+            <label htmlFor="project-modal-category" className="sheet-modal-section-sublabel">
+              Category
+            </label>
+            <div className="sheet-select-hit sheet-select-hit--meta">
+              <span className="sheet-select-visual" aria-hidden>
+                <span className="sheet-value sheet-value--nowrap">
+                  {formatCategoryForDisplay(form.priority)}
+                </span>
+              </span>
+              <select
+                id="project-modal-category"
+                className="sheet-select-native"
+                value={normalizeProjectCategory(form.priority)}
+                onChange={(e) => set('priority', e.target.value)}
+              >
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="sheet-project-meta-group">
+            <label htmlFor="project-modal-status" className="sheet-modal-section-sublabel">
+              Status
+            </label>
+            <div className="sheet-select-hit sheet-select-hit--meta">
+              <span className="sheet-select-visual" aria-hidden>
+                <span className="sheet-value sheet-value--nowrap">
+                  {formatStatusForDisplay(form.status)}
+                </span>
+              </span>
+              <select
+                id="project-modal-status"
+                className="sheet-select-native"
+                value={form.status}
+                onChange={(e) => set('status', e.target.value)}
+              >
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="sheet-project-notes">
+          <label htmlFor="project-modal-notes" className="sheet-modal-section-sublabel">
+            Notes
+          </label>
+          <textarea
+            id="project-modal-notes"
+            className="sheet-notes sheet-notes--section"
+            placeholder="Any notes for this project…"
+            value={form.notes}
+            onChange={(e) => set('notes', e.target.value)}
+            rows={3}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ProjectModal({ project, designers, existingClients = [], initialTab = 'details', onClose, onSave, onDelete }) {
+  const [modalTab, setModalTab] = useState(initialTab);
+
+  useEffect(() => {
+    setModalTab(initialTab);
+  }, [project?.id, initialTab]);
   const [form, setForm] = useState(() => {
     if (project) {
-      const merged = normalizeProjectDesignersOnProject({
+      const merged = normalizeProjectMilestones(normalizeProjectDesignersOnProject({
         ...project,
         status: normalizeProjectStatus(project.status),
-        priority: project.priority || 'priority',
-      });
+        priority: normalizeProjectCategory(project.priority),
+      }));
       return merged;
     }
     const firstId = designers[0]?.id || '';
@@ -416,7 +1328,8 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
       designerIds: firstId ? [firstId] : [],
       designerId: firstId,
       status: 'Scheduled', startDate: today(), endDate: addDays(today(), 14),
-      notes: '', priority: 'priority',
+      notes: '', priority: 'secondary',
+      milestones: [],
     };
   });
 
@@ -438,12 +1351,10 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
 
   const designersAvailableToAdd = designers.filter((d) => !form.designerIds.includes(d.id));
 
-  const clientDatalistId = useId();
-
   const submitProject = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    onSave(form);
+    onSave(normalizeProjectMilestones(form));
     onClose();
   };
 
@@ -451,196 +1362,45 @@ function ProjectModal({ project, designers, existingClients = [], onClose, onSav
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal--project">
         <div className="modal-header modal-header--project">
-          <h2 className="modal-project-sheet-heading">
-            {project ? 'Edit' : 'Create Project'}
-          </h2>
+          <div className="modal-project-tabs" role="tablist" aria-label="Project sections">
+            <button
+              type="button"
+              role="tab"
+              className={`modal-project-tab${modalTab === 'details' ? ' modal-project-tab--active' : ''}`}
+              aria-selected={modalTab === 'details'}
+              onClick={() => setModalTab('details')}
+            >
+              Details
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={`modal-project-tab${modalTab === 'milestones' ? ' modal-project-tab--active' : ''}`}
+              aria-selected={modalTab === 'milestones'}
+              onClick={() => setModalTab('milestones')}
+            >
+              Milestones
+            </button>
+          </div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <form className="modal-project-sheet-form" onSubmit={submitProject} noValidate>
         <div className="modal-body modal-body--project">
-          <div className="sheet-grid-row sheet-grid-row--bare-fields">
-            <div className="sheet-client-field">
-              <input
-                id="project-modal-client"
-                className="sheet-text-input sheet-text-input--left"
-                type="text"
-                placeholder="Client"
-                aria-label="Client"
-                title={
-                  existingClients.length > 0
-                    ? 'Type a new name or pick a suggestion from the list'
-                    : undefined
-                }
-                list={existingClients.length > 0 ? clientDatalistId : undefined}
-                autoComplete="off"
-                value={form.client}
-                onChange={(e) => set('client', e.target.value)}
-              />
-              {existingClients.length > 0 ? (
-                <datalist id={clientDatalistId}>
-                  {existingClients.map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
-              ) : null}
-            </div>
-            <input
-              id="project-modal-name"
-              className="sheet-text-input sheet-text-input--left"
-              type="text"
-              placeholder="Project"
-              aria-label="Project"
-              value={form.name}
-              onChange={e => set('name', e.target.value)}
+          {modalTab === 'details' ? (
+            <ProjectDetailsPanel
+              form={form}
+              set={set}
+              setForm={setForm}
+              designers={designers}
+              designersAvailableToAdd={designersAvailableToAdd}
+              addDesignerId={addDesignerId}
+              removeDesignerId={removeDesignerId}
+              existingClients={existingClients}
             />
-          </div>
-
-          <div className="sheet-grid-row sheet-grid-row--designers-priority">
-            <div
-              className="sheet-designers-column"
-              role="group"
-              aria-labelledby="project-modal-designers-label"
-            >
-              <div className="sheet-pair sheet-pair--priority-top sheet-pair--designers-heading">
-                <span id="project-modal-designers-label" className="sheet-field-label">
-                  Designers
-                </span>
-                <div className="sheet-field-value">
-                  {designersAvailableToAdd.length > 0 ? (
-                    <div className="sheet-designer-add-yesno">
-                      <span className="priority-yesno sheet-designer-add-yesno-label" aria-hidden>Add</span>
-                      <select
-                        className="sheet-select-native sheet-select-native--add-yesno"
-                        value=""
-                        aria-label="Add designer"
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v) addDesignerId(v);
-                          e.target.value = '';
-                        }}
-                      >
-                        <option value="">Add</option>
-                        {designersAvailableToAdd.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="sheet-designer-assign sheet-designer-assign--chips">
-                {form.designerIds.map((id) => {
-                  const d = designers.find((x) => x.id === id);
-                  if (!d) return null;
-                  return (
-                    <div key={id} className="sheet-designer-chip">
-                      <Avatar designer={d} size={28} />
-                      <span className="sheet-designer-chip-name">{d.name}</span>
-                      <button
-                        type="button"
-                        className="sheet-designer-chip-remove"
-                        onClick={() => removeDesignerId(id)}
-                        aria-label={`Remove ${d.name}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="sheet-pair sheet-pair--priority-top">
-              <label htmlFor="project-priority-yesno" className="sheet-field-label">
-                Priority
-              </label>
-              <div className="sheet-field-value">
-                <button
-                  id="project-priority-yesno"
-                  type="button"
-                  className="priority-yesno"
-                  onClick={() => set('priority', form.priority === 'priority' ? 'background' : 'priority')}
-                  aria-pressed={form.priority === 'priority'}
-                  title={form.priority === 'priority' ? 'Priority list — click for Secondary' : 'Secondary list — click for Priority'}
-                >
-                  {form.priority === 'priority' ? 'Yes' : 'No'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="sheet-grid-row">
-            <div className="sheet-pair">
-              <label htmlFor="project-modal-start" className="sheet-field-label">
-                Start
-              </label>
-              <div className="sheet-field-value sheet-field-value--date">
-                <input
-                  id="project-modal-start"
-                  type="date"
-                  className="sheet-date"
-                  value={form.startDate}
-                  onChange={e => set('startDate', e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="sheet-pair">
-              <label htmlFor="project-modal-end" className="sheet-field-label">
-                End
-              </label>
-              <div className="sheet-field-value sheet-field-value--date">
-                <input
-                  id="project-modal-end"
-                  type="date"
-                  className="sheet-date"
-                  value={form.endDate}
-                  onChange={e => set('endDate', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="sheet-grid-row">
-            <div className="sheet-pair sheet-pair--blank" aria-hidden="true" />
-            <div className="sheet-pair">
-              <label htmlFor="project-modal-status" className="sheet-field-label">
-                Status
-              </label>
-              <div className="sheet-field-value">
-                <div className="sheet-select-hit">
-                  <span className="sheet-select-visual" aria-hidden>
-                    <span className="sheet-value sheet-value--nowrap">
-                      {formatStatusForDisplay(form.status)}
-                    </span>
-                  </span>
-                  <select
-                    id="project-modal-status"
-                    className="sheet-select-native"
-                    value={form.status}
-                    onChange={e => set('status', e.target.value)}
-                  >
-                    {STATUS_OPTIONS.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="sheet-notes-block">
-            <label htmlFor="project-modal-notes" className="sheet-field-label">
-              Notes
-            </label>
-            <textarea
-              id="project-modal-notes"
-              className="sheet-notes"
-              placeholder="Any notes for this project…"
-              value={form.notes}
-              onChange={e => set('notes', e.target.value)}
-              rows={3}
-            />
-          </div>
+          ) : (
+            <MilestonesPanel form={form} setForm={setForm} />
+          )}
         </div>
 
         <div className="modal-footer modal-footer--project modal-footer--project-form">
@@ -779,6 +1539,7 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
   const dueAria = isComplete
     ? (dateStr ? `Completed ${formatDueDateLong(dateStr)}` : 'No completion date')
     : (dateStr ? `${dueSeg}, ${formatDueDateLong(dateStr)}. Working weekdays.` : '');
+  const hasMilestones = projectHasMilestones(project);
   return (
     <div className="project-row" onClick={() => onClick(project)}>
       <div className="project-row-inner">
@@ -787,6 +1548,11 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
         </div>
         <div className="project-row-col project-row-col--lead">
           <span className="project-name">{project.name}</span>
+          {hasMilestones ? (
+            <span className="project-milestone-range">
+              {formatMilestoneDateRange(project.startDate, project.endDate)}
+            </span>
+          ) : null}
         </div>
         <div className="project-row-col project-row-col--due">
           {dateStr ? (
@@ -907,6 +1673,43 @@ function useGanttMobileLayout() {
 
 /** Pixels per day on the timeline (horizontal scroll width). */
 const GANTT_PX_PER_DAY = 3;
+const GANTT_FOCUS_HEAD_DAYS = 14;
+const GANTT_FOCUS_TAIL_DAYS = 62;
+/** Match --gantt-lead-w in gantt-timeline.css (10px pad + label + 4px gap). */
+const GANTT_LEAD_W_DESKTOP = 124;
+const GANTT_LEAD_W_MOBILE = 86;
+const GANTT_FOCUS_BANNER_PAD = 10;
+const GANTT_FOCUS_BACK_W = 34;
+/** Icon-only back pill on desktop. */
+const GANTT_FOCUS_BACK_ICON_W = 30;
+/** Matches the flex gap on .gantt-focus-banner. */
+const GANTT_FOCUS_BANNER_GAP = 12;
+const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
+
+function defaultFocusZoomStep(totalDays) {
+  const targetWidth = 1120;
+  const idealPx = targetWidth / Math.max(totalDays, 1);
+  let best = 0;
+  for (let i = 0; i < FOCUS_ZOOM_STEPS.length; i += 1) {
+    if (FOCUS_ZOOM_STEPS[i] <= idealPx + 0.5) best = i;
+  }
+  return best;
+}
+
+function getProjectTimelineDays(project) {
+  const days = [];
+  if (project?.startDate) days.push(daysFromEpoch(project.startDate));
+  if (project?.endDate) days.push(daysFromEpoch(project.endDate));
+  (project?.milestones || []).forEach((ph) => {
+    if (ph.startDate) days.push(daysFromEpoch(ph.startDate));
+    if (ph.endDate) days.push(daysFromEpoch(ph.endDate));
+    (ph.tasks || []).forEach((t) => {
+      if (t.startDate) days.push(daysFromEpoch(t.startDate));
+      if (t.endDate) days.push(daysFromEpoch(t.endDate));
+    });
+  });
+  return days;
+}
 
 function timelineDesignerRank(project, rank, tail) {
   const ids = getProjectDesignerIds(project);
@@ -959,48 +1762,137 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const scrollRef = useRef(null);
   const mobileLayout = useGanttMobileLayout();
   const todayDay = daysFromEpoch(today());
+  const [expandedProjectId, setExpandedProjectId] = useState(null);
+  const [focusZoomStep, setFocusZoomStep] = useState(0);
+  const focusCopyMarginLockedForRef = useRef(null);
+  const focusBackRef = useRef(null);
+  const [focusCopyMarginPx, setFocusCopyMarginPx] = useState(undefined);
+
+  const timelineSections = useMemo(() => {
+    const active = validProjects.filter((p) => !isPipelineStatus(p.status));
+    const scheduled = validProjects.filter((p) => isPipelineStatus(p.status));
+    return [
+      {
+        key: 'projects',
+        label: 'Projects',
+        projects: sortTimelineProjectsByDesigner(active, designers),
+      },
+      {
+        key: 'schedule',
+        label: 'Schedule',
+        projects: sortTimelineProjectsByDesigner(scheduled, designers),
+      },
+    ].filter((section) => section.projects.length > 0);
+  }, [validProjects, designers]);
 
   const orderedProjects = useMemo(
-    () => sortTimelineProjectsByDesigner(validProjects, designers),
-    [validProjects, designers]
+    () => timelineSections.flatMap((section) => section.projects),
+    [timelineSections],
   );
 
-  const allStarts = validProjects.map(p => daysFromEpoch(p.startDate));
-  const allEnds = validProjects.map(p => daysFromEpoch(p.endDate));
-  const minStart = Math.min(...allStarts);
-  const maxEnd = Math.max(...allEnds);
-  const ganttLastDay = daysFromEpoch('2026-12-31');
-  let minDay = minStart - 14;
-  // Room to plan ahead, but timeline never extends past 31 Dec 2026
-  let maxDay = Math.min(
-    Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
-    ganttLastDay
+  const focusedProject = useMemo(
+    () => (expandedProjectId
+      ? orderedProjects.find((p) => p.id === expandedProjectId) ?? null
+      : null),
+    [expandedProjectId, orderedProjects],
   );
-  if (maxDay <= minDay) {
-    minDay = maxDay - 365;
-  }
-  const totalDays = Math.max(7, maxDay - minDay);
-  const chartMinWidthPx = Math.ceil(totalDays * GANTT_PX_PER_DAY);
+
+  const focusRange = useMemo(() => {
+    if (!focusedProject) return null;
+    const projectDays = getProjectTimelineDays(focusedProject);
+    const minStart = projectDays.length
+      ? Math.min(...projectDays)
+      : daysFromEpoch(focusedProject.startDate);
+    const maxEnd = projectDays.length
+      ? Math.max(...projectDays)
+      : daysFromEpoch(focusedProject.endDate);
+    const minDay = minStart - GANTT_FOCUS_HEAD_DAYS;
+    const maxDay = maxEnd + GANTT_FOCUS_TAIL_DAYS;
+    const totalDays = Math.max(7, maxDay - minDay);
+    return { minDay, maxDay, totalDays };
+  }, [focusedProject]);
+
+  useEffect(() => {
+    if (!expandedProjectId || !focusRange) return;
+    setFocusZoomStep(defaultFocusZoomStep(focusRange.totalDays));
+  }, [expandedProjectId, focusRange?.totalDays]);
+
+  const timelineView = useMemo(() => {
+    const ganttLastDay = daysFromEpoch('2027-12-31');
+
+    if (focusedProject && focusRange) {
+      const pxPerDay = FOCUS_ZOOM_STEPS[focusZoomStep] ?? FOCUS_ZOOM_STEPS[0];
+      return {
+        minDay: focusRange.minDay,
+        maxDay: focusRange.maxDay,
+        totalDays: focusRange.totalDays,
+        pxPerDay,
+        focusMode: true,
+      };
+    }
+
+    const allStarts = validProjects.map((p) => daysFromEpoch(p.startDate));
+    const allEnds = validProjects.map((p) => daysFromEpoch(p.endDate));
+    validProjects.forEach((p) => {
+      if (!Array.isArray(p.milestones)) return;
+      p.milestones.forEach((ph) => {
+        if (ph.startDate) allStarts.push(daysFromEpoch(ph.startDate));
+        if (ph.endDate) allEnds.push(daysFromEpoch(ph.endDate));
+        (ph.tasks || []).forEach((t) => {
+          if (t.startDate) allStarts.push(daysFromEpoch(t.startDate));
+          if (t.endDate) allEnds.push(daysFromEpoch(t.endDate));
+        });
+      });
+    });
+    const minStart = Math.min(...allStarts);
+    const maxEnd = Math.max(...allEnds);
+    let minDay = minStart - 14;
+    let maxDay = Math.min(
+      Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
+      ganttLastDay,
+    );
+    if (maxDay <= minDay) minDay = maxDay - 365;
+    const totalDays = Math.max(7, maxDay - minDay);
+    return {
+      minDay,
+      maxDay,
+      totalDays,
+      pxPerDay: GANTT_PX_PER_DAY,
+      focusMode: false,
+    };
+  }, [focusedProject, focusRange, focusZoomStep, validProjects, todayDay]);
+
+  const { minDay, maxDay, totalDays, pxPerDay, focusMode } = timelineView;
+  const chartMinWidthPx = Math.ceil(totalDays * pxPerDay);
+  const sectionsToRender = focusMode && focusedProject
+    ? [{ key: 'focus', label: null, projects: [focusedProject] }]
+    : timelineSections;
 
   const pct = (day) => ((day - minDay) / totalDays) * 100;
 
   const minYear = new Date(minDay * 86400000).getFullYear();
   const maxYear = new Date(maxDay * 86400000).getFullYear();
-  const monthLabelOpts = minYear !== maxYear ? { month: 'short', year: '2-digit' } : { month: 'short' };
+  const monthLabelSpansYears = minYear !== maxYear;
 
-  const months = [];
-  let cur = new Date(minDay * 86400000);
-  cur.setDate(1);
-  while (daysFromEpoch(cur.toISOString().slice(0, 10)) <= maxDay) {
-    const day = daysFromEpoch(cur.toISOString().slice(0, 10));
-    if (day >= minDay && day <= maxDay) {
-      months.push({
-        label: cur.toLocaleDateString('en-NZ', monthLabelOpts),
-        day,
-      });
+  const months = useMemo(() => {
+    const monthLabelOpts = monthLabelSpansYears
+      ? { month: 'short', year: '2-digit' }
+      : { month: 'short' };
+    const list = [];
+    let monthCur = new Date(minDay * 86400000);
+    monthCur.setDate(1);
+    while (daysFromEpoch(monthCur.toISOString().slice(0, 10)) <= maxDay) {
+      const day = daysFromEpoch(monthCur.toISOString().slice(0, 10));
+      if (day >= minDay && day <= maxDay) {
+        list.push({
+          label: monthCur.toLocaleDateString('en-NZ', monthLabelOpts),
+          day,
+        });
+      }
+      monthCur.setMonth(monthCur.getMonth() + 1);
     }
-    cur.setMonth(cur.getMonth() + 1);
-  }
+    return list;
+  }, [minDay, maxDay, monthLabelSpansYears]);
 
   const gridLines = useMemo(() => {
     const toPct = (day) => ((day - minDay) / totalDays) * 100;
@@ -1037,6 +1929,32 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     return lines;
   }, [mobileLayout, minDay, maxDay, totalDays]);
 
+  useEffect(() => {
+    if (!focusMode || !expandedProjectId || !focusRange || gridLines.length === 0) {
+      if (!focusMode) {
+        focusCopyMarginLockedForRef.current = null;
+        setFocusCopyMarginPx(undefined);
+      }
+      return;
+    }
+    if (focusCopyMarginLockedForRef.current === expandedProjectId) return;
+
+    const initialPxPerDay = FOCUS_ZOOM_STEPS[defaultFocusZoomStep(focusRange.totalDays)]
+      ?? FOCUS_ZOOM_STEPS[0];
+    const initialChartWidthPx = Math.ceil(focusRange.totalDays * initialPxPerDay);
+    const linePct = gridLines[0].left;
+    const leadW = focusMode ? 0 : (mobileLayout ? GANTT_LEAD_W_MOBILE : GANTT_LEAD_W_DESKTOP);
+    const trackWidthPx = Math.max(0, initialChartWidthPx - leadW);
+    const trackInsetPx = (linePct / 100) * trackWidthPx;
+    /** Actual rendered back-pill width + flex gap before the title copy. */
+    const backW = focusBackRef.current?.offsetWidth
+      ?? (mobileLayout ? GANTT_FOCUS_BACK_W : GANTT_FOCUS_BACK_ICON_W);
+    focusCopyMarginLockedForRef.current = expandedProjectId;
+    setFocusCopyMarginPx(
+      Math.round(leadW + trackInsetPx - GANTT_FOCUS_BANNER_PAD - backW - GANTT_FOCUS_BANNER_GAP),
+    );
+  }, [focusMode, expandedProjectId, focusRange, gridLines, mobileLayout]);
+
   const todayPct = pct(todayDay);
 
   const scrollTimelineBy = useCallback((direction) => {
@@ -1058,20 +1976,228 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   }, [todayPct]);
 
   useLayoutEffect(() => {
+    if (!focusMode || !scrollRef.current) return;
+    scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+  }, [focusMode, expandedProjectId]);
+
+  useLayoutEffect(() => {
     if (!onRegisterNav) return undefined;
     onRegisterNav({ scrollBy: scrollTimelineBy, scrollToToday });
     return () => onRegisterNav(null);
   }, [onRegisterNav, scrollTimelineBy, scrollToToday]);
 
+  const renderGanttBar = ({
+    startDate,
+    endDate,
+    labelPrimary,
+    labelSecondary,
+    colors,
+    barClass = '',
+    styleOverrides = {},
+    isWaiting = false,
+    isComplete = false,
+    isAwaitingStart = false,
+    showLabels = true,
+  }) => {
+    if (!startDate || !endDate) return null;
+    const startPct = pct(daysFromEpoch(startDate));
+    const endPct = pct(daysFromEpoch(endDate));
+    const widthPct = endPct - startPct;
+    const hasLabels = showLabels && (labelPrimary || labelSecondary);
+    const isBandBar = /\bgantt-bar--(?:job|phase|task|overview)\b/.test(barClass);
+    const bandColor = isComplete ? '#C7C7CC' : colors.bar;
+    return (
+      <div
+        className={`gantt-bar ${barClass}`.trim()}
+        style={{
+          left: `${startPct}%`,
+          width: `${Math.max(widthPct, 0.35)}%`,
+          background: isBandBar ? bandColor : (isComplete ? '#F2F2F7' : colors.bg),
+          opacity: isBandBar
+            ? (isAwaitingStart ? 0.5 : barClass.includes('gantt-bar--overview') ? 0.45 : 1)
+            : (isWaiting ? 0.55 : isAwaitingStart ? 0.62 : 1),
+          backgroundImage: isBandBar
+            ? 'none'
+            : (isWaiting
+              ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}18 4px, ${colors.bar}18 8px)`
+              : isAwaitingStart
+                ? `repeating-linear-gradient(90deg, transparent, transparent 5px, ${colors.bar}14 5px, ${colors.bar}14 10px)`
+                : 'none'),
+          ...(isBandBar ? {} : styleOverrides),
+        }}
+      >
+        {hasLabels ? (
+          <div
+            className="gantt-bar-label-stack"
+            style={{ color: isComplete ? 'rgba(60, 60, 67, 0.45)' : colors.text }}
+          >
+            {labelPrimary ? <span className="gantt-bar-client">{labelPrimary}</span> : null}
+            {labelSecondary ? <span className="gantt-bar-project">{labelSecondary}</span> : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderPhaseStartMarker = (startDate, className = 'gantt-phase-start-marker') => {
+    if (!startDate) return null;
+    const left = pct(daysFromEpoch(startDate));
+    return (
+      <div
+        className={className}
+        style={{ left: `${left}%` }}
+        aria-hidden
+      />
+    );
+  };
+
+  const renderLaneLabel = (startDate, text, variant = 'phase') => {
+    if (!startDate || !text?.trim()) return null;
+    const left = pct(daysFromEpoch(startDate));
+    return (
+      <div
+        className={`gantt-lane-label gantt-lane-label--${variant}`}
+        style={{ left: `${left}%` }}
+        title={text}
+      >
+        {text}
+      </div>
+    );
+  };
+
+  const renderJobLaneLabel = (startDate, client, projectName) => {
+    if (!startDate) return null;
+    const clientText = client?.trim() || '';
+    const projectText = projectName?.trim() || '';
+    if (!clientText && !projectText) return null;
+    const left = pct(daysFromEpoch(startDate));
+    const title = [clientText, projectText].filter(Boolean).join(' — ');
+    return (
+      <div
+        className="gantt-lane-label gantt-lane-label--job"
+        style={{ left: `${left}%` }}
+        title={title}
+      >
+        {clientText ? <span className="gantt-lane-label-client">{clientText}</span> : null}
+        {clientText && projectText ? (
+          <span className="gantt-lane-label-sep" aria-hidden> </span>
+        ) : null}
+        {projectText ? <span className="gantt-lane-label-project">{projectText}</span> : null}
+      </div>
+    );
+  };
+
+  const canInteract = Boolean(onSelectProject);
+
+  const openProjectEdit = (project) => {
+    if (!onSelectProject) return;
+    onSelectProject(project);
+  };
+
+  const editableRowProps = (project, label) => {
+    if (!onSelectProject) return {};
+    return {
+      role: 'button',
+      tabIndex: 0,
+      'aria-label': label,
+      onClick: () => openProjectEdit(project),
+      onKeyDown: (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openProjectEdit(project);
+        }
+      },
+    };
+  };
+
+  const handleProjectRowClick = (project) => {
+    if (!onSelectProject) return;
+    if (focusMode) {
+      openProjectEdit(project);
+      return;
+    }
+    if (projectHasMilestones(project)) {
+      setExpandedProjectId((cur) => (cur === project.id ? null : project.id));
+      return;
+    }
+    openProjectEdit(project);
+  };
+
   return (
-    <div className="gantt-frame">
+    <div className={`gantt-frame${focusMode ? ' gantt-frame--focused' : ''}`}>
+      {focusMode && focusedProject ? (
+        <div className="gantt-focus-banner">
+          <button
+            ref={focusBackRef}
+            type="button"
+            className="gantt-focus-back"
+            onClick={() => setExpandedProjectId(null)}
+            aria-label="Back to all jobs"
+          >
+            <span className="gantt-focus-back-icon" aria-hidden>‹</span>
+            <span className="gantt-focus-back-label">Back</span>
+          </button>
+          {canInteract ? (
+            <button
+              type="button"
+              className="gantt-focus-copy"
+              style={focusCopyMarginPx != null && !mobileLayout ? { marginLeft: focusCopyMarginPx } : undefined}
+              onClick={() => onSelectProject(focusedProject)}
+              aria-label={`Edit ${focusedProject.name}`}
+            >
+              <span className="gantt-focus-name">{focusedProject.name}</span>
+              <span className="gantt-focus-dates">
+                {formatMilestoneDateShort(focusedProject.startDate)}
+                {' — '}
+                {formatMilestoneDateShort(focusedProject.endDate)}
+              </span>
+            </button>
+          ) : (
+            <div
+              className="gantt-focus-copy"
+              style={focusCopyMarginPx != null && !mobileLayout ? { marginLeft: focusCopyMarginPx } : undefined}
+            >
+              <span className="gantt-focus-name">{focusedProject.name}</span>
+              <span className="gantt-focus-dates">
+                {formatMilestoneDateShort(focusedProject.startDate)}
+                {' — '}
+                {formatMilestoneDateShort(focusedProject.endDate)}
+              </span>
+            </div>
+          )}
+          <div className="gantt-focus-zoom" role="group" aria-label="Timeline zoom">
+            <button
+              type="button"
+              className="gantt-focus-zoom-btn"
+              onClick={() => setFocusZoomStep((s) => Math.max(0, s - 1))}
+              disabled={focusZoomStep <= 0}
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              className="gantt-focus-zoom-btn"
+              onClick={() => setFocusZoomStep((s) => Math.min(FOCUS_ZOOM_STEPS.length - 1, s + 1))}
+              disabled={focusZoomStep >= FOCUS_ZOOM_STEPS.length - 1}
+              aria-label="Zoom in"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="gantt-wrapper" ref={scrollRef}>
         <div
-          className={`gantt-chart${mobileLayout ? ' gantt-chart--mobile' : ''}`}
+          className={[
+            'gantt-chart',
+            mobileLayout ? 'gantt-chart--mobile' : '',
+            focusMode ? 'gantt-chart--focused' : '',
+          ].filter(Boolean).join(' ')}
           style={{ minWidth: chartMinWidthPx }}
         >
           <div className="gantt-chart-lines" aria-hidden>
-            <div className="gantt-lines-spacer" />
+            {!focusMode ? <div className="gantt-lines-spacer" /> : null}
             <div className="gantt-vgrid">
               {gridLines.map((line) => (
                 <div
@@ -1088,7 +2214,10 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
               )}
             </div>
           </div>
-          <div className="gantt-chart-header">
+          <div className={`gantt-chart-header${focusMode ? ' gantt-chart-header--focus' : ''}`}>
+          {!focusMode ? (
+            <div className="gantt-lead-rail" aria-hidden />
+          ) : null}
           <div className="gantt-ruler">
             {!mobileLayout && (
             <div className="gantt-ruler-months">
@@ -1130,70 +2259,246 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
 
           <div className="gantt-chart-body">
           <div className="gantt-rows">
-            {orderedProjects.map((project) => {
+            {sectionsToRender.map((section, sectionIndex) => (
+              <Fragment key={section.key}>
+                {!focusMode && section.label ? (
+                  <>
+                    {sectionIndex > 0 ? <div className="gantt-section-rule" aria-hidden /> : null}
+                    <div
+                      className="gantt-section-header"
+                      role="heading"
+                      aria-level={3}
+                    >
+                      <span className="gantt-section-header-title">{section.label}</span>
+                    </div>
+                  </>
+                ) : null}
+            {section.projects.map((project) => {
               const assignedDesigners = getProjectDesigners(project, designers);
               const designer = assignedDesigners[0];
               const colors = designer ? getDesignerPalette(designer) : { bg: '#EEE', bar: '#CCC', text: '#888' };
-              const startPct = pct(daysFromEpoch(project.startDate));
-              const endPct = pct(daysFromEpoch(project.endDate));
-              const widthPct = endPct - startPct;
               const isWaiting = project.status === 'In Review';
               const isComplete = project.status === 'Complete';
-              const isAwaitingStart = project.status === 'Scheduled';
+              const isAwaitingStart = isPipelineStatus(normalizeProjectStatus(project.status));
+              const hasMilestones = projectHasMilestones(project);
+              const isExpanded = focusMode || expandedProjectId === project.id;
+              const canInteract = Boolean(onSelectProject);
 
               return (
                 <div
                   key={project.id}
-                  className="gantt-row"
-                  role={onSelectProject ? 'button' : undefined}
-                  tabIndex={onSelectProject ? 0 : undefined}
-                  aria-label={onSelectProject ? `Edit ${project.name}` : undefined}
-                  onClick={() => onSelectProject?.(project)}
-                  onKeyDown={(e) => {
-                    if (!onSelectProject) return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onSelectProject(project);
-                    }
-                  }}
+                  className={[
+                    'gantt-job-group',
+                    isExpanded ? 'gantt-job-group--open' : '',
+                    hasMilestones ? 'gantt-job-group--has-milestones' : '',
+                    focusMode && isExpanded ? 'gantt-job-group--focus-layout' : '',
+                  ].filter(Boolean).join(' ')}
                 >
-                  <div className="gantt-label">
-                    <div className="gantt-avatar-float">
-                      <DesignerAvatarStack
-                        designers={assignedDesigners}
-                        size={26}
-                        maxVisible={3}
-                        className="designer-avatar-stack--gantt"
-                      />
-                    </div>
-                  </div>
-                  <div className="gantt-track">
-                    <div
-                      className="gantt-bar"
-                      style={{
-                        left: `${startPct}%`,
-                        width: `${Math.max(widthPct, 0.35)}%`,
-                        background: isComplete ? '#F2F2F7' : colors.bg,
-                        opacity: isWaiting ? 0.55 : isAwaitingStart ? 0.62 : 1,
-                        backgroundImage: isWaiting
-                          ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, ${colors.bar}18 4px, ${colors.bar}18 8px)`
-                          : isAwaitingStart
-                            ? `repeating-linear-gradient(90deg, transparent, transparent 5px, ${colors.bar}14 5px, ${colors.bar}14 10px)`
-                            : 'none',
-                      }}
-                    >
-                      <div
-                        className="gantt-bar-label-stack"
-                        style={{ color: isComplete ? 'rgba(60, 60, 67, 0.45)' : colors.text }}
-                      >
-                        <span className="gantt-bar-client">{project.client}</span>
-                        <span className="gantt-bar-project">{project.name}</span>
+                  {focusMode && isExpanded && hasMilestones ? (
+                    <div className="gantt-job-focus-wrap">
+                      <div className="gantt-focus-sidecol">
+                        <div className="gantt-avatar-float">
+                          <DesignerAvatarStack
+                            designers={assignedDesigners}
+                            size={22}
+                            maxVisible={3}
+                            className="designer-avatar-stack--gantt"
+                          />
+                        </div>
+                      </div>
+                      <div className="gantt-job-focus-body">
+                        <div
+                          className="gantt-row gantt-row--job gantt-row--track-only"
+                          {...editableRowProps(project, `Edit ${project.name}`)}
+                        >
+                          <div className="gantt-track">
+                            {renderGanttBar({
+                              startDate: project.startDate,
+                              endDate: project.endDate,
+                              colors,
+                              isWaiting,
+                              isComplete,
+                              isAwaitingStart,
+                              barClass: 'gantt-bar--overview gantt-bar--bare',
+                              showLabels: false,
+                            })}
+                          </div>
+                        </div>
+                        <div className="gantt-job-phases">
+                          {project.milestones.map((phase, phaseIndex) => {
+                            const phaseTitle = phase.title.trim() || `Phase ${phaseIndex + 1}`;
+                            return (
+                              <div key={phase.id} className="gantt-phase-group">
+                                <div
+                                  className="gantt-row gantt-row--phase gantt-row--track-only"
+                                  {...editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`)}
+                                >
+                                  <div className="gantt-track gantt-track--lane gantt-track--phase-lane">
+                                    {renderLaneLabel(phase.startDate, phaseTitle, 'phase')}
+                                    {phaseIndex > 0 ? renderPhaseStartMarker(phase.startDate) : null}
+                                    {renderGanttBar({
+                                      startDate: phase.startDate,
+                                      endDate: phase.endDate,
+                                      colors,
+                                      barClass: 'gantt-bar--phase',
+                                      showLabels: false,
+                                    })}
+                                  </div>
+                                </div>
+                                {phase.tasks.length > 0 ? (
+                                  <div className="gantt-task-stack">
+                                    {phase.tasks.map((task) => {
+                                      const taskTitle = task.title.trim() || 'Task';
+                                      return (
+                                        <div
+                                          key={task.id}
+                                          className="gantt-row gantt-row--task gantt-row--track-only"
+                                          {...editableRowProps(project, `Edit ${project.name} — ${taskTitle}`)}
+                                        >
+                                          <div className="gantt-track gantt-track--lane gantt-track--task-lane">
+                                            {renderLaneLabel(task.startDate, taskTitle, 'task')}
+                                            {renderGanttBar({
+                                              startDate: task.startDate,
+                                              endDate: task.endDate,
+                                              colors,
+                                              barClass: 'gantt-bar--task',
+                                              showLabels: false,
+                                            })}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
+                  ) : (
+                  <>
+                  <div
+                    className={`gantt-row gantt-row--job${isExpanded ? ' gantt-row--expanded' : ''}${hasMilestones ? ' gantt-row--has-milestones' : ''}`}
+                    role={canInteract ? 'button' : undefined}
+                    tabIndex={canInteract ? 0 : undefined}
+                    aria-expanded={hasMilestones ? isExpanded : undefined}
+                    aria-label={
+                      canInteract
+                        ? hasMilestones
+                          ? `${isExpanded ? 'Collapse' : 'Expand'} ${project.name} milestones`
+                          : `Edit ${project.name}`
+                        : undefined
+                    }
+                    onClick={() => handleProjectRowClick(project)}
+                    onKeyDown={(e) => {
+                      if (!canInteract) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleProjectRowClick(project);
+                      }
+                    }}
+                  >
+                    <div className="gantt-label">
+                      <div className="gantt-avatar-float">
+                        <DesignerAvatarStack
+                          designers={assignedDesigners}
+                          size={22}
+                          maxVisible={3}
+                          className="designer-avatar-stack--gantt"
+                        />
+                      </div>
+                      {hasMilestones && !focusMode ? (
+                        <span className={`gantt-expand-chevron${isExpanded ? ' gantt-expand-chevron--open' : ''}`} aria-hidden>
+                          ›
+                        </span>
+                      ) : null}
+                    </div>
+                    <div
+                      className={[
+                        'gantt-track',
+                        !isExpanded ? 'gantt-track--lane gantt-track--job-lane' : '',
+                      ].filter(Boolean).join(' ')}
+                    >
+                      {!isExpanded ? renderJobLaneLabel(project.startDate, project.client, project.name) : null}
+                      {renderGanttBar({
+                        startDate: project.startDate,
+                        endDate: project.endDate,
+                        colors,
+                        isWaiting,
+                        isComplete,
+                        isAwaitingStart,
+                        barClass: [
+                          !isExpanded ? 'gantt-bar--job' : '',
+                          hasMilestones && isExpanded ? 'gantt-bar--overview' : '',
+                          isExpanded ? 'gantt-bar--bare' : '',
+                        ].filter(Boolean).join(' '),
+                        showLabels: false,
+                      })}
+                    </div>
                   </div>
+
+                  {hasMilestones && isExpanded && !focusMode ? (
+                    <div className="gantt-job-phases">
+                      {project.milestones.map((phase, phaseIndex) => {
+                        const phaseTitle = phase.title.trim() || `Phase ${phaseIndex + 1}`;
+                        return (
+                        <div key={phase.id} className="gantt-phase-group">
+                          <div
+                            className="gantt-row gantt-row--phase"
+                            {...editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`)}
+                          >
+                            <div className="gantt-label gantt-label--ghost" aria-hidden />
+                            <div className="gantt-track gantt-track--lane gantt-track--phase-lane">
+                              {renderLaneLabel(phase.startDate, phaseTitle, 'phase')}
+                              {phaseIndex > 0 ? renderPhaseStartMarker(phase.startDate) : null}
+                              {renderGanttBar({
+                                startDate: phase.startDate,
+                                endDate: phase.endDate,
+                                colors,
+                                barClass: 'gantt-bar--phase',
+                                showLabels: false,
+                              })}
+                            </div>
+                          </div>
+                          {phase.tasks.length > 0 ? (
+                            <div className="gantt-task-stack">
+                              {phase.tasks.map((task) => {
+                                const taskTitle = task.title.trim() || 'Task';
+                                return (
+                                <div
+                                  key={task.id}
+                                  className="gantt-row gantt-row--task"
+                                  {...editableRowProps(project, `Edit ${project.name} — ${taskTitle}`)}
+                                >
+                                  <div className="gantt-label gantt-label--ghost" aria-hidden />
+                                  <div className="gantt-track gantt-track--lane gantt-track--task-lane">
+                                    {renderLaneLabel(task.startDate, taskTitle, 'task')}
+                                    {renderGanttBar({
+                                      startDate: task.startDate,
+                                      endDate: task.endDate,
+                                      colors,
+                                      barClass: 'gantt-bar--task',
+                                      showLabels: false,
+                                    })}
+                                  </div>
+                                </div>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  </>
+                  )}
                 </div>
               );
             })}
+              </Fragment>
+            ))}
           </div>
           </div>
         </div>
@@ -1206,6 +2511,9 @@ const STUDIO_ACCESS_STORAGE = 'ew_studio_access';
 const STUDIO_ACCESS_CODE = '3131';
 
 const IDLE_SCREENSAVER_MS = 20_000;
+const IDLE_SCREENSAVER_ENABLED =
+  process.env.NODE_ENV !== 'development'
+  && process.env.REACT_APP_DISABLE_IDLE_SCREENSAVER !== 'true';
 
 function useIdleScreensaver(enabled) {
   const [visible, setVisible] = useState(false);
@@ -1347,14 +2655,26 @@ export default function App() {
     }
     const list = Array.isArray(raw) && raw.length > 0 ? raw : buildSampleProjects();
     return list.map((p) =>
-      normalizeProjectDesignersOnProject({ ...p, status: normalizeProjectStatus(p.status) }),
+      normalizeProjectMilestones(
+        normalizeProjectDesignersOnProject({
+          ...p,
+          status: normalizeProjectStatus(p.status),
+          priority: normalizeProjectCategory(p.priority),
+        }),
+      ),
     );
   });
   const [editingProject, setEditingProject] = useState(null);
+  const [editingProjectTab, setEditingProjectTab] = useState('details');
+  const openProjectEdit = useCallback((project, tab = 'details') => {
+    setEditingProjectTab(tab);
+    setEditingProject(project);
+  }, []);
   const [showNewProject, setShowNewProject] = useState(false);
   const [designerModalOpen, setDesignerModalOpen] = useState(false);
   const [designerBeingEdited, setDesignerBeingEdited] = useState(null);
   const [filterDesigner, setFilterDesigner] = useState('all');
+  const [teamOpen, setTeamOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   /** After first Supabase pull (or immediately if Supabase off), cloud saves are allowed. */
   const [cloudReady, setCloudReady] = useState(() => !isSupabaseConfigured());
@@ -1393,7 +2713,13 @@ export default function App() {
         setDesigners(remote.designers.map(designerWithNormalizedColor));
         setProjects(
           remote.projects.map((p) =>
-            normalizeProjectDesignersOnProject({ ...p, status: normalizeProjectStatus(p.status) }),
+            normalizeProjectMilestones(
+              normalizeProjectDesignersOnProject({
+                ...p,
+                status: normalizeProjectStatus(p.status),
+                priority: normalizeProjectCategory(p.priority),
+              }),
+            ),
           ),
         );
       } else {
@@ -1452,10 +2778,11 @@ export default function App() {
 
   const saveProject = (p) => {
     const withDesigners = normalizeProjectDesignersOnProject(p);
+    const withMilestones = normalizeProjectMilestones(withDesigners);
     const base = {
-      ...withDesigners,
-      status: normalizeProjectStatus(withDesigners.status),
-      priority: withDesigners.priority === 'background' ? 'background' : 'priority',
+      ...withMilestones,
+      status: normalizeProjectStatus(withMilestones.status),
+      priority: normalizeProjectCategory(withMilestones.priority),
     };
     const normalized = base.status === 'Complete'
       ? { ...base, completedAt: base.completedAt || today() }
@@ -1533,10 +2860,10 @@ export default function App() {
       return (a.endDate || '').localeCompare(b.endDate || '');
     });
 
-  const priorityFeed = sortFeed(mainProjects.filter(p => (p.priority || 'priority') === 'priority'));
-  const smallerJobsFeed = sortSecondaryFeed(mainProjects.filter(p => (p.priority || 'priority') === 'background'));
-  const pipelinePriorityFeed = sortFeed(pipelineProjects.filter(p => (p.priority || 'priority') === 'priority'));
-  const pipelineSmallerJobsFeed = sortFeed(pipelineProjects.filter(p => (p.priority || 'priority') === 'background'));
+  const priorityFeed = sortFeed(mainProjects.filter((p) => getProjectCategory(p) === 'priority'));
+  const secondaryFeed = sortSecondaryFeed(mainProjects.filter((p) => getProjectCategory(p) === 'secondary'));
+  const pipelinePriorityFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'priority'));
+  const pipelineSecondaryFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'secondary'));
 
   const mainProjectCount = projects.filter(
     p => p.status !== 'Complete' && !isPipelineStatus(p.status),
@@ -1559,7 +2886,7 @@ export default function App() {
     return out;
   }, [projects]);
 
-  const idleScreensaver = useIdleScreensaver(accessUnlocked);
+  const idleScreensaver = useIdleScreensaver(accessUnlocked && IDLE_SCREENSAVER_ENABLED);
 
   if (!accessUnlocked) {
     return <AccessScreen onUnlock={() => setAccessUnlocked(true)} />;
@@ -1616,9 +2943,20 @@ export default function App() {
           </button>
         </nav>
 
-        <div className="sidebar-section">
+        <div className={`sidebar-section${teamOpen ? ' sidebar-section--open' : ''}`}>
           <div className="sidebar-section-header">
-            <span>Team</span>
+            <button
+              type="button"
+              className="sidebar-section-toggle"
+              onClick={() => setTeamOpen((open) => !open)}
+              aria-expanded={teamOpen}
+              aria-controls="sidebar-team-list"
+            >
+              <span className={`sidebar-section-chevron${teamOpen ? ' sidebar-section-chevron--open' : ''}`} aria-hidden>
+                ›
+              </span>
+              <span>Team</span>
+            </button>
             <button
               type="button"
               className="sidebar-add-btn"
@@ -1627,11 +2965,13 @@ export default function App() {
                 setDesignerModalOpen(true);
                 closeSidebar();
               }}
+              aria-label="Add team member"
             >
               +
             </button>
           </div>
-          <div className="designer-list">
+          {teamOpen ? (
+          <div id="sidebar-team-list" className="designer-list">
             <button
               type="button"
               className={`designer-chip ${filterDesigner === 'all' ? 'selected' : ''}`}
@@ -1673,6 +3013,7 @@ export default function App() {
               );
             })}
           </div>
+          ) : null}
         </div>
 
         <div className="sidebar-bottom">
@@ -1797,21 +3138,21 @@ export default function App() {
                           key={p.id}
                           project={p}
                           designers={designers}
-                          onClick={() => setEditingProject(p)}
+                          onClick={() => openProjectEdit(p)}
                           onStatusChange={updateProjectStatus}
                         />
                       ))}
                     </div>
                   )}
-                  {smallerJobsFeed.length > 0 && (
+                  {secondaryFeed.length > 0 && (
                     <div className="project-section">
                       <h2 className="project-feed-heading">Secondary</h2>
-                      {smallerJobsFeed.map(p => (
+                      {secondaryFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
                           designers={designers}
-                          onClick={() => setEditingProject(p)}
+                          onClick={() => openProjectEdit(p)}
                           onStatusChange={updateProjectStatus}
                         />
                       ))}
@@ -1838,21 +3179,21 @@ export default function App() {
                           key={p.id}
                           project={p}
                           designers={designers}
-                          onClick={() => setEditingProject(p)}
+                          onClick={() => openProjectEdit(p)}
                           onStatusChange={updateProjectStatus}
                         />
                       ))}
                     </div>
                   )}
-                  {pipelineSmallerJobsFeed.length > 0 && (
+                  {pipelineSecondaryFeed.length > 0 && (
                     <div className="project-section">
                       <h2 className="project-feed-heading">Secondary</h2>
-                      {pipelineSmallerJobsFeed.map(p => (
+                      {pipelineSecondaryFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
                           designers={designers}
-                          onClick={() => setEditingProject(p)}
+                          onClick={() => openProjectEdit(p)}
                           onStatusChange={updateProjectStatus}
                         />
                       ))}
@@ -1876,7 +3217,7 @@ export default function App() {
                       key={p.id}
                       project={p}
                       designers={designers}
-                      onClick={() => setEditingProject(p)}
+                      onClick={() => openProjectEdit(p)}
                       onStatusChange={updateProjectStatus}
                     />
                   ))}
@@ -1889,7 +3230,7 @@ export default function App() {
             <GanttChart
               projects={ganttProjects}
               designers={designers}
-              onSelectProject={setEditingProject}
+              onSelectProject={(p) => openProjectEdit(p, 'milestones')}
               onRegisterNav={registerGanttNav}
               previewMode={devTimelinePreview}
             />
@@ -1913,7 +3254,11 @@ export default function App() {
           project={editingProject}
           designers={designers}
           existingClients={existingClientNames}
-          onClose={() => setEditingProject(null)}
+          initialTab={editingProjectTab}
+          onClose={() => {
+            setEditingProject(null);
+            setEditingProjectTab('details');
+          }}
           onSave={saveProject}
           onDelete={deleteProject}
         />
