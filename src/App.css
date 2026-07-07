@@ -2606,7 +2606,7 @@ html, body, #root {
     grid-template-areas: 'lead trail';
     row-gap: 0;
     column-gap: 14px;
-    padding: 24px;
+    padding: 10px;
     align-items: center;
   }
 
@@ -2628,7 +2628,7 @@ html, body, #root {
 
   .project-schedule-lead .project-row-col--schedule-due {
     display: flex;
-    margin-top: 10px;
+    margin-top: 3px;
     padding: 0;
     justify-content: flex-start;
     text-align: left;
