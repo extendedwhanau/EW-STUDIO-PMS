@@ -2,6 +2,17 @@
   command = "npm run build"
   publish = "build"
 
+# Always fetch fresh index.html so deploys show up after the idle refresh
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

@@ -2511,9 +2511,8 @@ const STUDIO_ACCESS_STORAGE = 'ew_studio_access';
 const STUDIO_ACCESS_CODE = '3131';
 
 const IDLE_SCREENSAVER_MS = 20_000;
-const IDLE_SCREENSAVER_ENABLED =
-  process.env.NODE_ENV !== 'development'
-  && process.env.REACT_APP_DISABLE_IDLE_SCREENSAVER !== 'true';
+/** Set REACT_APP_DISABLE_IDLE_SCREENSAVER=true to turn off (e.g. in .env.local). */
+const IDLE_SCREENSAVER_ENABLED = process.env.REACT_APP_DISABLE_IDLE_SCREENSAVER !== 'true';
 
 function useIdleScreensaver(enabled) {
   const [visible, setVisible] = useState(false);
@@ -2558,7 +2557,11 @@ function useIdleScreensaver(enabled) {
   }, [enabled, scheduleIdle, clearTimer]);
 
   const dismissAndReload = useCallback(() => {
-    window.location.reload();
+    const base = `${window.location.pathname}${window.location.search}`;
+    const url = base.includes('?')
+      ? `${base}&_r=${Date.now()}`
+      : `${base}?_r=${Date.now()}`;
+    window.location.replace(url);
   }, []);
 
   return { screensaverVisible: visible, dismissAndReload };
