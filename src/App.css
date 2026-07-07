@@ -2790,7 +2790,7 @@ html, body, #root {
     grid-template-areas: 'lead trail';
     row-gap: 0;
     column-gap: 14px;
-    padding: 10px;
+    padding: 12px;
     align-items: center;
   }
 
@@ -2859,6 +2859,41 @@ html, body, #root {
 
   .project-row-inner--schedule .project-row-col--trail {
     align-self: center;
+  }
+
+  /* Projects page — client on top; name + date inline ~50px apart */
+  .project-row--projects .project-schedule-lead {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .project-row--projects .project-row-col--schedule-title,
+  .project-row--projects .project-schedule-title {
+    display: contents;
+  }
+
+  .project-row--projects .project-schedule-client {
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .project-row--projects .project-schedule-name {
+    display: inline-block;
+    vertical-align: baseline;
+    max-width: calc(100% - 50px - 12ch);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-row--projects .project-row-col--schedule-due {
+    display: inline-flex;
+    margin-top: 0;
+    margin-left: 50px;
+    padding-left: 0;
+    vertical-align: baseline;
+    flex-shrink: 0;
   }
 
   .project-client {

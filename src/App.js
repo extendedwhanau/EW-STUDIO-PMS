@@ -1767,7 +1767,11 @@ function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'de
 
   return (
     <div
-      className={['project-row', isFeedCard ? 'project-row--schedule' : ''].filter(Boolean).join(' ')}
+      className={[
+        'project-row',
+        isFeedCard ? 'project-row--schedule' : '',
+        isProjectsCard ? 'project-row--projects' : '',
+      ].filter(Boolean).join(' ')}
       onClick={() => onClick(project)}
     >
       <div
