@@ -29,7 +29,7 @@ export const MILESTONE_PHASE_CATALOG = [
   {
     key: 'publication',
     title: 'Publication',
-    tasks: ['Concept', 'Refinement', 'Flow through', 'Mark-ups', 'Art working', 'Print Management'],
+    tasks: ['Concept', 'Refinement', 'Flow through', 'Mark-ups', 'Art working', 'Print management'],
   },
 ];
 

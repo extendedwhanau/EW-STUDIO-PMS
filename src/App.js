@@ -1566,7 +1566,16 @@ function ProjectDetailsPanel({
   );
 }
 
-function ProjectModal({ project, designers, existingClients = [], initialTab = 'details', onClose, onSave, onDelete }) {
+function ProjectModal({
+  project,
+  designers,
+  existingClients = [],
+  initialTab = 'details',
+  onClose,
+  onSave,
+  onDelete,
+  onOpenTimeline,
+}) {
   const [modalTab, setModalTab] = useState(initialTab);
 
   useEffect(() => {
@@ -1617,6 +1626,18 @@ function ProjectModal({ project, designers, existingClients = [], initialTab = '
     onClose();
   };
 
+  const showTimelineLink = Boolean(
+    onOpenTimeline
+    && projectHasMilestones(form)
+    && form.startDate
+    && form.endDate,
+  );
+
+  const openTimelineView = () => {
+    if (!showTimelineLink || !form.name.trim()) return;
+    onOpenTimeline(normalizeProjectMilestones(form));
+  };
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal--project">
@@ -1631,15 +1652,27 @@ function ProjectModal({ project, designers, existingClients = [], initialTab = '
             >
               Details
             </button>
-            <button
-              type="button"
-              role="tab"
-              className={`modal-project-tab${modalTab === 'milestones' ? ' modal-project-tab--active' : ''}`}
-              aria-selected={modalTab === 'milestones'}
-              onClick={() => setModalTab('milestones')}
-            >
-              Milestones
-            </button>
+            <div className="modal-project-tab-group">
+              <button
+                type="button"
+                role="tab"
+                className={`modal-project-tab${modalTab === 'milestones' ? ' modal-project-tab--active' : ''}`}
+                aria-selected={modalTab === 'milestones'}
+                onClick={() => setModalTab('milestones')}
+              >
+                Milestones
+              </button>
+              {showTimelineLink ? (
+                <button
+                  type="button"
+                  className="modal-project-timeline-link"
+                  onClick={openTimelineView}
+                  aria-label={`Open ${form.name.trim() || 'project'} on timeline`}
+                >
+                  Timeline
+                </button>
+              ) : null}
+            </div>
           </div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
@@ -2070,7 +2103,16 @@ function sortTimelineProjectsByDesigner(projects, designers) {
 }
 
 // ── Gantt Chart ───────────────────────────────────────────────────────────────
-function GanttChart({ projects, designers, onSelectProject, onUpdateProject, onRegisterNav, previewMode }) {
+function GanttChart({
+  projects,
+  designers,
+  onSelectProject,
+  onUpdateProject,
+  onRegisterNav,
+  previewMode,
+  focusProjectId,
+  onFocusProjectHandled,
+}) {
   const validProjects = projects.filter(p => p.startDate && p.endDate);
   if (!validProjects.length) {
     return <div className="empty-state">No projects with timelines yet.</div>;
@@ -2089,12 +2131,22 @@ function GanttChart({ projects, designers, onSelectProject, onUpdateProject, onR
         onSelectProject={previewMode ? undefined : onSelectProject}
         onUpdateProject={previewMode ? undefined : onUpdateProject}
         onRegisterNav={onRegisterNav}
+        focusProjectId={focusProjectId}
+        onFocusProjectHandled={onFocusProjectHandled}
       />
     </>
   );
 }
 
-function GanttChartInner({ projects: validProjects, designers, onSelectProject, onUpdateProject, onRegisterNav }) {
+function GanttChartInner({
+  projects: validProjects,
+  designers,
+  onSelectProject,
+  onUpdateProject,
+  onRegisterNav,
+  focusProjectId,
+  onFocusProjectHandled,
+}) {
   const scrollRef = useRef(null);
   const mobileLayout = useGanttMobileLayout();
   const todayDay = daysFromEpoch(today());
@@ -2396,6 +2448,17 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     }
     scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
   }, [focusMode, expandedProjectId, mobileLayout]);
+
+  useEffect(() => {
+    if (!focusProjectId) return;
+    if (!validProjects.some((p) => p.id === focusProjectId)) {
+      onFocusProjectHandled?.();
+      return;
+    }
+    setExpandedProjectId(focusProjectId);
+    centerOnTodayPendingRef.current = true;
+    onFocusProjectHandled?.();
+  }, [focusProjectId, validProjects, onFocusProjectHandled]);
 
   useEffect(() => {
     if (!expandedProjectId) {
@@ -3354,6 +3417,7 @@ export default function App() {
   const [filterDesigner, setFilterDesigner] = useState('all');
   const [teamOpen, setTeamOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [ganttFocusProjectId, setGanttFocusProjectId] = useState(null);
   /** After first Supabase pull (or immediately if Supabase off), cloud saves are allowed. */
   const [cloudReady, setCloudReady] = useState(() => !isSupabaseConfigured());
 
@@ -3454,6 +3518,10 @@ export default function App() {
 
   const closeSidebar = () => setSidebarOpen(false);
 
+  const clearGanttFocusProject = useCallback(() => {
+    setGanttFocusProjectId(null);
+  }, []);
+
   const saveProject = (p) => {
     const withDesigners = normalizeProjectDesignersOnProject(p);
     const withMilestones = normalizeProjectMilestones(withDesigners);
@@ -3474,6 +3542,19 @@ export default function App() {
     });
   };
   const deleteProject = (id) => setProjects(prev => prev.filter(p => p.id !== id));
+
+  const openProjectTimeline = useCallback((project) => {
+    if (!project?.id || !projectHasMilestones(project) || !project.startDate || !project.endDate) {
+      return;
+    }
+    saveProject(project);
+    setGanttFocusProjectId(project.id);
+    setView('gantt');
+    setSidebarOpen(false);
+    setEditingProject(null);
+    setEditingProjectTab('details');
+    setShowNewProject(false);
+  }, []);
 
   const saveDesigner = (d) => {
     setDesigners((prev) => {
@@ -3916,6 +3997,8 @@ export default function App() {
               onUpdateProject={saveProject}
               onRegisterNav={registerGanttNav}
               previewMode={devTimelinePreview}
+              focusProjectId={ganttFocusProjectId}
+              onFocusProjectHandled={clearGanttFocusProject}
             />
           )}
         </div>
@@ -3930,6 +4013,7 @@ export default function App() {
           onClose={() => setShowNewProject(false)}
           onSave={saveProject}
           onDelete={deleteProject}
+          onOpenTimeline={openProjectTimeline}
         />
       )}
       {editingProject && (
@@ -3944,6 +4028,7 @@ export default function App() {
           }}
           onSave={saveProject}
           onDelete={deleteProject}
+          onOpenTimeline={openProjectTimeline}
         />
       )}
       {designerModalOpen && (
