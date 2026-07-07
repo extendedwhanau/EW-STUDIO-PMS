@@ -540,6 +540,108 @@ html, body, #root {
   line-height: 1.25;
 }
 
+/* Schedule page — full-width columns, vertically centred in the grey card */
+.project-schedule-lead {
+  display: contents;
+}
+
+.project-row--schedule .project-row-inner,
+.project-row-inner--schedule {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  grid-template-areas: 'title due trail';
+  align-items: center;
+  column-gap: 32px;
+  row-gap: 0;
+  padding: 24px;
+}
+
+.project-row-col--schedule-title {
+  grid-area: title;
+  min-width: 0;
+  width: 100%;
+  justify-self: stretch;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.project-schedule-title {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0 14px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  font-size: var(--project-card-leading);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.project-row-inner--schedule .project-row-col--due {
+  grid-area: due;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.project-row-inner--schedule .project-row-col--trail {
+  grid-area: trail;
+}
+
+/* Schedule — status dot only (no "Scheduled" label); select still opens on dot tap */
+.project-row--schedule .project-status-hit--dot-only {
+  position: relative;
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.project-row--schedule .project-status-hit--dot-only .row-status-select {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 11px;
+  height: 11px;
+  min-height: 11px;
+  max-width: 11px;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.project-schedule-client {
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.project-schedule-name {
+  font-weight: 400;
+  min-width: 0;
+}
+
+.project-schedule-start {
+  font-size: var(--project-card-leading);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  min-height: var(--project-card-leading);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.project-schedule-start--empty {
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
 .project-row-col--trail {
   grid-area: trail;
   display: flex;
@@ -2146,6 +2248,80 @@ html, body, #root {
     align-items: start;
   }
 
+  .project-row-inner--schedule,
+  .project-row--schedule .project-row-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'lead trail';
+    row-gap: 0;
+    column-gap: 14px;
+    padding: 24px;
+    align-items: center;
+  }
+
+  .project-schedule-lead {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    grid-area: lead;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .project-schedule-lead .project-row-col--schedule-title {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .project-schedule-lead .project-row-col--schedule-due {
+    display: flex;
+    margin-top: 10px;
+    padding: 0;
+    justify-content: flex-start;
+    text-align: left;
+    align-self: flex-start;
+  }
+
+  .project-row-inner--schedule .project-row-col--due {
+    display: flex;
+  }
+
+  .project-schedule-title {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    max-width: 100%;
+  }
+
+  .project-schedule-client {
+    flex-shrink: 0;
+  }
+
+  .project-schedule-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .project-row-inner--schedule .project-row-col--schedule-title {
+    align-self: center;
+    justify-self: stretch;
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .project-schedule-title {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .project-row-inner--schedule .project-row-col--trail {
+    align-self: center;
+  }
+
   .project-client {
     line-height: 1.1;
   }
@@ -2188,6 +2364,13 @@ html, body, #root {
   .project-status-dot {
     width: 9px;
     height: 9px;
+  }
+
+  .project-row--schedule .project-status-hit--dot-only .row-status-select {
+    width: 9px;
+    height: 9px;
+    min-height: 9px;
+    max-width: 9px;
   }
 
   .project-row-col--trail .designer-avatar-stack {

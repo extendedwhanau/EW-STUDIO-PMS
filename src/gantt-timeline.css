@@ -116,6 +116,16 @@
   box-sizing: border-box;
 }
 
+.gantt-main-zoom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 32px;
+  margin: 0 0 12px;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+
 .gantt-focus-back {
   flex-shrink: 0;
   display: inline-flex;
@@ -123,14 +133,14 @@
   justify-content: center;
   gap: 0;
   font-family: inherit;
-  font-size: 18px;
-  font-weight: 400;
-  line-height: 1;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
   letter-spacing: -0.02em;
   color: var(--text-secondary);
   background: rgba(120, 120, 128, 0.10);
   border: none;
-  padding: 7px 11px;
+  padding: 7px 14px;
   margin: 0;
   border-radius: 999px;
   cursor: pointer;
@@ -139,11 +149,11 @@
 }
 
 .gantt-focus-back-icon {
-  display: inline;
+  display: none;
 }
 
 .gantt-focus-back-label {
-  display: none;
+  display: inline;
 }
 
 .gantt-focus-back:hover {
@@ -259,10 +269,6 @@ button.gantt-focus-copy:focus-visible {
   cursor: default;
 }
 
-.gantt-chart--focused {
-  --gantt-lead-w: 0;
-}
-
 .gantt-chart--focused .gantt-track--phase-lane {
   min-height: 26px;
 }
@@ -346,6 +352,23 @@ button.gantt-focus-copy:focus-visible {
   justify-content: flex-start;
   padding-bottom: 4px;
   box-sizing: border-box;
+}
+
+.gantt-lead-rail--zoom {
+  display: grid;
+  grid-template-rows: 26px 32px;
+  align-items: center;
+  justify-items: start;
+  padding: 0 4px 0 10px;
+  gap: 0;
+}
+
+.gantt-lead-rail--zoom .gantt-focus-zoom {
+  grid-row: 1;
+  align-self: center;
+  margin-left: 0;
+  justify-content: flex-start;
+  gap: 20px;
 }
 
 .gantt-ruler {
@@ -691,7 +714,21 @@ button.gantt-focus-copy:focus-visible {
     font-size: 10px;
     font-weight: 600;
     color: var(--text-secondary);
-    text-transform: lowercase;
+    text-transform: capitalize;
+  }
+
+  /* Mobile grid — month-start + weekly Monday lines (not every day) */
+  .gantt-chart--mobile .gantt-vline-week {
+    border-left-color: rgba(0, 0, 0, 0.045);
+  }
+
+  .gantt-chart--mobile .gantt-vline-month {
+    border-left-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .gantt-main-zoom-bar {
+    padding: 0;
+    margin-bottom: 8px;
   }
 
   .gantt-rows {
@@ -739,7 +776,7 @@ button.gantt-focus-copy:focus-visible {
 
 .gantt-job-focus-wrap {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: var(--gantt-lead-w) minmax(0, 1fr);
   align-items: start;
 }
 
@@ -750,9 +787,7 @@ button.gantt-focus-copy:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  width: 38px;
-  min-width: 38px;
-  padding: 6px 2px 0 4px;
+  padding: 6px 4px 0 10px;
   box-sizing: border-box;
 }
 
@@ -1032,6 +1067,20 @@ button.gantt-focus-copy:focus-visible {
 }
 
 @media (max-width: 768px) {
+  .gantt-chart--focused {
+    --gantt-lead-w: 0;
+  }
+
+  .gantt-chart--focused .gantt-job-focus-wrap {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .gantt-chart--focused .gantt-focus-sidecol {
+    width: 38px;
+    min-width: 38px;
+    padding: 6px 2px 0 4px;
+  }
+
   .gantt-frame--focused {
     padding-inline: max(var(--app-inline), env(safe-area-inset-left, 0px)) max(var(--app-inline), env(safe-area-inset-right, 0px));
   }

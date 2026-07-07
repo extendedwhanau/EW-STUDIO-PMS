@@ -364,6 +364,16 @@ function formatMilestoneDateShort(str) {
   return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' });
 }
 
+/** Schedule list cards — e.g. "17.01.26". */
+function formatScheduleStartDate(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}.${month}.${year}`;
+}
+
 /** Compact date for milestone UI, e.g. "31-01-26". */
 function formatMilestoneDateCompact(str) {
   if (!str) return '';
@@ -1525,7 +1535,9 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
 }
 
 // ── Project Row ───────────────────────────────────────────────────────────────
-function ProjectRow({ project, designers, onClick, onStatusChange }) {
+function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'default' }) {
+  const isFeedCard = variant === 'schedule' || variant === 'projects';
+  const isProjectsCard = variant === 'projects';
   const assignedDesigners = getProjectDesigners(project, designers);
   const accent = statusAccent(project.status);
   const isComplete = project.status === 'Complete';
@@ -1540,61 +1552,117 @@ function ProjectRow({ project, designers, onClick, onStatusChange }) {
     ? (dateStr ? `Completed ${formatDueDateLong(dateStr)}` : 'No completion date')
     : (dateStr ? `${dueSeg}, ${formatDueDateLong(dateStr)}. Working weekdays.` : '');
   const hasMilestones = projectHasMilestones(project);
+  const feedDateLabel = isProjectsCard
+    ? formatMilestoneDateShort(project.endDate)
+    : formatScheduleStartDate(project.startDate);
+  const feedDateTitle = isProjectsCard ? 'Due date' : 'Start date';
+  const feedDateAria = isProjectsCard && project.endDate
+    ? `Due ${formatMilestoneDateShort(project.endDate)}`
+    : undefined;
+
+  const trailCol = (
+    <div className="project-row-col project-row-col--trail">
+      <div
+        className={[
+          'project-status-hit',
+          isFeedCard ? 'project-status-hit--dot-only' : '',
+        ].filter(Boolean).join(' ')}
+        onPointerDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+      >
+        <span
+          className="project-status-dot"
+          style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
+          title={project.status}
+          aria-hidden
+        />
+        <select
+          className="row-status-select"
+          value={project.status}
+          onChange={e => onStatusChange(project.id, e.target.value)}
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          aria-label="Project status"
+        >
+          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <DesignerAvatarStack designers={assignedDesigners} size={28} maxVisible={4} />
+    </div>
+  );
+
   return (
-    <div className="project-row" onClick={() => onClick(project)}>
-      <div className="project-row-inner">
-        <div className="project-row-client-span">
-          <span className="project-client">{project.client}</span>
-        </div>
-        <div className="project-row-col project-row-col--lead">
-          <span className="project-name">{project.name}</span>
-          {hasMilestones ? (
-            <span className="project-milestone-range">
-              {formatMilestoneDateRange(project.startDate, project.endDate)}
-            </span>
-          ) : null}
-        </div>
-        <div className="project-row-col project-row-col--due">
-          {dateStr ? (
-            <div
-              className="project-row-due-pair"
-              title={dueTitle}
-              aria-label={dueAria}
-            >
-              <span className="project-due-date-main">{formatDueDateLong(dateStr)}</span>
-              {!isComplete ? (
-                <span className="project-due-days">{formatDueDaysDisplay(dateStr)}</span>
+    <div
+      className={['project-row', isFeedCard ? 'project-row--schedule' : ''].filter(Boolean).join(' ')}
+      onClick={() => onClick(project)}
+    >
+      <div
+        className={[
+          'project-row-inner',
+          isFeedCard ? 'project-row-inner--schedule' : '',
+        ].filter(Boolean).join(' ')}
+      >
+        {isFeedCard ? (
+          <>
+            <div className="project-schedule-lead">
+              <div className="project-row-col project-row-col--lead project-row-col--schedule-title">
+                <span className="project-schedule-title">
+                  {project.client ? (
+                    <span className="project-schedule-client">{project.client}</span>
+                  ) : null}
+                  {project.name ? (
+                    <span className="project-schedule-name">{project.name}</span>
+                  ) : null}
+                </span>
+              </div>
+              <div className="project-row-col project-row-col--due project-row-col--schedule-due">
+                {feedDateLabel ? (
+                  <span
+                    className="project-schedule-start"
+                    title={feedDateTitle}
+                    aria-label={feedDateAria}
+                  >
+                    {feedDateLabel}
+                  </span>
+                ) : (
+                  <span className="project-schedule-start project-schedule-start--empty">—</span>
+                )}
+              </div>
+            </div>
+            {trailCol}
+          </>
+        ) : (
+          <>
+            <div className="project-row-client-span">
+              <span className="project-client">{project.client}</span>
+            </div>
+            <div className="project-row-col project-row-col--lead">
+              <span className="project-name">{project.name}</span>
+              {hasMilestones ? (
+                <span className="project-milestone-range">
+                  {formatMilestoneDateRange(project.startDate, project.endDate)}
+                </span>
               ) : null}
             </div>
-          ) : (
-            <span className="project-due-date-main project-due-date-main--empty">—</span>
-          )}
-        </div>
-        <div className="project-row-col project-row-col--trail">
-          <div
-            className="project-status-hit"
-            onPointerDown={e => e.stopPropagation()}
-            onClick={e => e.stopPropagation()}
-          >
-            <span
-              className="project-status-dot"
-              style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
-              title={project.status}
-              aria-hidden
-            />
-            <select
-              className="row-status-select"
-              value={project.status}
-              onChange={e => onStatusChange(project.id, e.target.value)}
-              onPointerDown={e => e.stopPropagation()}
-              onClick={e => e.stopPropagation()}
-              aria-label="Project status"
-            >
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <DesignerAvatarStack designers={assignedDesigners} size={28} maxVisible={4} />
-        </div>
+            <div className="project-row-col project-row-col--due">
+              {dateStr ? (
+                <div
+                  className="project-row-due-pair"
+                  title={dueTitle}
+                  aria-label={dueAria}
+                >
+                  <span className="project-due-date-main">{formatDueDateLong(dateStr)}</span>
+                  {!isComplete ? (
+                    <span className="project-due-days">{formatDueDaysDisplay(dateStr)}</span>
+                  ) : null}
+                </div>
+              ) : (
+                <span className="project-due-date-main project-due-date-main--empty">—</span>
+              )}
+            </div>
+            {trailCol}
+          </>
+        )}
       </div>
     </div>
   );
@@ -1604,6 +1672,15 @@ const GANTT_NZ_TZ = 'Pacific/Auckland';
 
 function ganttNzNoonMs(epochDay) {
   return epochDay * 86400000 + 12 * 60 * 60 * 1000;
+}
+
+/** Calendar Monday in NZ (avoids DST midnight edge cases). */
+function isMondayNZ(epochDay) {
+  const wk = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    weekday: 'short',
+  }).format(new Date(ganttNzNoonMs(epochDay)));
+  return wk === 'Mon';
 }
 
 /** Calendar Friday in NZ (avoids DST midnight edge cases). */
@@ -1642,7 +1719,7 @@ function isFirstOfMonthNZ(epochDay) {
   return dom === '1';
 }
 
-/** Mobile ruler: "1 jul", "1 aug" on the first of each month. */
+/** Mobile ruler: "1 Jul", "1 Aug" on the first of each month. */
 function ganttMobileMonthLabelNZ(epochDay) {
   const parts = new Intl.DateTimeFormat('en-NZ', {
     timeZone: GANTT_NZ_TZ,
@@ -1650,7 +1727,7 @@ function ganttMobileMonthLabelNZ(epochDay) {
     month: 'short',
   }).formatToParts(new Date(ganttNzNoonMs(epochDay)));
   const dayNum = parts.find((p) => p.type === 'day')?.value;
-  const month = parts.find((p) => p.type === 'month')?.value?.toLowerCase();
+  const month = parts.find((p) => p.type === 'month')?.value;
   return `${dayNum} ${month}`;
 }
 
@@ -1680,11 +1757,16 @@ const GANTT_LEAD_W_DESKTOP = 124;
 const GANTT_LEAD_W_MOBILE = 86;
 const GANTT_FOCUS_BANNER_PAD = 10;
 const GANTT_FOCUS_BACK_W = 34;
-/** Icon-only back pill on desktop. */
-const GANTT_FOCUS_BACK_ICON_W = 30;
+/** Desktop "Back" pill — text matches .gantt-focus-name (15px bold). */
+const GANTT_FOCUS_BACK_DESKTOP_W = 54;
 /** Matches the flex gap on .gantt-focus-banner. */
 const GANTT_FOCUS_BANNER_GAP = 12;
 const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
+
+function defaultMainZoomStep() {
+  const idx = FOCUS_ZOOM_STEPS.indexOf(GANTT_PX_PER_DAY);
+  return idx >= 0 ? idx : 1;
+}
 
 function defaultFocusZoomStep(totalDays) {
   const targetWidth = 1120;
@@ -1763,6 +1845,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const mobileLayout = useGanttMobileLayout();
   const todayDay = daysFromEpoch(today());
   const [expandedProjectId, setExpandedProjectId] = useState(null);
+  const [mainZoomStep, setMainZoomStep] = useState(defaultMainZoomStep);
   const [focusZoomStep, setFocusZoomStep] = useState(0);
   const focusCopyMarginLockedForRef = useRef(null);
   const focusBackRef = useRef(null);
@@ -1857,10 +1940,10 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
       minDay,
       maxDay,
       totalDays,
-      pxPerDay: GANTT_PX_PER_DAY,
+      pxPerDay: FOCUS_ZOOM_STEPS[mainZoomStep] ?? GANTT_PX_PER_DAY,
       focusMode: false,
     };
-  }, [focusedProject, focusRange, focusZoomStep, validProjects, todayDay]);
+  }, [focusedProject, focusRange, focusZoomStep, mainZoomStep, validProjects, todayDay]);
 
   const { minDay, maxDay, totalDays, pxPerDay, focusMode } = timelineView;
   const chartMinWidthPx = Math.ceil(totalDays * pxPerDay);
@@ -1899,12 +1982,18 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
 
     if (mobileLayout) {
       const lines = [];
-      for (let day = minDay; day <= maxDay; day++) {
-        if (!isFirstOfMonthNZ(day)) continue;
+      let prevMonthYm = null;
+      for (let day = minDay; day <= maxDay; day += 1) {
+        if (!isMondayNZ(day)) continue;
+        const ym = nzYearMonthKey(day);
+        const firstMondayOfMonth = prevMonthYm === null || ym !== prevMonthYm;
+        if (!firstMondayOfMonth) continue;
+        prevMonthYm = ym;
         lines.push({
           day,
           left: toPct(day),
           monthStart: true,
+          firstMondayOfMonth: true,
           label: ganttMobileMonthLabelNZ(day),
         });
       }
@@ -1929,6 +2018,26 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     return lines;
   }, [mobileLayout, minDay, maxDay, totalDays]);
 
+  const verticalGridLines = useMemo(() => {
+    const toPct = (day) => ((day - minDay) / totalDays) * 100;
+    if (!mobileLayout) return gridLines;
+    const lines = [];
+    let prevMonthYm = null;
+    for (let day = minDay; day <= maxDay; day += 1) {
+      if (!isMondayNZ(day)) continue;
+      const ym = nzYearMonthKey(day);
+      const firstMondayOfMonth = prevMonthYm === null || ym !== prevMonthYm;
+      if (firstMondayOfMonth) prevMonthYm = ym;
+      lines.push({
+        day,
+        left: toPct(day),
+        monthStart: firstMondayOfMonth,
+        weekStart: true,
+      });
+    }
+    return lines;
+  }, [mobileLayout, gridLines, minDay, maxDay, totalDays]);
+
   useEffect(() => {
     if (!focusMode || !expandedProjectId || !focusRange || gridLines.length === 0) {
       if (!focusMode) {
@@ -1943,12 +2052,14 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
       ?? FOCUS_ZOOM_STEPS[0];
     const initialChartWidthPx = Math.ceil(focusRange.totalDays * initialPxPerDay);
     const linePct = gridLines[0].left;
-    const leadW = focusMode ? 0 : (mobileLayout ? GANTT_LEAD_W_MOBILE : GANTT_LEAD_W_DESKTOP);
+    const leadW = mobileLayout
+      ? (focusMode ? 0 : GANTT_LEAD_W_MOBILE)
+      : GANTT_LEAD_W_DESKTOP;
     const trackWidthPx = Math.max(0, initialChartWidthPx - leadW);
     const trackInsetPx = (linePct / 100) * trackWidthPx;
     /** Actual rendered back-pill width + flex gap before the title copy. */
     const backW = focusBackRef.current?.offsetWidth
-      ?? (mobileLayout ? GANTT_FOCUS_BACK_W : GANTT_FOCUS_BACK_ICON_W);
+      ?? (mobileLayout ? GANTT_FOCUS_BACK_W : GANTT_FOCUS_BACK_DESKTOP_W);
     focusCopyMarginLockedForRef.current = expandedProjectId;
     setFocusCopyMarginPx(
       Math.round(leadW + trackInsetPx - GANTT_FOCUS_BANNER_PAD - backW - GANTT_FOCUS_BANNER_GAP),
@@ -2123,6 +2234,32 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     openProjectEdit(project);
   };
 
+  const zoomStep = focusMode ? focusZoomStep : mainZoomStep;
+  const setZoomStep = focusMode ? setFocusZoomStep : setMainZoomStep;
+
+  const timelineZoomControls = (
+    <div className="gantt-focus-zoom" role="group" aria-label="Timeline zoom">
+      <button
+        type="button"
+        className="gantt-focus-zoom-btn"
+        onClick={() => setZoomStep((s) => Math.max(0, s - 1))}
+        disabled={zoomStep <= 0}
+        aria-label="Zoom out"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        className="gantt-focus-zoom-btn"
+        onClick={() => setZoomStep((s) => Math.min(FOCUS_ZOOM_STEPS.length - 1, s + 1))}
+        disabled={zoomStep >= FOCUS_ZOOM_STEPS.length - 1}
+        aria-label="Zoom in"
+      >
+        +
+      </button>
+    </div>
+  );
+
   return (
     <div className={`gantt-frame${focusMode ? ' gantt-frame--focused' : ''}`}>
       {focusMode && focusedProject ? (
@@ -2165,28 +2302,15 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
               </span>
             </div>
           )}
-          <div className="gantt-focus-zoom" role="group" aria-label="Timeline zoom">
-            <button
-              type="button"
-              className="gantt-focus-zoom-btn"
-              onClick={() => setFocusZoomStep((s) => Math.max(0, s - 1))}
-              disabled={focusZoomStep <= 0}
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              className="gantt-focus-zoom-btn"
-              onClick={() => setFocusZoomStep((s) => Math.min(FOCUS_ZOOM_STEPS.length - 1, s + 1))}
-              disabled={focusZoomStep >= FOCUS_ZOOM_STEPS.length - 1}
-              aria-label="Zoom in"
-            >
-              +
-            </button>
-          </div>
+          {mobileLayout ? timelineZoomControls : null}
         </div>
-      ) : null}
+      ) : (
+        mobileLayout ? (
+          <div className="gantt-main-zoom-bar">
+            {timelineZoomControls}
+          </div>
+        ) : null
+      )}
       <div className="gantt-wrapper" ref={scrollRef}>
         <div
           className={[
@@ -2197,12 +2321,16 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
           style={{ minWidth: chartMinWidthPx }}
         >
           <div className="gantt-chart-lines" aria-hidden>
-            {!focusMode ? <div className="gantt-lines-spacer" /> : null}
+            {(!focusMode || !mobileLayout) ? <div className="gantt-lines-spacer" /> : null}
             <div className="gantt-vgrid">
-              {gridLines.map((line) => (
+              {verticalGridLines.map((line) => (
                 <div
                   key={`v-full-${line.day}`}
-                  className={`gantt-vline ${line.monthStart ? 'gantt-vline-month' : ''}`}
+                  className={[
+                    'gantt-vline',
+                    line.monthStart ? 'gantt-vline-month' : '',
+                    line.weekStart && !line.monthStart ? 'gantt-vline-week' : '',
+                  ].filter(Boolean).join(' ')}
                   style={{ left: `${line.left}%` }}
                 />
               ))}
@@ -2215,8 +2343,10 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
             </div>
           </div>
           <div className={`gantt-chart-header${focusMode ? ' gantt-chart-header--focus' : ''}`}>
-          {!focusMode ? (
-            <div className="gantt-lead-rail" aria-hidden />
+          {!mobileLayout ? (
+            <div className="gantt-lead-rail gantt-lead-rail--zoom">
+              {timelineZoomControls}
+            </div>
           ) : null}
           <div className="gantt-ruler">
             {!mobileLayout && (
@@ -2247,7 +2377,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                   style={{ left: `${line.left}%` }}
                 >
                   <span
-                    className={`gantt-tick-label${line.firstFridayOfMonth ? ' gantt-tick-label--month' : ''}${mobileLayout ? ' gantt-tick-label--mobile-month' : ''}`}
+                    className={`gantt-tick-label${line.firstFridayOfMonth || line.firstMondayOfMonth ? ' gantt-tick-label--month' : ''}${mobileLayout ? ' gantt-tick-label--mobile-month' : ''}`}
                   >
                     {line.label}
                   </span>
@@ -3141,6 +3271,7 @@ export default function App() {
                           key={p.id}
                           project={p}
                           designers={designers}
+                          variant="projects"
                           onClick={() => openProjectEdit(p)}
                           onStatusChange={updateProjectStatus}
                         />
@@ -3155,6 +3286,7 @@ export default function App() {
                           key={p.id}
                           project={p}
                           designers={designers}
+                          variant="projects"
                           onClick={() => openProjectEdit(p)}
                           onStatusChange={updateProjectStatus}
                         />
@@ -3182,6 +3314,7 @@ export default function App() {
                           key={p.id}
                           project={p}
                           designers={designers}
+                          variant="schedule"
                           onClick={() => openProjectEdit(p)}
                           onStatusChange={updateProjectStatus}
                         />
@@ -3196,6 +3329,7 @@ export default function App() {
                           key={p.id}
                           project={p}
                           designers={designers}
+                          variant="schedule"
                           onClick={() => openProjectEdit(p)}
                           onStatusChange={updateProjectStatus}
                         />
