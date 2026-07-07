@@ -4,7 +4,7 @@ export const MILESTONE_PHASE_CATALOG = [
   {
     key: 'strategy',
     title: 'Strategy',
-    tasks: ['Discovery', 'Research', 'Benchmarking', 'Insight'],
+    tasks: ['Strategy', 'Discovery', 'Research', 'Benchmarking', 'Insight'],
   },
   {
     key: 'brand-expression',
