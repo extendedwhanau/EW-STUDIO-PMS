@@ -2,6 +2,7 @@ import React, {
   useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback,
   forwardRef, useImperativeHandle, Fragment,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 import './gantt-timeline.css';
@@ -384,12 +385,10 @@ function formatMilestoneDateCompact(str) {
   return `${day}-${month}-${year}`;
 }
 
-function formatMilestoneDateRangeCompact(start, end) {
+function formatMilestoneDateRangeDisplay(start, end) {
   if (!start && !end) return '';
-  if (start && end) {
-    return `${formatMilestoneDateCompact(start)} — ${formatMilestoneDateCompact(end)}`;
-  }
-  return formatMilestoneDateCompact(start || end);
+  if (start && end) return `${formatScheduleStartDate(start)} — ${formatScheduleStartDate(end)}`;
+  return formatScheduleStartDate(start || end);
 }
 
 function formatMilestoneDateRange(start, end) {
@@ -673,6 +672,231 @@ function Avatar({ designer, size = 32 }) {
 
 // ── Project Modal ─────────────────────────────────────────────────────────────
 // ── Milestones panel (project modal) ─────────────────────────────────────────
+
+const CALENDAR_WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+function isoDateParts(y, monthIndex, day) {
+  return `${y}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function buildCalendarCells(viewYear, viewMonth) {
+  const first = new Date(viewYear, viewMonth, 1);
+  const startOffset = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const prevMonthDays = new Date(viewYear, viewMonth, 0).getDate();
+  const cells = [];
+
+  for (let i = 0; i < 42; i += 1) {
+    let day;
+    let y = viewYear;
+    let m = viewMonth;
+    let inMonth = true;
+
+    if (i < startOffset) {
+      day = prevMonthDays - startOffset + i + 1;
+      m -= 1;
+      if (m < 0) { m = 11; y -= 1; }
+      inMonth = false;
+    } else if (i >= startOffset + daysInMonth) {
+      day = i - startOffset - daysInMonth + 1;
+      m += 1;
+      if (m > 11) { m = 0; y += 1; }
+      inMonth = false;
+    } else {
+      day = i - startOffset + 1;
+    }
+
+    cells.push({ iso: isoDateParts(y, m, day), day, inMonth });
+  }
+  return cells;
+}
+
+function DateRangeBubbleCalendar({
+  anchorRef,
+  open,
+  startDate,
+  endDate,
+  onSave,
+  onClose,
+  label = 'Choose dates',
+}) {
+  const popoverRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
+  const [draftStart, setDraftStart] = useState('');
+  const [draftEnd, setDraftEnd] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setDraftStart(startDate || '');
+    setDraftEnd(endDate || '');
+    const base = startDate || endDate || today();
+    const d = parseISODateLocal(base);
+    setViewYear(d.getFullYear());
+    setViewMonth(d.getMonth());
+  }, [open, startDate, endDate]);
+
+  useLayoutEffect(() => {
+    if (!open || !anchorRef?.current || !popoverRef.current) return;
+    const anchor = anchorRef.current.getBoundingClientRect();
+    const pop = popoverRef.current.getBoundingClientRect();
+    const gap = 6;
+    let top = anchor.bottom + gap;
+    let left = anchor.left;
+
+    if (left + pop.width > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - pop.width - 8);
+    }
+    if (left < 8) left = 8;
+    if (top + pop.height > window.innerHeight - 8) {
+      top = Math.max(8, anchor.top - pop.height - gap);
+    }
+
+    setPos({ top, left });
+  }, [open, viewYear, viewMonth, draftStart, draftEnd, anchorRef]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (e) => {
+      if (popoverRef.current?.contains(e.target)) return;
+      if (anchorRef.current?.contains(e.target)) return;
+      onClose();
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open, onClose, anchorRef]);
+
+  const cells = useMemo(
+    () => buildCalendarCells(viewYear, viewMonth),
+    [viewYear, viewMonth],
+  );
+
+  const monthLabel = useMemo(
+    () => new Date(viewYear, viewMonth, 1).toLocaleDateString('en-NZ', { month: 'long', year: 'numeric' }),
+    [viewYear, viewMonth],
+  );
+
+  const shiftMonth = (delta) => {
+    const d = new Date(viewYear, viewMonth + delta, 1);
+    setViewYear(d.getFullYear());
+    setViewMonth(d.getMonth());
+  };
+
+  const handleDayClick = (iso) => {
+    if (!draftStart || (draftStart && draftEnd)) {
+      setDraftStart(iso);
+      setDraftEnd('');
+      return;
+    }
+    if (iso < draftStart) {
+      setDraftStart(iso);
+      setDraftEnd('');
+      return;
+    }
+    setDraftEnd(iso);
+  };
+
+  const handleSave = () => {
+    if (!draftStart || !draftEnd) return;
+    onSave({ startDate: draftStart, endDate: draftEnd });
+  };
+
+  if (!open) return null;
+
+  const todayIso = today();
+  const canSave = Boolean(draftStart && draftEnd);
+  const hintText = !draftStart
+    ? 'Choose a start date'
+    : !draftEnd
+      ? 'Choose an end date'
+      : formatMilestoneDateRangeDisplay(draftStart, draftEnd);
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      className="sheet-date-calendar"
+      style={{ top: pos.top, left: pos.left }}
+      role="dialog"
+      aria-label={label}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className="sheet-date-calendar__head">
+        <button
+          type="button"
+          className="sheet-date-calendar__nav"
+          onClick={() => shiftMonth(-1)}
+          aria-label="Previous month"
+        >
+          ‹
+        </button>
+        <span className="sheet-date-calendar__month">{monthLabel}</span>
+        <button
+          type="button"
+          className="sheet-date-calendar__nav"
+          onClick={() => shiftMonth(1)}
+          aria-label="Next month"
+        >
+          ›
+        </button>
+      </div>
+      <div className="sheet-date-calendar__weekdays" aria-hidden>
+        {CALENDAR_WEEKDAYS.map((wd, i) => (
+          <span key={`${wd}-${i}`} className="sheet-date-calendar__weekday">{wd}</span>
+        ))}
+      </div>
+      <div className="sheet-date-calendar__grid" role="grid">
+        {cells.map((cell) => {
+          const hasRange = Boolean(draftStart && draftEnd);
+          const inRange = hasRange && cell.iso >= draftStart && cell.iso <= draftEnd;
+          const isRangeStart = cell.iso === draftStart;
+          const isRangeEnd = cell.iso === draftEnd;
+          const isRangeMiddle = inRange && !isRangeStart && !isRangeEnd;
+          const isToday = cell.iso === todayIso;
+          return (
+            <button
+              key={cell.iso}
+              type="button"
+              role="gridcell"
+              className={[
+                'sheet-date-calendar__day',
+                !cell.inMonth ? 'sheet-date-calendar__day--outside' : '',
+                isRangeMiddle ? 'sheet-date-calendar__day--in-range' : '',
+                isRangeStart ? 'sheet-date-calendar__day--range-start' : '',
+                isRangeEnd ? 'sheet-date-calendar__day--range-end' : '',
+                !draftEnd && isRangeStart ? 'sheet-date-calendar__day--selected' : '',
+                isToday ? 'sheet-date-calendar__day--today' : '',
+              ].filter(Boolean).join(' ')}
+              onClick={() => handleDayClick(cell.iso)}
+            >
+              {cell.day}
+            </button>
+          );
+        })}
+      </div>
+      <div className="sheet-date-calendar__footer">
+        <p className="sheet-date-calendar__hint">{hintText}</p>
+        <button
+          type="button"
+          className="sheet-date-calendar__save"
+          disabled={!canSave}
+          onClick={handleSave}
+        >
+          Save dates
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function MilestoneDateRangePicker({
   startDate,
   endDate,
@@ -681,167 +905,83 @@ function MilestoneDateRangePicker({
   emptyLabel = 'Add dates',
   ariaLabel = 'Set dates',
 }, ref) {
-  const startRef = useRef(null);
-  const endRef = useRef(null);
-  const transitioningRef = useRef(false);
+  const rangeBtnRef = useRef(null);
   const sessionSnapshotRef = useRef(null);
-  const sessionDraftRef = useRef(null);
-  const [step, setStep] = useState(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
-  const openPicker = (input, delayMs = 0) => {
-    const run = () => {
-      if (!input) return;
-      if (typeof input.showPicker === 'function') {
-        try {
-          input.showPicker();
-          return;
-        } catch {
-          /* fall through */
-        }
-      }
-      input.focus();
-    };
-    if (delayMs > 0) {
-      window.setTimeout(run, delayMs);
-    } else {
-      requestAnimationFrame(run);
-    }
-  };
-
-  const beginPick = useCallback(() => {
-    const snap = {
+  const beginSession = useCallback(() => {
+    sessionSnapshotRef.current = {
       startDate: startDate || '',
       endDate: endDate || '',
     };
-    sessionSnapshotRef.current = snap;
-    sessionDraftRef.current = { ...snap };
-    if (startDate && !endDate) {
-      setStep('end');
-      openPicker(endRef.current);
+  }, [startDate, endDate]);
+
+  const endPickSession = useCallback(() => {
+    sessionSnapshotRef.current = null;
+    setCalendarOpen(false);
+  }, []);
+
+  const toggleCalendar = useCallback(() => {
+    if (calendarOpen) {
+      endPickSession();
       return;
     }
-    setStep('start');
-    openPicker(startRef.current);
-  }, [startDate, endDate]);
+    beginSession();
+    setCalendarOpen(true);
+  }, [calendarOpen, beginSession, endPickSession]);
+
+  const beginPick = useCallback(() => {
+    if (calendarOpen) return;
+    beginSession();
+    setCalendarOpen(true);
+  }, [calendarOpen, beginSession]);
 
   useImperativeHandle(ref, () => ({ beginPick }), [beginPick]);
 
-  const endPickSession = () => {
-    const snap = sessionSnapshotRef.current;
-    const draft = sessionDraftRef.current;
-    sessionSnapshotRef.current = null;
-    sessionDraftRef.current = null;
-    setStep(null);
-    if (!snap) return;
+  useEffect(() => {
+    if (!calendarOpen) return undefined;
+    setIdlePickPaused(true);
+    return () => setIdlePickPaused(false);
+  }, [calendarOpen]);
 
-    const draftStart = draft?.startDate ?? '';
-    const draftEnd = draft?.endDate ?? '';
-    const snapStart = snap.startDate || '';
-    const snapEnd = snap.endDate || '';
-
-    if (draftStart === snapStart && draftEnd === snapEnd) return;
-
+  const handleSave = ({ startDate: nextStart, endDate: nextEnd }) => {
     onChange({
-      startDate: snapStart || undefined,
-      endDate: snapEnd || undefined,
+      startDate: nextStart || undefined,
+      endDate: nextEnd || undefined,
     });
-  };
-
-  const handleStartChange = (value) => {
-    if (!value) return;
-    if (sessionDraftRef.current) {
-      sessionDraftRef.current = { ...sessionDraftRef.current, startDate: value };
-    }
-    onChange({ startDate: value });
-    transitioningRef.current = true;
-    setStep('end');
-    openPicker(endRef.current, 80);
-    window.setTimeout(() => {
-      transitioningRef.current = false;
-    }, 200);
-  };
-
-  const handleEndChange = (value) => {
-    if (!value) return;
-    let nextEnd = value;
-    if (startDate && nextEnd && nextEnd < startDate) nextEnd = startDate;
-    if (sessionDraftRef.current) {
-      sessionDraftRef.current = { ...sessionDraftRef.current, endDate: nextEnd };
-    }
-    onChange({ endDate: nextEnd });
     sessionSnapshotRef.current = null;
-    sessionDraftRef.current = null;
-    setStep(null);
+    setCalendarOpen(false);
   };
 
-  const handleStartBlur = () => {
-    if (transitioningRef.current) return;
-    if (step === 'start') endPickSession();
-  };
-
-  const handleEndBlur = () => {
-    if (step === 'end') endPickSession();
-  };
-
-  const savedRangeLabel = formatMilestoneDateRangeCompact(startDate, endDate) || emptyLabel;
-
-  const statusText = step === 'start'
-    ? (startDate || endDate ? savedRangeLabel : 'Select start date')
-    : savedRangeLabel;
-
-  const pickingClass = step === 'start'
-    ? 'sheet-milestone-range-btn--pick-start'
-    : step === 'end' || (startDate && !endDate)
-      ? 'sheet-milestone-range-btn--pick-end'
-      : '';
-
-  const showEndPrompt = (step === 'end' || (step === null && startDate && !endDate)) && startDate;
+  const rangeLabel = formatMilestoneDateRangeDisplay(startDate, endDate) || emptyLabel;
+  const hasDates = Boolean(startDate && endDate);
 
   return (
     <>
       <button
+        ref={rangeBtnRef}
         type="button"
         className={[
-          'sheet-milestone-range-btn',
-          pickingClass,
+          'sheet-date-range-btn',
           className,
+          calendarOpen ? 'sheet-date-range-btn--active' : '',
+          hasDates ? '' : 'sheet-date-range-btn--empty',
         ].filter(Boolean).join(' ')}
-        onClick={beginPick}
+        onClick={toggleCalendar}
         aria-label={ariaLabel}
+        aria-expanded={calendarOpen}
         aria-live="polite"
       >
-        {showEndPrompt ? (
-          <>
-            <span className="sheet-range-part sheet-range-part--set">
-              {formatMilestoneDateCompact(startDate)}
-            </span>
-            <span className="sheet-range-sep"> — </span>
-            <span className="sheet-range-part sheet-range-part--active">Select end date</span>
-          </>
-        ) : (
-          statusText
-        )}
+        {rangeLabel}
       </button>
-      <input
-        ref={startRef}
-        type="date"
-        className="sheet-milestone-date-hidden"
-        value={startDate || ''}
-        tabIndex={-1}
-        aria-hidden
-        onChange={(e) => handleStartChange(e.target.value)}
-        onBlur={handleStartBlur}
-      />
-      <input
-        ref={endRef}
-        type="date"
-        className="sheet-milestone-date-hidden"
-        value={endDate || ''}
-        min={startDate || undefined}
-        tabIndex={-1}
-        aria-hidden
-        onChange={(e) => handleEndChange(e.target.value)}
-        onBlur={handleEndBlur}
+      <DateRangeBubbleCalendar
+        anchorRef={rangeBtnRef}
+        open={calendarOpen}
+        startDate={startDate}
+        endDate={endDate}
+        onSave={handleSave}
+        onClose={endPickSession}
+        label={ariaLabel}
       />
     </>
   );
@@ -911,31 +1051,33 @@ function MilestoneTaskChip({
 
   return (
     <div className="sheet-task-chip">
-      <input
-        className="sheet-task-chip-name"
-        type="text"
-        value={task.title}
-        placeholder="Task"
-        aria-label="Task name"
-        size={nameSize}
-        onChange={(e) => onUpdate({ title: e.target.value })}
-      />
-      <MilestoneDateRangePickerWithRef
-        startDate={task.startDate}
-        endDate={task.endDate}
-        onChange={onUpdate}
-        className="sheet-task-chip-range"
-        emptyLabel="Dates"
-        ariaLabel={`Set dates for ${label}`}
-      />
-      <button
-        type="button"
-        className="sheet-designer-chip-remove sheet-task-chip-remove"
-        onClick={onRemove}
-        aria-label={`Remove ${label}`}
-      >
-        ×
-      </button>
+      <div className="sheet-bubble sheet-task-chip-bubble">
+        <input
+          className="sheet-task-chip-name"
+          type="text"
+          value={task.title}
+          placeholder="Task"
+          aria-label="Task name"
+          size={nameSize}
+          onChange={(e) => onUpdate({ title: e.target.value })}
+        />
+        <MilestoneDateRangePickerWithRef
+          startDate={task.startDate}
+          endDate={task.endDate}
+          onChange={onUpdate}
+          className="sheet-task-chip-range"
+          emptyLabel="Dates"
+          ariaLabel={`Set dates for ${label}`}
+        />
+        <button
+          type="button"
+          className="sheet-designer-chip-remove sheet-task-chip-remove"
+          onClick={onRemove}
+          aria-label={`Remove ${label}`}
+        >
+          ×
+        </button>
+      </div>
     </div>
   );
 }
@@ -2640,9 +2782,17 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
 const STUDIO_ACCESS_STORAGE = 'ew_studio_access';
 const STUDIO_ACCESS_CODE = '3131';
 
-const IDLE_SCREENSAVER_MS = 20_000;
+const IDLE_SCREENSAVER_MS = 35_000;
 /** Set REACT_APP_DISABLE_IDLE_SCREENSAVER=true to turn off (e.g. in .env.local). */
 const IDLE_SCREENSAVER_ENABLED = process.env.REACT_APP_DISABLE_IDLE_SCREENSAVER !== 'true';
+
+let idlePickPauseCount = 0;
+
+function setIdlePickPaused(paused) {
+  idlePickPauseCount += paused ? 1 : -1;
+  if (idlePickPauseCount < 0) idlePickPauseCount = 0;
+  document.dispatchEvent(new CustomEvent('ew-idle-pause-change'));
+}
 
 function useIdleScreensaver(enabled) {
   const [visible, setVisible] = useState(false);
@@ -2658,7 +2808,7 @@ function useIdleScreensaver(enabled) {
 
   const scheduleIdle = useCallback(() => {
     clearTimer();
-    if (!enabled || visibleRef.current) return;
+    if (!enabled || visibleRef.current || idlePickPauseCount > 0) return;
     timerRef.current = window.setTimeout(() => {
       visibleRef.current = true;
       setVisible(true);
@@ -2677,12 +2827,18 @@ function useIdleScreensaver(enabled) {
       if (visibleRef.current) return;
       scheduleIdle();
     };
+    const onPauseChange = () => {
+      if (idlePickPauseCount > 0) clearTimer();
+      else scheduleIdle();
+    };
     const opts = { passive: true, capture: true };
     const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'];
     events.forEach((ev) => document.addEventListener(ev, onActivity, opts));
+    document.addEventListener('ew-idle-pause-change', onPauseChange);
     return () => {
       clearTimer();
       events.forEach((ev) => document.removeEventListener(ev, onActivity, opts));
+      document.removeEventListener('ew-idle-pause-change', onPauseChange);
     };
   }, [enabled, scheduleIdle, clearTimer]);
 

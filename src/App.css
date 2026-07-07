@@ -965,6 +965,349 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
+.sheet-bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.08);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sheet-bubble:hover {
+  background: rgba(120, 120, 128, 0.11);
+}
+
+.sheet-bubble:focus-within {
+  background: rgba(120, 120, 128, 0.11);
+  box-shadow:
+    inset 0 0 0 0.5px rgba(0, 0, 0, 0.08),
+    0 0 0 3px rgba(0, 0, 0, 0.04);
+}
+
+.sheet-date-bubbles {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sheet-date-range-btn {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: var(--sheet-pt);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  line-height: 1.25;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.sheet-date-range-btn--empty {
+  color: var(--sheet-muted);
+  font-weight: 500;
+}
+
+.sheet-date-range-btn--active {
+  font-weight: 500;
+}
+
+.sheet-date-range-btn:hover {
+  opacity: 0.75;
+}
+
+.sheet-date-range-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--text-primary);
+  border-radius: 4px;
+}
+
+.sheet-date-bubble {
+  font-family: inherit;
+  font-size: var(--sheet-pt);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  border: none;
+  cursor: pointer;
+  padding: 5px 12px;
+  min-height: 30px;
+}
+
+.sheet-date-bubble--empty {
+  color: var(--sheet-muted);
+  font-weight: 500;
+}
+
+.sheet-date-bubble--range {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.25;
+  font-weight: 500;
+}
+
+.sheet-date-bubble--filled {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.sheet-date-bubble--active {
+  background: rgba(120, 120, 128, 0.16);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 0 3px rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sheet-date-bubble:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 0 3px rgba(0, 0, 0, 0.08);
+}
+
+.sheet-date-calendar {
+  position: fixed;
+  z-index: 1000;
+  width: 280px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface, #fff);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.12),
+    0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  animation: sheet-date-calendar-in 0.16s ease-out both;
+}
+
+@keyframes sheet-date-calendar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sheet-date-calendar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sheet-date-calendar__month {
+  flex: 1;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.sheet-date-calendar__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.08);
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.sheet-date-calendar__nav:hover {
+  background: rgba(120, 120, 128, 0.14);
+}
+
+.sheet-date-calendar__nav:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--text-primary);
+}
+
+.sheet-date-calendar__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.sheet-date-calendar__weekday {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary, rgba(60, 60, 67, 0.6));
+  text-transform: uppercase;
+}
+
+.sheet-date-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.sheet-date-calendar__day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.sheet-date-calendar__day:hover:not(:disabled) {
+  background: rgba(120, 120, 128, 0.12);
+}
+
+.sheet-date-calendar__day:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--text-primary);
+}
+
+.sheet-date-calendar__day--outside {
+  color: var(--text-secondary, rgba(60, 60, 67, 0.45));
+}
+
+.sheet-date-calendar__day--today:not(.sheet-date-calendar__day--selected) {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.sheet-date-calendar__day--selected {
+  background: var(--text-primary);
+  color: var(--surface, #fff);
+  font-weight: 600;
+}
+
+.sheet-date-calendar__day--selected:hover {
+  background: var(--text-primary);
+  opacity: 0.92;
+}
+
+.sheet-date-calendar__day--in-range {
+  background: rgba(120, 120, 128, 0.14);
+  border-radius: 0;
+  color: var(--text-primary);
+}
+
+.sheet-date-calendar__day--range-start,
+.sheet-date-calendar__day--range-end {
+  background: var(--text-primary);
+  color: var(--surface, #fff);
+  font-weight: 600;
+}
+
+.sheet-date-calendar__day--range-start {
+  border-radius: 999px 0 0 999px;
+}
+
+.sheet-date-calendar__day--range-end {
+  border-radius: 0 999px 999px 0;
+}
+
+.sheet-date-calendar__day--range-start.sheet-date-calendar__day--range-end {
+  border-radius: 999px;
+}
+
+.sheet-date-calendar__day--range-start:hover,
+.sheet-date-calendar__day--range-end:hover {
+  background: var(--text-primary);
+  opacity: 0.92;
+}
+
+.sheet-date-calendar__day--in-range:hover {
+  background: rgba(120, 120, 128, 0.18);
+}
+
+.sheet-date-calendar__day:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+.sheet-date-calendar__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid rgba(0, 0, 0, 0.08);
+}
+
+.sheet-date-calendar__hint {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary, rgba(60, 60, 67, 0.65));
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-date-calendar__save {
+  width: 100%;
+  min-height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: var(--text-primary);
+  color: var(--surface, #fff);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.sheet-date-calendar__save:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.sheet-date-calendar__save:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.sheet-date-calendar__save:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.12);
+}
+
 .sheet-milestone-range-btn:hover {
   color: var(--text-primary);
   opacity: 0.75;
@@ -1105,20 +1448,25 @@ html, body, #root {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px 6px 12px;
-  border-radius: 999px;
-  background: rgba(120, 120, 128, 0.08);
-  width: fit-content;
   max-width: 100%;
   min-width: 0;
-  border: none;
-  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
-.sheet-task-chip:hover {
+.sheet-task-chip-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.sheet-task-chip-bubble:hover {
   background: rgba(120, 120, 128, 0.11);
+}
+
+.sheet-task-chip .sheet-date-range-btn:hover {
+  opacity: 0.75;
 }
 
 .sheet-task-chip .sheet-task-chip-remove {
@@ -1140,7 +1488,7 @@ html, body, #root {
   background: rgba(0, 0, 0, 0.06);
 }
 
-.sheet-task-chip:focus-within {
+.sheet-task-chip-bubble:focus-within {
   background: rgba(120, 120, 128, 0.11);
   box-shadow:
     inset 0 0 0 0.5px rgba(0, 0, 0, 0.08),
@@ -1181,9 +1529,12 @@ html, body, #root {
   font-weight: 400;
   flex-shrink: 0;
   line-height: 1.15;
-  padding: 0;
   letter-spacing: -0.008em;
-  white-space: nowrap;
+  color: rgba(60, 60, 67, 0.72);
+}
+
+.sheet-task-chip-range.sheet-date-range-btn--empty {
+  color: rgba(60, 60, 67, 0.45);
 }
 
 .sheet-task-chip-name:focus-visible {
@@ -1295,6 +1646,7 @@ html, body, #root {
   min-width: 0;
   gap: 10px;
   justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
 .sheet-name-dates-name {
@@ -2424,20 +2776,23 @@ html, body, #root {
   /* Name + inline dates wrap so long names/dates never clip on narrow screens */
   .modal--project .sheet-name-dates-row {
     flex-wrap: wrap;
-    gap: 2px 10px;
+    gap: 10px;
   }
   .modal--project .sheet-name-dates-name {
     max-width: 100%;
   }
 
-  /* Date-range buttons: keep inline but give a comfortable vertical tap area */
-  .modal--project .sheet-milestone-range-btn {
+  /* Date range text: comfortable vertical tap area on touch */
+  .modal--project .sheet-date-range-btn:not(.sheet-task-chip-range) {
     display: inline-flex;
     align-items: center;
     min-height: 30px;
   }
   .modal--project .sheet-task-chip-range {
-    min-height: 24px;
+    min-height: 0;
+  }
+  .modal--project .sheet-date-calendar {
+    width: min(280px, calc(100vw - 24px));
   }
 
   /* Client field + picker align on one comfortable row */
@@ -2457,8 +2812,8 @@ html, body, #root {
     padding: 0 14px;
   }
 
-  /* Task chips: roomier for touch, remove target enlarged */
-  .modal--project .sheet-task-chip {
+  /* Task chips: roomier bubble for touch */
+  .modal--project .sheet-task-chip-bubble {
     padding: 7px 8px 7px 13px;
   }
   .modal--project .sheet-task-chip .sheet-task-chip-remove {
