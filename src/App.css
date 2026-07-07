@@ -1007,9 +1007,15 @@ html, body, #root {
   min-width: 0;
 }
 
-.sheet-phase-name {
+.sheet-phase-name,
+.sheet-phase-name-label {
   width: 100%;
   max-width: 100%;
+  font-size: var(--sheet-pt);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  line-height: 1.25;
 }
 
 .sheet-phase-duration {
@@ -1702,6 +1708,19 @@ html, body, #root {
 .sheet-task-chip:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+.sheet-task-chip-label {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  color: var(--text-primary);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .sheet-task-chip-name {

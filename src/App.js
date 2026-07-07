@@ -15,6 +15,17 @@ import {
   getDevTimelinePreviewProjects,
   shouldUseDevTimelinePreview,
 } from './devTimelinePreview';
+import {
+  availablePhases,
+  availableTasks,
+  createCatalogPhase,
+  createCatalogTask,
+  getPhaseByKey,
+  getPhaseByTitle,
+  insertPhaseInCatalogOrder,
+  sortPhasesByCatalog,
+  taskKeyFromTitle,
+} from './milestoneCatalog';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -472,147 +483,6 @@ function applyProjectDatePatch(form, patch) {
   return { ...form, ...patch };
 }
 
-function emptyMilestonePhase() {
-  return {
-    id: uuidv4(),
-    title: '',
-    scheduleMode: 'weeks',
-    durationWeeks: 2,
-    startDate: '',
-    endDate: '',
-    tasks: [],
-  };
-}
-
-function emptyMilestoneTask() {
-  return { id: uuidv4(), title: '' };
-}
-
-function splitCsvLine(line) {
-  const out = [];
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === ',' && !inQuotes) {
-      out.push(cur);
-      cur = '';
-    } else {
-      cur += ch;
-    }
-  }
-  out.push(cur);
-  return out.map((s) => s.trim());
-}
-
-function parseMilestoneCsvDate(raw) {
-  const s = String(raw || '').trim();
-  if (!s) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const short = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})$/);
-  if (short) {
-    const day = short[1].padStart(2, '0');
-    const monthIdx = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-      .indexOf(short[2].toLowerCase());
-    if (monthIdx >= 0) {
-      let year = parseInt(short[3], 10);
-      if (year < 100) year += 2000;
-      const month = String(monthIdx + 1).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-  }
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return '';
-}
-
-function normalizeCsvHeader(header) {
-  return String(header || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function parseMilestoneCsv(text) {
-  const normalized = String(text || '').replace(/^\uFEFF/, '').trim();
-  if (!normalized) throw new Error('CSV file is empty.');
-
-  const lines = normalized.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines.length < 2) throw new Error('CSV must include a header row and at least one data row.');
-
-  const headers = splitCsvLine(lines[0]).map(normalizeCsvHeader);
-  const col = (row, ...names) => {
-    for (let i = 0; i < names.length; i += 1) {
-      const idx = headers.indexOf(names[i]);
-      if (idx >= 0) return (row[idx] || '').trim();
-    }
-    return '';
-  };
-
-  if (!headers.includes('type') || !headers.includes('title')) {
-    throw new Error('CSV must include Type and Title columns.');
-  }
-
-  const phases = [];
-  const phaseByTitle = new Map();
-
-  for (let i = 1; i < lines.length; i += 1) {
-    const cells = splitCsvLine(lines[i]);
-    const type = col(cells, 'type').toLowerCase();
-    const title = col(cells, 'title');
-    const phaseName = col(cells, 'phase');
-    const startDate = parseMilestoneCsvDate(col(cells, 'start date'));
-    const endDate = parseMilestoneCsvDate(col(cells, 'end date'));
-    const durationRaw = col(cells, 'duration (weeks)', 'duration weeks', 'weeks');
-    const durationWeeks = durationRaw ? parseInt(durationRaw, 10) : null;
-
-    if (!type) continue;
-
-    if (type === 'phase') {
-      if (!title) throw new Error(`Row ${i + 1}: Phase rows need a Title.`);
-      const inferredWeeks = Number.isFinite(durationWeeks) && durationWeeks > 0
-        ? durationWeeks
-        : inferDurationWeeksFromDates(startDate, endDate);
-      const useWeeks = !startDate || !endDate || durationRaw;
-      const phase = {
-        id: uuidv4(),
-        title,
-        scheduleMode: useWeeks ? 'weeks' : 'custom',
-        durationWeeks: useWeeks ? normalizeDurationWeeks(inferredWeeks, 2) : null,
-        startDate: useWeeks ? '' : startDate,
-        endDate: useWeeks ? '' : endDate,
-        tasks: [],
-      };
-      phases.push(phase);
-      phaseByTitle.set(title.toLowerCase(), phase);
-      continue;
-    }
-
-    if (type === 'task') {
-      if (!title) throw new Error(`Row ${i + 1}: Task rows need a Title.`);
-      if (!phaseName) throw new Error(`Row ${i + 1}: Task rows need a Phase.`);
-      const parent = phaseByTitle.get(phaseName.toLowerCase());
-      if (!parent) {
-        throw new Error(`Row ${i + 1}: Unknown phase "${phaseName}".`);
-      }
-      parent.tasks.push({
-        id: uuidv4(),
-        title,
-      });
-      continue;
-    }
-
-    throw new Error(`Row ${i + 1}: Unknown type "${type}". Use Phase or Task.`);
-  }
-
-  if (phases.length === 0) throw new Error('No phases found in CSV.');
-  return phases;
-}
-
 function milestoneScheduleBounds(phases) {
   const dates = [];
   phases.forEach((phase) => {
@@ -624,6 +494,9 @@ function milestoneScheduleBounds(phases) {
 }
 
 function normalizeMilestonePhase(phase) {
+  const catalogEntry = getPhaseByKey(phase.phaseKey) || getPhaseByTitle(phase.title);
+  if (!catalogEntry) return null;
+
   const startDate = phase.startDate || '';
   const endDate = phase.endDate || '';
   let scheduleMode = phase.scheduleMode === 'custom' ? 'custom' : 'weeks';
@@ -644,23 +517,39 @@ function normalizeMilestonePhase(phase) {
     durationWeeks = null;
   }
 
+  const tasks = (Array.isArray(phase.tasks) ? phase.tasks : [])
+    .map((task) => {
+      const matchedTitle = catalogEntry.tasks.find((catalogTask) => {
+        const taskKey = task.taskKey || taskKeyFromTitle(task.title);
+        return taskKeyFromTitle(catalogTask) === taskKey
+          || catalogTask.toLowerCase() === String(task.title || '').trim().toLowerCase();
+      });
+      if (!matchedTitle) return null;
+      return {
+        id: task.id || uuidv4(),
+        taskKey: taskKeyFromTitle(matchedTitle),
+        title: matchedTitle,
+      };
+    })
+    .filter(Boolean);
+
   return {
     id: phase.id || uuidv4(),
-    title: String(phase.title || ''),
+    phaseKey: catalogEntry.key,
+    title: catalogEntry.title,
     scheduleMode,
     durationWeeks: scheduleMode === 'weeks' ? durationWeeks : null,
     startDate,
     endDate,
-    tasks: (Array.isArray(phase.tasks) ? phase.tasks : []).map((t) => ({
-      id: t.id || uuidv4(),
-      title: String(t.title || ''),
-    })),
+    tasks,
   };
 }
 
 function normalizeProjectMilestones(p) {
   const raw = Array.isArray(p.milestones) ? p.milestones : [];
-  const milestones = raw.map((phase) => normalizeMilestonePhase(phase));
+  const milestones = sortPhasesByCatalog(
+    raw.map((phase) => normalizeMilestonePhase(phase)).filter(Boolean),
+  );
   const { milestonesEnabled, ...rest } = p;
   if (!milestones.length) {
     return { ...rest, milestones };
@@ -729,17 +618,29 @@ function buildSampleProjects() {
       notes: 'Long-form campaign with phased delivery.',
       milestones: [
         {
-          id: 'ms1', title: 'Campaign Concept', startDate: '2026-07-07', endDate: '2026-08-27',
+          id: 'ms1',
+          phaseKey: 'strategy',
+          title: 'Strategy',
+          scheduleMode: 'weeks',
+          durationWeeks: 8,
+          startDate: '2026-07-07',
+          endDate: '2026-08-27',
           tasks: [
-            { id: 'ms1t1', title: 'Concept Development', startDate: '2026-07-07', endDate: '2026-07-28' },
-            { id: 'ms1t2', title: 'Developed Design', startDate: '2026-07-29', endDate: '2026-08-27' },
+            { id: 'ms1t1', taskKey: 'discovery', title: 'Discovery' },
+            { id: 'ms1t2', taskKey: 'research', title: 'Research' },
           ],
         },
         {
-          id: 'ms2', title: 'Content Creation', startDate: '2026-09-01', endDate: '2026-10-16',
+          id: 'ms2',
+          phaseKey: 'brand-expression',
+          title: 'Brand Expression',
+          scheduleMode: 'weeks',
+          durationWeeks: 7,
+          startDate: '2026-08-28',
+          endDate: '2026-10-16',
           tasks: [
-            { id: 'ms2t1', title: 'Design Development', startDate: '2026-09-01', endDate: '2026-09-19' },
-            { id: 'ms2t2', title: 'Shooting Animation - Final Assets', startDate: '2026-09-21', endDate: '2026-10-02' },
+            { id: 'ms2t1', taskKey: 'concept', title: 'Concept' },
+            { id: 'ms2t2', taskKey: 'refinement', title: 'Refinement' },
           ],
         },
       ],
@@ -1108,6 +1009,43 @@ function MilestoneDateRangePicker({
 
 const MilestoneDateRangePickerWithRef = forwardRef(MilestoneDateRangePicker);
 
+function MilestoneCatalogAddButton({
+  options,
+  onSelect,
+  ariaLabel,
+  disabled = false,
+}) {
+  if (disabled || !options.length) return null;
+
+  return (
+    <div className="sheet-designer-add-wrap sheet-milestone-catalog-add-wrap">
+      <button
+        type="button"
+        className="sheet-milestone-add-task"
+        aria-label={ariaLabel}
+        tabIndex={-1}
+      >
+        +
+      </button>
+      <select
+        className="sheet-designer-add-select"
+        value=""
+        aria-label={ariaLabel}
+        onChange={(e) => {
+          const value = e.target.value;
+          if (value) onSelect(value);
+          e.target.value = '';
+        }}
+      >
+        <option value="" disabled hidden />
+        {options.map((option) => (
+          <option key={option.key} value={option.key}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function MilestonePhaseDurationPicker({
   phase,
   onAdjustWeeks,
@@ -1195,25 +1133,15 @@ function MilestonePhaseDurationPicker({
 
 function MilestonePhaseTitle({
   phase,
-  onUpdateTitle,
   onAdjustWeeks,
   onSelectCustom,
   onCustomDatesChange,
 }) {
-  const nameSize = Math.max(10, (phase.title.trim() || 'Phase name').length + 1);
-  const phaseLabel = phase.title.trim() || 'phase';
+  const phaseLabel = phase.title.trim() || 'Phase';
 
   return (
     <div className="sheet-phase-head-fields">
-      <input
-        className="sheet-name-dates-name sheet-phase-name"
-        type="text"
-        placeholder="Phase name"
-        aria-label="Phase name"
-        value={phase.title}
-        size={nameSize}
-        onChange={(e) => onUpdateTitle(e.target.value)}
-      />
+      <span className="sheet-phase-name-label">{phase.title}</span>
       <MilestonePhaseDurationPicker
         phase={phase}
         onAdjustWeeks={onAdjustWeeks}
@@ -1227,24 +1155,14 @@ function MilestonePhaseTitle({
 
 function MilestoneTaskChip({
   task,
-  onUpdate,
   onRemove,
 }) {
   const label = task.title.trim() || 'Task';
-  const nameSize = Math.max(4, label.length + 1);
 
   return (
     <div className="sheet-task-chip">
       <div className="sheet-bubble sheet-task-chip-bubble">
-        <input
-          className="sheet-task-chip-name"
-          type="text"
-          value={task.title}
-          placeholder="Task"
-          aria-label="Task name"
-          size={nameSize}
-          onChange={(e) => onUpdate({ title: e.target.value })}
-        />
+        <span className="sheet-task-chip-label">{label}</span>
         <button
           type="button"
           className="sheet-designer-chip-remove sheet-task-chip-remove"
@@ -1260,21 +1178,23 @@ function MilestoneTaskChip({
 
 function MilestonePhaseBlock({
   phase,
-  onUpdatePhase,
   onRemovePhase,
   onAddTask,
-  onUpdateTask,
   onRemoveTask,
   onAdjustWeeks,
   onSelectCustom,
   onCustomDatesChange,
 }) {
+  const taskOptions = availableTasks(phase.phaseKey, phase.tasks).map((title) => ({
+    key: taskKeyFromTitle(title),
+    label: title,
+  }));
+
   return (
     <div className="sheet-milestone-block">
       <div className="sheet-milestone-phase-head">
         <MilestonePhaseTitle
           phase={phase}
-          onUpdateTitle={(title) => onUpdatePhase({ title })}
           onAdjustWeeks={onAdjustWeeks}
           onSelectCustom={onSelectCustom}
           onCustomDatesChange={onCustomDatesChange}
@@ -1283,7 +1203,7 @@ function MilestonePhaseBlock({
           type="button"
           className="sheet-designer-chip-remove sheet-milestone-phase-remove"
           onClick={onRemovePhase}
-          aria-label="Remove phase"
+          aria-label={`Remove ${phase.title}`}
         >
           ×
         </button>
@@ -1295,18 +1215,14 @@ function MilestonePhaseBlock({
             <MilestoneTaskChip
               key={task.id}
               task={task}
-              onUpdate={(patch) => onUpdateTask(task.id, patch)}
               onRemove={() => onRemoveTask(task.id)}
             />
           ))}
-          <button
-            type="button"
-            className="sheet-milestone-add-task"
-            onClick={onAddTask}
-            aria-label="Add task"
-          >
-            +
-          </button>
+          <MilestoneCatalogAddButton
+            options={taskOptions}
+            onSelect={(taskKey) => onAddTask(taskKey)}
+            ariaLabel={`Add task to ${phase.title}`}
+          />
         </div>
       </div>
     </div>
@@ -1315,12 +1231,14 @@ function MilestonePhaseBlock({
 
 function MilestonesPanel({ form, setForm }) {
   const phases = form.milestones || [];
-  const [importError, setImportError] = useState('');
-  const csvInputRef = useRef(null);
   const projectNameSize = Math.max(10, (form.name.trim() || 'Project name').length + 1);
+  const phaseOptions = availablePhases(phases).map((phase) => ({
+    key: phase.key,
+    label: phase.title,
+  }));
 
   const setPhases = (next) => {
-    setForm((f) => applyMilestoneScheduleToForm(f, { milestones: next }));
+    setForm((f) => applyMilestoneScheduleToForm(f, { milestones: sortPhasesByCatalog(next) }));
   };
 
   const updatePhase = (phaseId, patch) => {
@@ -1331,18 +1249,10 @@ function MilestonesPanel({ form, setForm }) {
     setPhases(phases.filter((ph) => ph.id !== phaseId));
   };
 
-  const addPhase = () => {
-    setPhases([...phases, emptyMilestonePhase()]);
-  };
-
-  const updateTask = (phaseId, taskId, patch) => {
-    setPhases(phases.map((ph) => {
-      if (ph.id !== phaseId) return ph;
-      return {
-        ...ph,
-        tasks: ph.tasks.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
-      };
-    }));
+  const addPhase = (phaseKey) => {
+    const phase = createCatalogPhase(phaseKey);
+    if (!phase) return;
+    setPhases(insertPhaseInCatalogOrder(phases, phase));
   };
 
   const removeTask = (phaseId, taskId) => {
@@ -1352,8 +1262,11 @@ function MilestonesPanel({ form, setForm }) {
     }));
   };
 
-  const addTask = (phaseId) => {
-    const task = emptyMilestoneTask();
+  const addTask = (phaseId, taskKey) => {
+    const phase = phases.find((ph) => ph.id === phaseId);
+    if (!phase) return;
+    const task = createCatalogTask(phase.phaseKey, taskKey);
+    if (!task) return;
     setPhases(phases.map((ph) => {
       if (ph.id !== phaseId) return ph;
       return { ...ph, tasks: [...ph.tasks, task] };
@@ -1387,39 +1300,8 @@ function MilestonesPanel({ form, setForm }) {
     updatePhase(phaseId, { ...patch, scheduleMode: 'custom', durationWeeks: null });
   };
 
-  const applyImportedPhases = (imported) => {
-    setForm((f) => applyMilestoneScheduleToForm(f, {
-      milestones: imported,
-    }));
-    setImportError('');
-  };
-
   const handleKickoffChange = (patch) => {
     setForm((f) => applyProjectDatePatch(f, patch));
-  };
-
-  const handleCsvUpload = (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const imported = parseMilestoneCsv(String(reader.result || ''));
-        if (phases.length > 0) {
-          const replace = window.confirm(
-            'Replace existing phases with the imported CSV schedule?',
-          );
-          if (!replace) return;
-        }
-        applyImportedPhases(imported);
-      } catch (err) {
-        setImportError(err.message || 'Could not parse CSV.');
-      }
-    };
-    reader.onerror = () => setImportError('Could not read file.');
-    reader.readAsText(file);
   };
 
   return (
@@ -1455,47 +1337,21 @@ function MilestonesPanel({ form, setForm }) {
       <div className="sheet-pair sheet-pair--priority-top">
         <span className="sheet-field-label">Phases</span>
         <div className="sheet-field-value sheet-milestone-phase-actions">
-          <button
-            type="button"
-            className="sheet-milestone-add-task sheet-milestone-add-task--label"
-            onClick={() => csvInputRef.current?.click()}
-            aria-label="Import CSV"
-          >
-            Import
-          </button>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="sheet-csv-import-input"
-            onChange={handleCsvUpload}
-            aria-hidden
-            tabIndex={-1}
+          <MilestoneCatalogAddButton
+            options={phaseOptions}
+            onSelect={addPhase}
+            ariaLabel="Add phase"
           />
-          <button
-            type="button"
-            className="sheet-milestone-add-task"
-            onClick={addPhase}
-            aria-label="Add phase"
-          >
-            +
-          </button>
         </div>
       </div>
-
-      {importError ? (
-        <p className="sheet-csv-import-error" role="alert">{importError}</p>
-      ) : null}
 
       <div className="sheet-milestone-list">
       {phases.map((phase) => (
         <MilestonePhaseBlock
           key={phase.id}
           phase={phase}
-          onUpdatePhase={(patch) => updatePhase(phase.id, patch)}
           onRemovePhase={() => removePhase(phase.id)}
-          onAddTask={() => addTask(phase.id)}
-          onUpdateTask={(taskId, patch) => updateTask(phase.id, taskId, patch)}
+          onAddTask={(taskKey) => addTask(phase.id, taskKey)}
           onRemoveTask={(taskId) => removeTask(phase.id, taskId)}
           onAdjustWeeks={(delta) => adjustPhaseWeeks(phase.id, delta)}
           onSelectCustom={() => selectPhaseCustom(phase.id)}
