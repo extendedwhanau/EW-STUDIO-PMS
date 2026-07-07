@@ -10,6 +10,8 @@ import {
   isSupabaseConfigured,
   loadWorkspacePayload,
   saveWorkspacePayload,
+  fetchWorkspaceUpdatedAt,
+  subscribeWorkspaceChanges,
 } from './supabaseData';
 import {
   getDevTimelinePreviewProjects,
@@ -971,12 +973,6 @@ function MilestoneDateRangePicker({
   }, [calendarOpen, beginSession]);
 
   useImperativeHandle(ref, () => ({ beginPick }), [beginPick]);
-
-  useEffect(() => {
-    if (!calendarOpen) return undefined;
-    setIdlePickPaused(true);
-    return () => setIdlePickPaused(false);
-  }, [calendarOpen]);
 
   const handleSave = ({ startDate: nextStart, endDate: nextEnd }) => {
     onChange({
@@ -3234,90 +3230,21 @@ function GanttChartInner({
 const STUDIO_ACCESS_STORAGE = 'ew_studio_access';
 const STUDIO_ACCESS_CODE = '3131';
 
-const IDLE_SCREENSAVER_MS = 35_000;
-/** Set REACT_APP_DISABLE_IDLE_SCREENSAVER=true to turn off (e.g. in .env.local). */
-const IDLE_SCREENSAVER_ENABLED = process.env.REACT_APP_DISABLE_IDLE_SCREENSAVER !== 'true';
-
-let idlePickPauseCount = 0;
-
-function setIdlePickPaused(paused) {
-  idlePickPauseCount += paused ? 1 : -1;
-  if (idlePickPauseCount < 0) idlePickPauseCount = 0;
-  document.dispatchEvent(new CustomEvent('ew-idle-pause-change'));
-}
-
-function useIdleScreensaver(enabled) {
-  const [visible, setVisible] = useState(false);
-  const timerRef = useRef(null);
-  const visibleRef = useRef(false);
-
-  const clearTimer = useCallback(() => {
-    if (timerRef.current != null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  const scheduleIdle = useCallback(() => {
-    clearTimer();
-    if (!enabled || visibleRef.current || idlePickPauseCount > 0) return;
-    timerRef.current = window.setTimeout(() => {
-      visibleRef.current = true;
-      setVisible(true);
-    }, IDLE_SCREENSAVER_MS);
-  }, [enabled, clearTimer]);
-
-  useEffect(() => {
-    if (!enabled) {
-      clearTimer();
-      visibleRef.current = false;
-      setVisible(false);
-      return undefined;
-    }
-    scheduleIdle();
-    const onActivity = () => {
-      if (visibleRef.current) return;
-      scheduleIdle();
-    };
-    const onPauseChange = () => {
-      if (idlePickPauseCount > 0) clearTimer();
-      else scheduleIdle();
-    };
-    const opts = { passive: true, capture: true };
-    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'];
-    events.forEach((ev) => document.addEventListener(ev, onActivity, opts));
-    document.addEventListener('ew-idle-pause-change', onPauseChange);
-    return () => {
-      clearTimer();
-      events.forEach((ev) => document.removeEventListener(ev, onActivity, opts));
-      document.removeEventListener('ew-idle-pause-change', onPauseChange);
-    };
-  }, [enabled, scheduleIdle, clearTimer]);
-
-  const dismissAndReload = useCallback(() => {
-    const base = `${window.location.pathname}${window.location.search}`;
-    const url = base.includes('?')
-      ? `${base}&_r=${Date.now()}`
-      : `${base}?_r=${Date.now()}`;
-    window.location.replace(url);
-  }, []);
-
-  return { screensaverVisible: visible, dismissAndReload };
-}
-
-function IdleScreensaverOverlay({ visible, onDismiss }) {
-  if (!visible) return null;
-  const src = `${process.env.PUBLIC_URL ?? ''}/ew-idle-tohu.png`;
-  return (
-    <button
-      type="button"
-      className="idle-screensaver"
-      aria-label="Click to refresh the app and return"
-      onClick={onDismiss}
-    >
-      <img src={src} alt="" className="idle-screensaver__logo" draggable={false} />
-    </button>
+function normalizeRemoteProject(p) {
+  return normalizeProjectMilestones(
+    normalizeProjectDesignersOnProject({
+      ...p,
+      status: normalizeProjectStatus(p.status),
+      priority: normalizeProjectCategory(p.priority),
+    }),
   );
+}
+
+function normalizeRemoteWorkspace({ designers, projects }) {
+  return {
+    designers: designers.map(designerWithNormalizedColor),
+    projects: projects.map(normalizeRemoteProject),
+  };
 }
 
 function AccessScreen({ onUnlock }) {
@@ -3425,6 +3352,52 @@ export default function App() {
   const projectsRef = useRef(projects);
   designersRef.current = designers;
   projectsRef.current = projects;
+  const remoteUpdatedAtRef = useRef(null);
+  const pendingRemoteUpdatedAtRef = useRef(null);
+  const remotePullInFlightRef = useRef(false);
+
+  const applyRemoteFromServer = useCallback(async (updatedAtHint) => {
+    if (!cloudReady) return;
+
+    const knownAt = remoteUpdatedAtRef.current;
+    if (updatedAtHint && knownAt && updatedAtHint <= knownAt) return;
+
+    if (remotePullInFlightRef.current) {
+      if (updatedAtHint && (!pendingRemoteUpdatedAtRef.current || updatedAtHint > pendingRemoteUpdatedAtRef.current)) {
+        pendingRemoteUpdatedAtRef.current = updatedAtHint;
+      }
+      return;
+    }
+
+    remotePullInFlightRef.current = true;
+    try {
+      const remote = await loadWorkspacePayload();
+      if (!remote?.updatedAt) return;
+      if (knownAt && remote.updatedAt <= knownAt) return;
+
+      if (editingProject || showNewProject || designerModalOpen) {
+        pendingRemoteUpdatedAtRef.current = remote.updatedAt;
+        return;
+      }
+
+      if (remote.designers.length > 0 || remote.projects.length > 0) {
+        const normalized = normalizeRemoteWorkspace(remote);
+        setDesigners(normalized.designers);
+        setProjects(normalized.projects);
+      }
+      remoteUpdatedAtRef.current = remote.updatedAt;
+      pendingRemoteUpdatedAtRef.current = null;
+    } finally {
+      remotePullInFlightRef.current = false;
+      const pending = pendingRemoteUpdatedAtRef.current;
+      if (pending && (!remoteUpdatedAtRef.current || pending > remoteUpdatedAtRef.current)) {
+        if (!editingProject && !showNewProject && !designerModalOpen) {
+          pendingRemoteUpdatedAtRef.current = null;
+          applyRemoteFromServer(pending);
+        }
+      }
+    }
+  }, [cloudReady, editingProject, showNewProject, designerModalOpen]);
 
   const ganttNavRef = useRef({
     scrollBy: () => {},
@@ -3452,23 +3425,22 @@ export default function App() {
         return;
       }
       if (remote.designers.length > 0 || remote.projects.length > 0) {
-        setDesigners(remote.designers.map(designerWithNormalizedColor));
-        setProjects(
-          remote.projects.map((p) =>
-            normalizeProjectMilestones(
-              normalizeProjectDesignersOnProject({
-                ...p,
-                status: normalizeProjectStatus(p.status),
-                priority: normalizeProjectCategory(p.priority),
-              }),
-            ),
-          ),
-        );
+        const normalized = normalizeRemoteWorkspace(remote);
+        setDesigners(normalized.designers);
+        setProjects(normalized.projects);
+        if (remote.updatedAt) {
+          remoteUpdatedAtRef.current = remote.updatedAt;
+        }
       } else {
-        await saveWorkspacePayload({
+        const result = await saveWorkspacePayload({
           designers: designersRef.current,
           projects: projectsRef.current,
         });
+        if (result.ok && result.updatedAt) {
+          remoteUpdatedAtRef.current = result.updatedAt;
+        } else if (remote.updatedAt) {
+          remoteUpdatedAtRef.current = remote.updatedAt;
+        }
       }
       setCloudReady(true);
     })();
@@ -3492,10 +3464,42 @@ export default function App() {
     if (!isSupabaseConfigured() || !cloudReady) return undefined;
 
     const t = window.setTimeout(() => {
-      saveWorkspacePayload({ designers, projects });
+      saveWorkspacePayload({ designers, projects }).then((result) => {
+        if (result.ok && result.updatedAt) {
+          remoteUpdatedAtRef.current = result.updatedAt;
+        }
+      });
     }, 550);
     return () => window.clearTimeout(t);
   }, [designers, projects, cloudReady]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !cloudReady) return undefined;
+    return subscribeWorkspaceChanges((updatedAt) => {
+      applyRemoteFromServer(updatedAt);
+    });
+  }, [cloudReady, applyRemoteFromServer]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !cloudReady) return undefined;
+    const onVisible = () => {
+      if (document.hidden) return;
+      fetchWorkspaceUpdatedAt().then((updatedAt) => {
+        if (updatedAt) applyRemoteFromServer(updatedAt);
+      });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [cloudReady, applyRemoteFromServer]);
+
+  useEffect(() => {
+    if (editingProject || showNewProject || designerModalOpen) return undefined;
+    const pending = pendingRemoteUpdatedAtRef.current;
+    if (!pending) return undefined;
+    pendingRemoteUpdatedAtRef.current = null;
+    applyRemoteFromServer(pending);
+    return undefined;
+  }, [editingProject, showNewProject, designerModalOpen, applyRemoteFromServer]);
 
   useEffect(() => {
     const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
@@ -3644,8 +3648,6 @@ export default function App() {
     out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     return out;
   }, [projects]);
-
-  const idleScreensaver = useIdleScreensaver(accessUnlocked && IDLE_SCREENSAVER_ENABLED);
 
   if (!accessUnlocked) {
     return <AccessScreen onUnlock={() => setAccessUnlocked(true)} />;
@@ -4043,10 +4045,6 @@ export default function App() {
           onDelete={deleteDesigner}
         />
       )}
-      <IdleScreensaverOverlay
-        visible={idleScreensaver.screensaverVisible}
-        onDismiss={idleScreensaver.dismissAndReload}
-      />
     </div>
   );
 }

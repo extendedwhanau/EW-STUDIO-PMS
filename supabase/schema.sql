@@ -31,3 +31,11 @@ create policy "studio_workspace_update"
   on public.studio_workspace for update
   using (true)
   with check (true);
+
+-- Realtime: push row updates to every open app tab (safe to re-run)
+do $$
+begin
+  alter publication supabase_realtime add table public.studio_workspace;
+exception
+  when duplicate_object then null;
+end $$;

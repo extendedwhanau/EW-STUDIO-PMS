@@ -2,7 +2,7 @@
   command = "npm run build"
   publish = "build"
 
-# Always fetch fresh index.html so deploys show up after the idle refresh
+# Always fetch fresh index.html so deploys show up without a hard refresh
 [[headers]]
   for = "/index.html"
   [headers.values]
