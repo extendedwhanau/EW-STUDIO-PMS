@@ -8,7 +8,7 @@ export const MILESTONE_PHASE_CATALOG = [
   },
   {
     key: 'brand-expression',
-    title: 'Brand Expression',
+    title: 'Expression',
     tasks: ['Concept', 'Refinement', 'Guidelines', 'Assets'],
   },
   {
@@ -43,6 +43,7 @@ export function getPhaseByKey(key) {
 export function getPhaseByTitle(title) {
   const normalized = String(title || '').trim().toLowerCase();
   if (!normalized) return null;
+  if (normalized === 'brand expression') return getPhaseByKey('brand-expression');
   return MILESTONE_PHASE_CATALOG.find((phase) => phase.title.toLowerCase() === normalized) || null;
 }
 
