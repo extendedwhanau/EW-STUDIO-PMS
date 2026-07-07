@@ -375,16 +375,6 @@ function formatScheduleStartDate(str) {
   return `${day}.${month}.${year}`;
 }
 
-/** Compact date for milestone UI, e.g. "31-01-26". */
-function formatMilestoneDateCompact(str) {
-  if (!str) return '';
-  const d = new Date(str + 'T00:00:00');
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = String(d.getFullYear()).slice(-2);
-  return `${day}-${month}-${year}`;
-}
-
 function formatMilestoneDateRangeDisplay(start, end) {
   if (!start && !end) return '';
   if (start && end) return `${formatScheduleStartDate(start)} — ${formatScheduleStartDate(end)}`;
