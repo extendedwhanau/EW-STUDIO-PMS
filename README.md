@@ -74,6 +74,8 @@ npm start
 
 If Realtime was enabled after your first setup, run only the Realtime block at the bottom of **`supabase/schema.sql`** once in the SQL Editor.
 
+If sync stops after the first edit, run the **`set_studio_workspace_updated_at` trigger block** in **`supabase/schema.sql`** (middle of the file) so timestamps always come from the server, not the browser clock.
+
 If you skip the SQL step, the app keeps working from **localStorage** only (you may see a `[Supabase] load failed` message in the browser console).
 
 ## Adding Google Calendar integration

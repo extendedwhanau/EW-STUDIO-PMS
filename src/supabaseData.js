@@ -55,14 +55,7 @@ export async function saveWorkspacePayload(payload) {
 
   const { data, error } = await supabase
     .from('studio_workspace')
-    .upsert(
-      {
-        id: WORKSPACE_ID,
-        payload,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' },
-    )
+    .upsert({ id: WORKSPACE_ID, payload }, { onConflict: 'id' })
     .select('updated_at')
     .single();
 

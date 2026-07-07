@@ -32,6 +32,20 @@ create policy "studio_workspace_update"
   using (true)
   with check (true);
 
+-- Always stamp updated_at on the server (keeps sync timestamps consistent across devices)
+create or replace function public.set_studio_workspace_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists studio_workspace_set_updated_at on public.studio_workspace;
+create trigger studio_workspace_set_updated_at
+  before insert or update on public.studio_workspace
+  for each row execute function public.set_studio_workspace_updated_at();
+
 -- Realtime: push row updates to every open app tab (safe to re-run)
 do $$
 begin

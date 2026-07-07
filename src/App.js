@@ -3247,6 +3247,18 @@ function normalizeRemoteWorkspace({ designers, projects }) {
   };
 }
 
+function parseUpdatedAt(iso) {
+  if (!iso) return 0;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function isRemoteNewer(remoteAt, knownAt) {
+  if (!remoteAt) return false;
+  if (!knownAt) return true;
+  return parseUpdatedAt(remoteAt) > parseUpdatedAt(knownAt);
+}
+
 function AccessScreen({ onUnlock }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState(false);
@@ -3355,15 +3367,16 @@ export default function App() {
   const remoteUpdatedAtRef = useRef(null);
   const pendingRemoteUpdatedAtRef = useRef(null);
   const remotePullInFlightRef = useRef(false);
+  const applyingRemoteRef = useRef(false);
+  const applyRemoteRef = useRef(async () => {});
 
   const applyRemoteFromServer = useCallback(async (updatedAtHint) => {
     if (!cloudReady) return;
 
-    const knownAt = remoteUpdatedAtRef.current;
-    if (updatedAtHint && knownAt && updatedAtHint <= knownAt) return;
+    if (updatedAtHint && !isRemoteNewer(updatedAtHint, remoteUpdatedAtRef.current)) return;
 
     if (remotePullInFlightRef.current) {
-      if (updatedAtHint && (!pendingRemoteUpdatedAtRef.current || updatedAtHint > pendingRemoteUpdatedAtRef.current)) {
+      if (updatedAtHint && isRemoteNewer(updatedAtHint, pendingRemoteUpdatedAtRef.current)) {
         pendingRemoteUpdatedAtRef.current = updatedAtHint;
       }
       return;
@@ -3373,7 +3386,7 @@ export default function App() {
     try {
       const remote = await loadWorkspacePayload();
       if (!remote?.updatedAt) return;
-      if (knownAt && remote.updatedAt <= knownAt) return;
+      if (!isRemoteNewer(remote.updatedAt, remoteUpdatedAtRef.current)) return;
 
       if (editingProject || showNewProject || designerModalOpen) {
         pendingRemoteUpdatedAtRef.current = remote.updatedAt;
@@ -3381,6 +3394,7 @@ export default function App() {
       }
 
       if (remote.designers.length > 0 || remote.projects.length > 0) {
+        applyingRemoteRef.current = true;
         const normalized = normalizeRemoteWorkspace(remote);
         setDesigners(normalized.designers);
         setProjects(normalized.projects);
@@ -3390,14 +3404,16 @@ export default function App() {
     } finally {
       remotePullInFlightRef.current = false;
       const pending = pendingRemoteUpdatedAtRef.current;
-      if (pending && (!remoteUpdatedAtRef.current || pending > remoteUpdatedAtRef.current)) {
+      if (pending && isRemoteNewer(pending, remoteUpdatedAtRef.current)) {
         if (!editingProject && !showNewProject && !designerModalOpen) {
           pendingRemoteUpdatedAtRef.current = null;
-          applyRemoteFromServer(pending);
+          applyRemoteRef.current(pending);
         }
       }
     }
   }, [cloudReady, editingProject, showNewProject, designerModalOpen]);
+
+  applyRemoteRef.current = applyRemoteFromServer;
 
   const ganttNavRef = useRef({
     scrollBy: () => {},
@@ -3463,10 +3479,19 @@ export default function App() {
 
     if (!isSupabaseConfigured() || !cloudReady) return undefined;
 
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return undefined;
+    }
+
     const t = window.setTimeout(() => {
       saveWorkspacePayload({ designers, projects }).then((result) => {
         if (result.ok && result.updatedAt) {
           remoteUpdatedAtRef.current = result.updatedAt;
+          if (pendingRemoteUpdatedAtRef.current
+            && !isRemoteNewer(pendingRemoteUpdatedAtRef.current, result.updatedAt)) {
+            pendingRemoteUpdatedAtRef.current = null;
+          }
         }
       });
     }, 550);
@@ -3476,30 +3501,38 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured() || !cloudReady) return undefined;
     return subscribeWorkspaceChanges((updatedAt) => {
-      applyRemoteFromServer(updatedAt);
+      applyRemoteRef.current(updatedAt);
     });
-  }, [cloudReady, applyRemoteFromServer]);
+  }, [cloudReady]);
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !cloudReady) return undefined;
     const onVisible = () => {
       if (document.hidden) return;
       fetchWorkspaceUpdatedAt().then((updatedAt) => {
-        if (updatedAt) applyRemoteFromServer(updatedAt);
+        if (updatedAt) applyRemoteRef.current(updatedAt);
       });
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [cloudReady, applyRemoteFromServer]);
+  }, [cloudReady]);
 
   useEffect(() => {
     if (editingProject || showNewProject || designerModalOpen) return undefined;
     const pending = pendingRemoteUpdatedAtRef.current;
     if (!pending) return undefined;
-    pendingRemoteUpdatedAtRef.current = null;
-    applyRemoteFromServer(pending);
-    return undefined;
-  }, [editingProject, showNewProject, designerModalOpen, applyRemoteFromServer]);
+    const t = window.setTimeout(() => {
+      const stillPending = pendingRemoteUpdatedAtRef.current;
+      if (!stillPending) return;
+      if (!isRemoteNewer(stillPending, remoteUpdatedAtRef.current)) {
+        pendingRemoteUpdatedAtRef.current = null;
+        return;
+      }
+      pendingRemoteUpdatedAtRef.current = null;
+      applyRemoteRef.current(stillPending);
+    }, 650);
+    return () => window.clearTimeout(t);
+  }, [editingProject, showNewProject, designerModalOpen]);
 
   useEffect(() => {
     const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
