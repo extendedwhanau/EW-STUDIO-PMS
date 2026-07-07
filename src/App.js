@@ -465,6 +465,20 @@ function pickProjectEndDate(explicitEnd, savedEnd, resolvedEnd) {
   return resolvedEnd;
 }
 
+function updateProjectPhaseDurationWeeks(project, phaseId, durationWeeks) {
+  if (!project?.milestones?.length) return project;
+  const weeks = normalizeDurationWeeks(durationWeeks, MIN_MILESTONE_WEEKS);
+  const milestones = project.milestones.map((ph) => (
+    ph.id === phaseId
+      ? { ...ph, scheduleMode: 'weeks', durationWeeks: weeks }
+      : ph
+  ));
+  const kickoff = project.startDate || today();
+  const { phases, startDate, endDate: resolvedEnd } = resolveMilestoneSchedule(kickoff, milestones);
+  const endDate = pickProjectEndDate('', project.endDate, resolvedEnd);
+  return { ...project, milestones: phases, startDate, endDate };
+}
+
 function applyMilestoneScheduleToForm(form, patch = {}) {
   const milestones = patch.milestones ?? form.milestones ?? [];
   const kickoff = patch.startDate ?? form.startDate ?? today();
@@ -2056,7 +2070,7 @@ function sortTimelineProjectsByDesigner(projects, designers) {
 }
 
 // ── Gantt Chart ───────────────────────────────────────────────────────────────
-function GanttChart({ projects, designers, onSelectProject, onRegisterNav, previewMode }) {
+function GanttChart({ projects, designers, onSelectProject, onUpdateProject, onRegisterNav, previewMode }) {
   const validProjects = projects.filter(p => p.startDate && p.endDate);
   if (!validProjects.length) {
     return <div className="empty-state">No projects with timelines yet.</div>;
@@ -2073,13 +2087,14 @@ function GanttChart({ projects, designers, onSelectProject, onRegisterNav, previ
         projects={validProjects}
         designers={designers}
         onSelectProject={previewMode ? undefined : onSelectProject}
+        onUpdateProject={previewMode ? undefined : onUpdateProject}
         onRegisterNav={onRegisterNav}
       />
     </>
   );
 }
 
-function GanttChartInner({ projects: validProjects, designers, onSelectProject, onRegisterNav }) {
+function GanttChartInner({ projects: validProjects, designers, onSelectProject, onUpdateProject, onRegisterNav }) {
   const scrollRef = useRef(null);
   const mobileLayout = useGanttMobileLayout();
   const todayDay = daysFromEpoch(today());
@@ -2089,6 +2104,9 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const focusCopyMarginLockedForRef = useRef(null);
   const focusBackRef = useRef(null);
   const [focusCopyMarginPx, setFocusCopyMarginPx] = useState(undefined);
+  const [resizePreviewProject, setResizePreviewProject] = useState(null);
+  const resizePreviewRef = useRef(null);
+  const phaseResizeActiveRef = useRef(false);
 
   const timelineSections = useMemo(() => {
     const active = validProjects.filter((p) => !isPipelineStatus(p.status));
@@ -2119,20 +2137,26 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     [expandedProjectId, orderedProjects],
   );
 
-  const focusRange = useMemo(() => {
+  const timelineFocusProject = useMemo(() => {
     if (!focusedProject) return null;
-    const projectDays = getProjectTimelineDays(focusedProject);
+    if (resizePreviewProject?.id === focusedProject.id) return resizePreviewProject;
+    return focusedProject;
+  }, [focusedProject, resizePreviewProject]);
+
+  const focusRange = useMemo(() => {
+    if (!timelineFocusProject) return null;
+    const projectDays = getProjectTimelineDays(timelineFocusProject);
     const minStart = projectDays.length
       ? Math.min(...projectDays)
-      : daysFromEpoch(focusedProject.startDate);
+      : daysFromEpoch(timelineFocusProject.startDate);
     const maxEnd = projectDays.length
       ? Math.max(...projectDays)
-      : daysFromEpoch(focusedProject.endDate);
+      : daysFromEpoch(timelineFocusProject.endDate);
     const minDay = minStart - GANTT_FOCUS_HEAD_DAYS;
     const maxDay = maxEnd + GANTT_FOCUS_TAIL_DAYS;
     const totalDays = Math.max(7, maxDay - minDay);
     return { minDay, maxDay, totalDays };
-  }, [focusedProject]);
+  }, [timelineFocusProject]);
 
   useEffect(() => {
     if (!expandedProjectId || !focusRange) return;
@@ -2182,9 +2206,11 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
 
   const { minDay, maxDay, totalDays, pxPerDay, focusMode } = timelineView;
   const chartMinWidthPx = Math.ceil(totalDays * pxPerDay);
-  const sectionsToRender = focusMode && focusedProject
-    ? [{ key: 'focus', label: null, projects: [focusedProject] }]
+  const sectionsToRender = focusMode && timelineFocusProject
+    ? [{ key: 'focus', label: null, projects: [timelineFocusProject] }]
     : timelineSections;
+
+  const canResizePhases = Boolean(focusMode && !mobileLayout && onUpdateProject);
 
   const pct = (day) => ((day - minDay) / totalDays) * 100;
 
@@ -2332,6 +2358,68 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     return () => onRegisterNav(null);
   }, [onRegisterNav, scrollTimelineBy, scrollToToday]);
 
+  useEffect(() => {
+    if (expandedProjectId) return undefined;
+    setResizePreviewProject(null);
+    resizePreviewRef.current = null;
+    return undefined;
+  }, [expandedProjectId]);
+
+  const beginPhaseResize = useCallback((event, project, phase) => {
+    if (!onUpdateProject || !phase?.startDate) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const track = event.currentTarget.closest('.gantt-track');
+    if (!track) return;
+
+    const handleEl = event.currentTarget;
+    phaseResizeActiveRef.current = true;
+    document.body.classList.add('gantt-phase-resize-active');
+
+    const pointerId = event.pointerId;
+    handleEl.setPointerCapture?.(pointerId);
+
+    const applyWeeksFromPointer = (clientX) => {
+      const rect = track.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+      const pct = (x / rect.width) * 100;
+      const dayNum = minDay + (pct / 100) * totalDays;
+      const phaseStartDay = daysFromEpoch(phase.startDate);
+      const rawDays = Math.max(1, Math.round(dayNum) - phaseStartDay + 1);
+      const weeks = normalizeDurationWeeks(Math.max(1, Math.round(rawDays / 7)), MIN_MILESTONE_WEEKS);
+      const next = updateProjectPhaseDurationWeeks(project, phase.id, weeks);
+      resizePreviewRef.current = next;
+      setResizePreviewProject(next);
+    };
+
+    applyWeeksFromPointer(event.clientX);
+
+    const onMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      applyWeeksFromPointer(moveEvent.clientX);
+    };
+
+    const finish = (upEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', finish);
+      document.removeEventListener('pointercancel', finish);
+      document.body.classList.remove('gantt-phase-resize-active');
+      phaseResizeActiveRef.current = false;
+      handleEl.releasePointerCapture?.(pointerId);
+      const committed = resizePreviewRef.current;
+      resizePreviewRef.current = null;
+      setResizePreviewProject(null);
+      if (committed && onUpdateProject) onUpdateProject(committed);
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', finish);
+  }, [minDay, onUpdateProject, totalDays]);
+
   const renderGanttBar = ({
     startDate,
     endDate,
@@ -2344,6 +2432,10 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     isComplete = false,
     isAwaitingStart = false,
     showLabels = true,
+    resizable = false,
+    resizeLabel = 'phase',
+    onResizeStart,
+    isResizing = false,
   }) => {
     if (!startDate || !endDate) return null;
     const startPct = pct(daysFromEpoch(startDate));
@@ -2354,7 +2446,12 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
     const bandColor = isComplete ? '#C7C7CC' : colors.bar;
     return (
       <div
-        className={`gantt-bar ${barClass}`.trim()}
+        className={[
+          'gantt-bar',
+          barClass,
+          resizable ? 'gantt-bar--resizable' : '',
+          isResizing ? 'gantt-bar--resizing' : '',
+        ].filter(Boolean).join(' ')}
         style={{
           left: `${startPct}%`,
           width: `${Math.max(widthPct, 0.35)}%`,
@@ -2380,6 +2477,16 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
             {labelPrimary ? <span className="gantt-bar-client">{labelPrimary}</span> : null}
             {labelSecondary ? <span className="gantt-bar-project">{labelSecondary}</span> : null}
           </div>
+        ) : null}
+        {resizable ? (
+          <div
+            className="gantt-bar-resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={`Resize ${resizeLabel}`}
+            onPointerDown={onResizeStart}
+            onClick={(e) => e.stopPropagation()}
+          />
         ) : null}
       </div>
     );
@@ -2424,7 +2531,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   const canInteract = Boolean(onSelectProject);
 
   const openProjectEdit = (project) => {
-    if (!onSelectProject) return;
+    if (!onSelectProject || phaseResizeActiveRef.current) return;
     onSelectProject(project);
   };
 
@@ -2485,7 +2592,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
 
   return (
     <div className={`gantt-frame${focusMode ? ' gantt-frame--focused' : ''}`}>
-      {focusMode && focusedProject ? (
+      {focusMode && timelineFocusProject ? (
         <div className="gantt-focus-banner">
           <button
             ref={focusBackRef}
@@ -2502,14 +2609,14 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
               type="button"
               className="gantt-focus-copy"
               style={focusCopyMarginPx != null && !mobileLayout ? { marginLeft: focusCopyMarginPx } : undefined}
-              onClick={() => onSelectProject(focusedProject)}
-              aria-label={`Edit ${focusedProject.name}`}
+              onClick={() => onSelectProject(timelineFocusProject)}
+              aria-label={`Edit ${timelineFocusProject.name}`}
             >
-              <span className="gantt-focus-name">{focusedProject.name}</span>
+              <span className="gantt-focus-name">{timelineFocusProject.name}</span>
               <span className="gantt-focus-dates">
-                {formatMilestoneDateShort(focusedProject.startDate)}
+                {formatMilestoneDateShort(timelineFocusProject.startDate)}
                 {' — '}
-                {formatMilestoneDateShort(focusedProject.endDate)}
+                {formatMilestoneDateShort(timelineFocusProject.endDate)}
               </span>
             </button>
           ) : (
@@ -2517,11 +2624,11 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
               className="gantt-focus-copy"
               style={focusCopyMarginPx != null && !mobileLayout ? { marginLeft: focusCopyMarginPx } : undefined}
             >
-              <span className="gantt-focus-name">{focusedProject.name}</span>
+              <span className="gantt-focus-name">{timelineFocusProject.name}</span>
               <span className="gantt-focus-dates">
-                {formatMilestoneDateShort(focusedProject.startDate)}
+                {formatMilestoneDateShort(timelineFocusProject.startDate)}
                 {' — '}
-                {formatMilestoneDateShort(focusedProject.endDate)}
+                {formatMilestoneDateShort(timelineFocusProject.endDate)}
               </span>
             </div>
           )}
@@ -2694,6 +2801,12 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
                                       colors,
                                       barClass: 'gantt-bar--phase',
                                       showLabels: false,
+                                      resizable: canResizePhases,
+                                      resizeLabel: phaseTitle,
+                                      isResizing: resizePreviewProject?.id === project.id,
+                                      onResizeStart: canResizePhases
+                                        ? (e) => beginPhaseResize(e, project, phase)
+                                        : undefined,
                                     })}
                                   </div>
                                 </div>
@@ -3589,6 +3702,7 @@ export default function App() {
               projects={ganttProjects}
               designers={designers}
               onSelectProject={(p) => openProjectEdit(p, 'milestones')}
+              onUpdateProject={saveProject}
               onRegisterNav={registerGanttNav}
               previewMode={devTimelinePreview}
             />

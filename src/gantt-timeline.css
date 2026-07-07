@@ -847,6 +847,55 @@ button.gantt-focus-copy:focus-visible {
   transform: none;
 }
 
+.gantt-chart--focused .gantt-bar--phase.gantt-bar--resizable {
+  overflow: visible;
+}
+
+.gantt-bar-resize-handle {
+  position: absolute;
+  top: 50%;
+  right: -5px;
+  width: 12px;
+  height: 22px;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 2;
+}
+
+.gantt-bar-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 3px;
+  height: 14px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.gantt-bar--resizable:hover .gantt-bar-resize-handle::after,
+.gantt-bar--resizable.gantt-bar--resizing .gantt-bar-resize-handle::after {
+  opacity: 1;
+}
+
+.gantt-bar--resizable.gantt-bar--resizing {
+  z-index: 3;
+}
+
+body.gantt-phase-resize-active {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+
+body.gantt-phase-resize-active * {
+  cursor: ew-resize !important;
+}
+
 .gantt-track--task-lane .gantt-bar--task {
   top: 14px;
   bottom: auto;
