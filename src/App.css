@@ -626,6 +626,33 @@ html, body, #root {
   grid-area: trail;
 }
 
+/* Projects page (desktop) — date hidden until card hover */
+@media (min-width: 769px) {
+  .project-row--projects.project-row--schedule .project-row-inner,
+  .project-row--projects .project-row-inner--schedule {
+    grid-template-columns: minmax(0, 1.4fr) 0 auto;
+    transition: grid-template-columns 0.18s ease;
+  }
+
+  .project-row--projects.project-row--schedule:hover .project-row-inner,
+  .project-row--projects:hover .project-row-inner--schedule {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  }
+
+  .project-row--projects .project-row-col--schedule-due {
+    opacity: 0;
+    overflow: hidden;
+    min-width: 0;
+    transition: opacity 0.18s ease;
+    pointer-events: none;
+  }
+
+  .project-row--projects:hover .project-row-col--schedule-due {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* Schedule — status dot only (no "Scheduled" label); select still opens on dot tap */
 .project-row--schedule .project-status-hit--dot-only {
   position: relative;
@@ -2861,7 +2888,12 @@ html, body, #root {
     align-self: center;
   }
 
-  /* Projects page — client on top; name + date inline ~50px apart */
+  /* Projects + Schedule feed cards — no dates on mobile */
+  .project-row--schedule .project-row-col--schedule-due {
+    display: none !important;
+  }
+
+  /* Projects page — client on top; project name only */
   .project-row--projects .project-schedule-lead {
     display: block;
     width: 100%;
@@ -2879,21 +2911,12 @@ html, body, #root {
   }
 
   .project-row--projects .project-schedule-name {
-    display: inline-block;
-    vertical-align: baseline;
-    max-width: calc(100% - 50px - 12ch);
+    display: block;
+    min-width: 0;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .project-row--projects .project-row-col--schedule-due {
-    display: inline-flex;
-    margin-top: 0;
-    margin-left: 50px;
-    padding-left: 0;
-    vertical-align: baseline;
-    flex-shrink: 0;
   }
 
   .project-client {
