@@ -1692,22 +1692,6 @@ function ProjectDetailsPanel({
           </div>
         </div>
       </div>
-
-      <div className="sheet-modal-section sheet-modal-section--project-notes">
-        <div className="sheet-project-notes">
-          <label htmlFor="project-modal-notes" className="sheet-modal-section-sublabel">
-            Notes
-          </label>
-          <textarea
-            id="project-modal-notes"
-            className="sheet-notes sheet-notes--section"
-            placeholder="Any notes for this project…"
-            value={form.notes}
-            onChange={(e) => set('notes', e.target.value)}
-            rows={3}
-          />
-        </div>
-      </div>
     </>
   );
 }
