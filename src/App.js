@@ -1815,7 +1815,7 @@ function GanttChartInner({ projects: validProjects, designers, onSelectProject, 
   useEffect(() => {
     if (!expandedProjectId || !focusRange) return;
     setFocusZoomStep(defaultFocusZoomStep(focusRange.totalDays));
-  }, [expandedProjectId, focusRange?.totalDays]);
+  }, [expandedProjectId, focusRange]);
 
   const timelineView = useMemo(() => {
     const ganttLastDay = daysFromEpoch('2027-12-31');
