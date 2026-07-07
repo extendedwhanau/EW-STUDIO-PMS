@@ -1728,11 +1728,13 @@ function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'de
   const hasMilestones = projectHasMilestones(project);
   const feedDateLabel = isProjectsCard
     ? formatDueDateLong(project.endDate)
-    : formatScheduleStartDate(project.startDate);
+    : formatDueDateLong(project.startDate);
   const feedDateTitle = isProjectsCard ? 'Due date' : 'Start date';
   const feedDateAria = isProjectsCard && project.endDate
     ? `Due ${formatDueDateLong(project.endDate)}`
-    : undefined;
+    : (!isProjectsCard && project.startDate
+      ? `Starts ${formatDueDateLong(project.startDate)}`
+      : undefined);
 
   const trailCol = (
     <div className="project-row-col project-row-col--trail">

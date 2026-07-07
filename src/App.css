@@ -626,20 +626,18 @@ html, body, #root {
   grid-area: trail;
 }
 
-/* Projects page (desktop) — date hidden until card hover */
+/* Feed cards (Projects + Schedule, desktop) — date hidden until card hover */
 @media (min-width: 769px) {
-  .project-row--projects.project-row--schedule .project-row-inner,
-  .project-row--projects .project-row-inner--schedule {
+  .project-row--schedule .project-row-inner {
     grid-template-columns: minmax(0, 1.4fr) 0 auto;
     transition: grid-template-columns 0.18s ease;
   }
 
-  .project-row--projects.project-row--schedule:hover .project-row-inner,
-  .project-row--projects:hover .project-row-inner--schedule {
+  .project-row--schedule:hover .project-row-inner {
     grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
   }
 
-  .project-row--projects .project-row-col--schedule-due {
+  .project-row--schedule .project-row-col--schedule-due {
     opacity: 0;
     overflow: hidden;
     min-width: 0;
@@ -647,7 +645,7 @@ html, body, #root {
     pointer-events: none;
   }
 
-  .project-row--projects:hover .project-row-col--schedule-due {
+  .project-row--schedule:hover .project-row-col--schedule-due {
     opacity: 1;
     pointer-events: auto;
   }
