@@ -994,9 +994,154 @@ html, body, #root {
   gap: 8px;
 }
 
-.sheet-milestone-phase-head .sheet-name-dates-row {
+.sheet-milestone-phase-head .sheet-name-dates-row,
+.sheet-milestone-phase-head .sheet-phase-head-fields {
   flex: 1;
   min-width: 0;
+}
+
+.sheet-phase-head-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sheet-phase-name {
+  width: 100%;
+  max-width: 100%;
+}
+
+.sheet-phase-duration {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sheet-phase-duration-dates,
+.sheet-phase-duration-weeks,
+.sheet-phase-duration .sheet-date-range-btn {
+  font-size: var(--sheet-pt);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.sheet-phase-duration-dates {
+  color: var(--sheet-muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.sheet-phase-duration-dates--picker {
+  color: var(--sheet-muted);
+  font-weight: 400;
+  padding: 0;
+}
+
+.sheet-phase-duration-dates--picker.sheet-date-range-btn--empty {
+  color: var(--sheet-muted);
+}
+
+.sheet-phase-duration-weeks {
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sheet-phase-duration-weeks--muted {
+  color: var(--sheet-muted);
+  font-weight: 400;
+}
+
+.sheet-phase-duration-steps {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sheet-phase-duration-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: calc(var(--sheet-pt) * 0.95);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--text-primary);
+  background: rgba(120, 120, 128, 0.08);
+  border: none;
+  border-radius: 999px;
+  width: calc(var(--sheet-pt) * 1.25);
+  height: calc(var(--sheet-pt) * 1.25);
+  padding: 0;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.sheet-phase-duration-step:hover:not(:disabled) {
+  background: rgba(120, 120, 128, 0.11);
+}
+
+.sheet-phase-duration-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sheet-phase-duration-step:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 0.5px rgba(0, 0, 0, 0.08),
+    0 0 0 3px rgba(0, 0, 0, 0.04);
+}
+
+.sheet-phase-duration-custom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  background: rgba(120, 120, 128, 0.08);
+  border: none;
+  border-radius: 999px;
+  min-height: 24px;
+  padding: 0 10px;
+  cursor: pointer;
+  line-height: 1.15;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sheet-phase-duration-custom:hover {
+  background: rgba(120, 120, 128, 0.11);
+}
+
+.sheet-phase-duration-custom--active {
+  background: var(--text-primary);
+  color: #fff;
+  box-shadow: none;
+}
+
+.sheet-phase-duration-custom--active:hover {
+  background: var(--text-primary);
+  opacity: 0.92;
+}
+
+.sheet-phase-duration-custom:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 0.5px rgba(0, 0, 0, 0.08),
+    0 0 0 3px rgba(0, 0, 0, 0.04);
 }
 
 .sheet-milestone-phase-remove {
@@ -1468,8 +1613,10 @@ html, body, #root {
 .sheet-milestone-add-task--label {
   width: auto;
   min-width: 28px;
-  padding: 0 11px;
-  font-size: var(--sheet-pt);
+  min-height: 24px;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: -0.02em;
 }
@@ -1512,7 +1659,7 @@ html, body, #root {
 .sheet-task-chip-bubble {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 6px 8px 6px 12px;
   max-width: 100%;
   min-width: 0;
@@ -2173,6 +2320,10 @@ html, body, #root {
 
 .sheet-pair--priority-top {
   align-items: flex-start;
+}
+
+.sheet-pair--priority-top .sheet-field-label {
+  color: var(--text-primary);
 }
 
 .sheet-pair--priority-top .sheet-field-value {
@@ -3100,8 +3251,10 @@ html, body, #root {
   }
   .modal--project .sheet-milestone-add-task--label {
     width: auto;
-    height: 34px;
-    padding: 0 14px;
+    height: 24px;
+    min-height: 24px;
+    padding: 0 10px;
+    font-size: 12px;
   }
 
   /* Task chips: roomier bubble for touch */
