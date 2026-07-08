@@ -2623,6 +2623,24 @@ function GanttChartInner({
     el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior });
   }, [todayPct]);
 
+  const updateJobLabelPins = useCallback(() => {
+    const wrapper = scrollRef.current;
+    if (!wrapper || focusMode) return;
+    const stickPx = 15;
+    const wrapperLeft = wrapper.getBoundingClientRect().left;
+    wrapper.querySelectorAll('.gantt-lane-label--job[data-label-pct]').forEach((label) => {
+      const labelPct = Number(label.dataset.labelPct);
+      if (!Number.isFinite(labelPct)) return;
+      const track = label.closest('.gantt-track');
+      if (!track) return;
+      const naturalLeftPx = (labelPct / 100) * track.offsetWidth;
+      const trackLeft = track.getBoundingClientRect().left - wrapperLeft;
+      const labelViewportLeft = trackLeft + naturalLeftPx;
+      const pinOffset = Math.max(0, stickPx - labelViewportLeft);
+      label.style.transform = pinOffset > 0 ? `translateX(${pinOffset}px)` : '';
+    });
+  }, [focusMode]);
+
   useLayoutEffect(() => {
     if (!mobileLayout) return;
     centerOnTodayPendingRef.current = true;
@@ -2637,7 +2655,8 @@ function GanttChartInner({
     if (!centerOnTodayPendingRef.current || !scrollRef.current) return;
     scrollToToday('auto');
     centerOnTodayPendingRef.current = false;
-  }, [chartMinWidthPx, todayPct, scrollToToday, focusMode, expandedProjectId]);
+    updateJobLabelPins();
+  }, [chartMinWidthPx, todayPct, scrollToToday, focusMode, expandedProjectId, updateJobLabelPins]);
 
   useLayoutEffect(() => {
     if (!focusMode || !scrollRef.current) return;
@@ -2647,6 +2666,39 @@ function GanttChartInner({
     }
     scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
   }, [focusMode, expandedProjectId, mobileLayout]);
+
+  useLayoutEffect(() => {
+    if (focusMode) return undefined;
+    const wrapper = scrollRef.current;
+    if (!wrapper) return undefined;
+
+    let raf = 0;
+    const schedulePinUpdate = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updateJobLabelPins);
+    };
+
+    schedulePinUpdate();
+    wrapper.addEventListener('scroll', schedulePinUpdate, { passive: true });
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(schedulePinUpdate)
+      : null;
+    resizeObserver?.observe(wrapper);
+    const chart = wrapper.querySelector('.gantt-chart');
+    if (chart) resizeObserver?.observe(chart);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      wrapper.removeEventListener('scroll', schedulePinUpdate);
+      resizeObserver?.disconnect();
+    };
+  }, [
+    focusMode,
+    updateJobLabelPins,
+    chartMinWidthPx,
+    expandedProjectId,
+    sectionsToRender,
+  ]);
 
   useEffect(() => {
     if (!focusProjectId) return;
@@ -2886,6 +2938,7 @@ function GanttChartInner({
           'gantt-lane-label--job',
         ].filter(Boolean).join(' ')}
         style={{ left: `${left}%` }}
+        data-label-pct={left}
         title={title}
       >
         {clientText ? <span className="gantt-lane-label-client">{clientText}</span> : null}
