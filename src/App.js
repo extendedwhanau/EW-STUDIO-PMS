@@ -2229,23 +2229,56 @@ function nextMonthFirstNZ(monthFirstDay) {
   return daysFromEpoch(`${y}-${String(m).padStart(2, '0')}-01`);
 }
 
-/** Every month touching the range — pinned to the visible start (incl. mid-month). */
-function buildMonthMarkers(minDay, maxDay, totalDays, monthLabelSpansYears) {
+function ganttYearNZ(epochDay) {
+  return Number(new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    year: 'numeric',
+  }).format(new Date(ganttNzNoonMs(epochDay))));
+}
+
+/** Drop year suffixes when consecutive month labels would collide. */
+function ganttResolveMonthMarkerOverlaps(markers, minDay, pxPerDay) {
+  if (markers.length < 2) return markers;
+  const MIN_LABEL_GAP_PX = 8;
+  const CHAR_W_PX = 7;
+  const resolved = markers.map((m) => ({ ...m }));
+
+  for (let i = 1; i < resolved.length; i += 1) {
+    const prev = resolved[i - 1];
+    const cur = resolved[i];
+    const gapPx = ganttDayPx(cur.day, minDay, pxPerDay) - ganttDayPx(prev.day, minDay, pxPerDay);
+    const prevWidthPx = prev.label.length * CHAR_W_PX;
+    if (gapPx >= prevWidthPx + MIN_LABEL_GAP_PX) continue;
+
+    const prevShort = ganttMonthNameNZ(prev.day, false);
+    const curShort = ganttMonthNameNZ(cur.day, false);
+    resolved[i - 1] = { ...prev, label: prevShort };
+    resolved[i] = { ...cur, label: curShort };
+  }
+
+  return resolved;
+}
+
+/** Every month touching the range — labels sit on the 1st of each month. */
+function buildMonthMarkers(minDay, maxDay, totalDays, rangeSpansYears, pxPerDay) {
   const toPct = (day) => ((day - minDay) / totalDays) * 100;
   const markers = [];
   let monthFirst = monthFirstNZ(minDay);
+  let prevYear = null;
 
   while (monthFirst <= maxDay) {
-    const visibleStart = Math.max(monthFirst, minDay);
+    const year = ganttYearNZ(monthFirst);
+    const showYear = rangeSpansYears && (prevYear === null || year !== prevYear);
     markers.push({
       day: monthFirst,
-      left: toPct(visibleStart),
-      label: ganttMonthNameNZ(monthFirst, monthLabelSpansYears),
+      left: toPct(monthFirst),
+      label: ganttMonthNameNZ(monthFirst, showYear),
     });
+    prevYear = year;
     monthFirst = nextMonthFirstNZ(monthFirst);
   }
 
-  return markers;
+  return ganttResolveMonthMarkerOverlaps(markers, minDay, pxPerDay);
 }
 
 /** Ruler month row: "Jul", "Aug" (optional year when range spans years). */
@@ -2519,8 +2552,8 @@ function GanttChartInner({
   const monthLabelSpansYears = minYear !== maxYear;
 
   const monthMarkers = useMemo(
-    () => buildMonthMarkers(minDay, maxDay, totalDays, monthLabelSpansYears),
-    [minDay, maxDay, totalDays, monthLabelSpansYears],
+    () => buildMonthMarkers(minDay, maxDay, totalDays, monthLabelSpansYears, pxPerDay),
+    [minDay, maxDay, totalDays, monthLabelSpansYears, pxPerDay],
   );
 
   const timelineSchedule = useMemo(
