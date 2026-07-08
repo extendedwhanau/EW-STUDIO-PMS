@@ -2317,7 +2317,7 @@ const GANTT_FOCUS_BANNER_PAD = 10;
 const GANTT_FOCUS_BACK_W = 34;
 /** Desktop "Back" pill — text matches .gantt-focus-name (15px bold). */
 const GANTT_FOCUS_BACK_DESKTOP_W = 54;
-/** Matches the flex gap on .gantt-focus-banner. */
+/** Matches the flex gap on .gantt-timeline-chrome. */
 const GANTT_FOCUS_BANNER_GAP = 12;
 const GANTT_WEEKEND_BAND_MAX_PX = 10;
 const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
@@ -2837,7 +2837,25 @@ function GanttChartInner({
     );
   };
 
-  const renderLaneLabel = (startDate, text, variant = 'phase', { showExpand = false, expanded = false } = {}) => {
+  const renderJobAvatarPopover = (startDate, designers) => {
+    if (mobileLayout || !startDate || !designers?.length) return null;
+    const left = pct(daysFromEpoch(startDate));
+    return (
+      <div
+        className="gantt-job-avatar-popover"
+        style={{ left: `${left}%` }}
+      >
+        <DesignerAvatarStack
+          designers={designers}
+          size={22}
+          maxVisible={3}
+          className="designer-avatar-stack--gantt"
+        />
+      </div>
+    );
+  };
+
+  const renderLaneLabel = (startDate, text, variant = 'phase') => {
     if (!startDate || !text?.trim()) return null;
     const left = pct(daysFromEpoch(startDate));
     return (
@@ -2845,25 +2863,16 @@ function GanttChartInner({
         className={[
           'gantt-lane-label',
           `gantt-lane-label--${variant}`,
-          showExpand ? 'gantt-lane-label--expandable' : '',
         ].filter(Boolean).join(' ')}
         style={{ left: `${left}%` }}
         title={text}
       >
-        {showExpand ? (
-          <span
-            className={`gantt-phase-chevron${expanded ? ' gantt-phase-chevron--open' : ''}`}
-            aria-hidden
-          >
-            ›
-          </span>
-        ) : null}
         <span className="gantt-lane-label-text">{text}</span>
       </div>
     );
   };
 
-  const renderJobLaneLabel = (startDate, client, projectName, { showExpand = false, expanded = false } = {}) => {
+  const renderJobLaneLabel = (startDate, client, projectName) => {
     if (!startDate) return null;
     const clientText = client?.trim() || '';
     const projectText = projectName?.trim() || '';
@@ -2875,19 +2884,10 @@ function GanttChartInner({
         className={[
           'gantt-lane-label',
           'gantt-lane-label--job',
-          showExpand ? 'gantt-lane-label--job-expandable' : '',
         ].filter(Boolean).join(' ')}
         style={{ left: `${left}%` }}
         title={title}
       >
-        {showExpand ? (
-          <span
-            className={`gantt-mobile-job-chevron${expanded ? ' gantt-mobile-job-chevron--open' : ''}`}
-            aria-hidden
-          >
-            ›
-          </span>
-        ) : null}
         {clientText ? <span className="gantt-lane-label-client">{clientText}</span> : null}
         {clientText && projectText ? (
           <span className="gantt-lane-label-sep" aria-hidden> </span>
@@ -3005,12 +3005,17 @@ function GanttChartInner({
   const zoomStep = focusMode ? focusZoomStep : mainZoomStep;
   const setZoomStep = focusMode ? setFocusZoomStep : setMainZoomStep;
 
+  const changeZoomStep = useCallback((delta) => {
+    centerOnTodayPendingRef.current = true;
+    setZoomStep((s) => Math.max(0, Math.min(FOCUS_ZOOM_STEPS.length - 1, s + delta)));
+  }, [setZoomStep]);
+
   const timelineZoomControls = (
     <div className="gantt-focus-zoom" role="group" aria-label="Timeline zoom">
       <button
         type="button"
         className="gantt-focus-zoom-btn"
-        onClick={() => setZoomStep((s) => Math.max(0, s - 1))}
+        onClick={() => changeZoomStep(-1)}
         disabled={zoomStep <= 0}
         aria-label="Zoom out"
       >
@@ -3019,7 +3024,7 @@ function GanttChartInner({
       <button
         type="button"
         className="gantt-focus-zoom-btn"
-        onClick={() => setZoomStep((s) => Math.min(FOCUS_ZOOM_STEPS.length - 1, s + 1))}
+        onClick={() => changeZoomStep(1)}
         disabled={zoomStep >= FOCUS_ZOOM_STEPS.length - 1}
         aria-label="Zoom in"
       >
@@ -3042,19 +3047,29 @@ function GanttChartInner({
 
   return (
     <div className={`gantt-frame${focusMode ? ' gantt-frame--focused' : ''}`}>
-      {focusMode && timelineFocusProject ? (
-        <div className="gantt-focus-banner">
-          <button
-            ref={focusBackRef}
-            type="button"
-            className="gantt-focus-back"
-            onClick={() => setExpandedProjectId(null)}
-            aria-label="Back to all jobs"
-          >
-            <span className="gantt-focus-back-icon" aria-hidden>‹</span>
-            <span className="gantt-focus-back-label">Back</span>
-          </button>
-          {canInteract ? (
+      <div
+        className={[
+          'gantt-timeline-chrome',
+          focusMode && timelineFocusProject ? 'gantt-timeline-chrome--focus' : '',
+        ].filter(Boolean).join(' ')}
+      >
+        <div className="gantt-timeline-chrome-lead">
+          {focusMode && timelineFocusProject ? (
+            <button
+              ref={focusBackRef}
+              type="button"
+              className="gantt-focus-back"
+              onClick={() => setExpandedProjectId(null)}
+              aria-label="Back to all jobs"
+            >
+              <span className="gantt-focus-back-icon" aria-hidden>‹</span>
+              <span className="gantt-focus-back-label">Back</span>
+            </button>
+          ) : null}
+          {timelineZoomControls}
+        </div>
+        {focusMode && timelineFocusProject ? (
+          canInteract ? (
             <button
               type="button"
               className="gantt-focus-copy"
@@ -3081,16 +3096,9 @@ function GanttChartInner({
                 {formatMilestoneDateShort(timelineFocusProject.endDate)}
               </span>
             </div>
-          )}
-          {mobileLayout ? timelineZoomControls : null}
-        </div>
-      ) : (
-        mobileLayout ? (
-          <div className="gantt-main-zoom-bar">
-            {timelineZoomControls}
-          </div>
-        ) : null
-      )}
+          )
+        ) : null}
+      </div>
       <div className="gantt-wrapper" ref={scrollRef}>
         <div
           className={[
@@ -3137,11 +3145,7 @@ function GanttChartInner({
             </div>
           )}
           <div className={`gantt-chart-header${focusMode ? ' gantt-chart-header--focus' : ''}`}>
-          {!mobileLayout ? (
-            <div className="gantt-lead-rail gantt-lead-rail--zoom">
-              {timelineZoomControls}
-            </div>
-          ) : null}
+          {!mobileLayout ? <div className="gantt-lines-spacer" aria-hidden /> : null}
           <div className="gantt-ruler">
             <div className="gantt-ruler-months">
               {monthMarkers.map((m) => (
@@ -3215,18 +3219,6 @@ function GanttChartInner({
                 >
                   {focusMode && isExpanded && hasMilestones ? (
                     <div className="gantt-job-focus-wrap">
-                      {!mobileLayout ? (
-                        <div className="gantt-focus-sidecol">
-                          <div className="gantt-avatar-float">
-                            <DesignerAvatarStack
-                              designers={assignedDesigners}
-                              size={22}
-                              maxVisible={3}
-                              className="designer-avatar-stack--gantt"
-                            />
-                          </div>
-                        </div>
-                      ) : null}
                       <div className="gantt-job-focus-body">
                         <div
                           className="gantt-row gantt-row--job gantt-row--track-only"
@@ -3235,6 +3227,7 @@ function GanttChartInner({
                             : {})}
                         >
                           <div className="gantt-track">
+                            {renderJobAvatarPopover(project.startDate, assignedDesigners)}
                             {renderGanttBar({
                               startDate: project.startDate,
                               endDate: project.endDate,
@@ -3265,10 +3258,7 @@ function GanttChartInner({
                                     : editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`))}
                                 >
                                   <div className="gantt-track gantt-track--lane gantt-track--phase-lane">
-                                    {renderLaneLabel(phase.startDate, phaseTitle, 'phase', {
-                                      showExpand: mobileLayout && phase.tasks.length > 0,
-                                      expanded: phaseTasksOpen,
-                                    })}
+                                    {renderLaneLabel(phase.startDate, phaseTitle, 'phase')}
                                     {renderGanttBar({
                                       startDate: phase.startDate,
                                       endDate: phase.endDate,
@@ -3316,33 +3306,15 @@ function GanttChartInner({
                       }
                     }}
                   >
-                    <div className="gantt-label">
-                      {!mobileLayout ? (
-                        <div className="gantt-avatar-float">
-                          <DesignerAvatarStack
-                            designers={assignedDesigners}
-                            size={22}
-                            maxVisible={3}
-                            className="designer-avatar-stack--gantt"
-                          />
-                        </div>
-                      ) : null}
-                      {hasMilestones && !focusMode && !mobileLayout ? (
-                        <span className={`gantt-expand-chevron${isExpanded ? ' gantt-expand-chevron--open' : ''}`} aria-hidden>
-                          ›
-                        </span>
-                      ) : null}
-                    </div>
+                    <div className="gantt-label gantt-label--ghost" aria-hidden />
                     <div
                       className={[
                         'gantt-track',
                         !isExpanded ? 'gantt-track--lane gantt-track--job-lane' : '',
                       ].filter(Boolean).join(' ')}
                     >
-                      {!isExpanded ? renderJobLaneLabel(project.startDate, project.client, project.name, {
-                        showExpand: mobileLayout && hasMilestones && !focusMode,
-                        expanded: isExpanded,
-                      }) : null}
+                      {!isExpanded ? renderJobLaneLabel(project.startDate, project.client, project.name) : null}
+                      {renderJobAvatarPopover(project.startDate, assignedDesigners)}
                       {renderGanttBar({
                         startDate: project.startDate,
                         endDate: project.endDate,
@@ -3379,10 +3351,7 @@ function GanttChartInner({
                           >
                             <div className="gantt-label gantt-label--ghost" aria-hidden />
                             <div className="gantt-track gantt-track--lane gantt-track--phase-lane">
-                              {renderLaneLabel(phase.startDate, phaseTitle, 'phase', {
-                                showExpand: mobileLayout && phase.tasks.length > 0,
-                                expanded: phaseTasksOpen,
-                              })}
+                              {renderLaneLabel(phase.startDate, phaseTitle, 'phase')}
                               {renderGanttBar({
                                 startDate: phase.startDate,
                                 endDate: phase.endDate,
