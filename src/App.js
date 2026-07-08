@@ -457,15 +457,39 @@ function resolvePhaseSchedule(phase, suggestedStart) {
   };
 }
 
+function latestPhaseEndDate(phases, { excludePhaseId = null, requireStartDate = false } = {}) {
+  return (phases || []).reduce((max, phase) => {
+    if (excludePhaseId && phase.id === excludePhaseId) return max;
+    if (requireStartDate && !phase.startDate) return max;
+    if (!phase.endDate) return max;
+    return !max || phase.endDate > max ? phase.endDate : max;
+  }, '');
+}
+
+function suggestedStartAfterExistingPhases(phases, anchor, excludePhaseId = null) {
+  const latestEnd = latestPhaseEndDate(phases, { excludePhaseId, requireStartDate: true });
+  return latestEnd ? addDays(latestEnd, 1) : (anchor || today());
+}
+
 function resolveMilestoneSchedule(projectStartDate, phases) {
   const anchor = projectStartDate || today();
   const resolved = [];
   for (const phase of (phases || [])) {
-    const latestEnd = resolved.reduce((max, item) => {
-      if (!item.endDate) return max;
-      return !max || item.endDate > max ? item.endDate : max;
-    }, '');
-    const suggestedStart = phase.startDate || (latestEnd ? addDays(latestEnd, 1) : anchor);
+    let suggestedStart;
+    if (phase.startDate) {
+      suggestedStart = phase.startDate;
+    } else {
+      const latestEndFromResolved = latestPhaseEndDate(resolved);
+      const latestEndFromScheduled = latestPhaseEndDate(phases, {
+        excludePhaseId: phase.id,
+        requireStartDate: true,
+      });
+      const latestEnd = [latestEndFromResolved, latestEndFromScheduled]
+        .filter(Boolean)
+        .sort()
+        .pop() || '';
+      suggestedStart = latestEnd ? addDays(latestEnd, 1) : anchor;
+    }
     resolved.push(resolvePhaseSchedule(phase, suggestedStart));
   }
   const bounds = milestoneScheduleBounds(resolved);
@@ -526,6 +550,28 @@ function updateProjectPhaseEndDate(project, phaseId, endDate) {
       startDate: start,
       endDate: end,
     };
+  });
+  return applyProjectMilestoneUpdate(project, milestones);
+}
+
+function updateProjectPhaseStartDate(project, phaseId, startDate) {
+  if (!project?.milestones?.length) return project;
+  const milestones = project.milestones.map((ph) => {
+    if (ph.id !== phaseId) return ph;
+    const prevStart = ph.startDate || project.startDate || today();
+    const nextStart = startDate || prevStart;
+    const deltaDays = daysFromEpoch(nextStart) - daysFromEpoch(prevStart);
+    if (ph.scheduleMode === 'custom') {
+      const prevEnd = ph.endDate && ph.endDate >= prevStart
+        ? ph.endDate
+        : addDays(prevStart, 6);
+      return {
+        ...ph,
+        startDate: nextStart,
+        endDate: addDays(prevEnd, deltaDays),
+      };
+    }
+    return { ...ph, startDate: nextStart };
   });
   return applyProjectMilestoneUpdate(project, milestones);
 }
@@ -1359,7 +1405,8 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
   const addPhase = (phaseKey) => {
     const phase = createCatalogPhase(phaseKey);
     if (!phase) return;
-    setPhases(insertPhaseInCatalogOrder(phases, phase));
+    const startDate = suggestedStartAfterExistingPhases(phases, form.startDate || today());
+    setPhases(insertPhaseInCatalogOrder(phases, { ...phase, startDate }));
   };
 
   const removeTask = (phaseId, taskId) => {
@@ -2310,6 +2357,8 @@ function useGanttMobileLayout() {
 const GANTT_PX_PER_DAY = 3;
 const GANTT_FOCUS_HEAD_DAYS = 14;
 const GANTT_FOCUS_TAIL_DAYS = 62;
+/** Press-and-hold before a phase can be dragged along the timeline. */
+const PHASE_TIMELINE_HOLD_MS = 400;
 /** Match --gantt-lead-w in gantt-timeline.css (10px pad + label + 4px gap). */
 const GANTT_LEAD_W_DESKTOP = 124;
 const GANTT_LEAD_W_MOBILE = 86;
@@ -2436,6 +2485,10 @@ function GanttChartInner({
   const [resizePreviewProject, setResizePreviewProject] = useState(null);
   const resizePreviewRef = useRef(null);
   const phaseResizeActiveRef = useRef(false);
+  const phaseMoveActiveRef = useRef(false);
+  const phaseMoveSuppressClickRef = useRef(false);
+  const [phaseMovePhaseId, setPhaseMovePhaseId] = useState(null);
+  const [phaseMovePendingId, setPhaseMovePendingId] = useState(null);
 
   const timelineSections = useMemo(() => {
     const active = validProjects.filter((p) => !isPipelineStatus(p.status));
@@ -2547,6 +2600,7 @@ function GanttChartInner({
   );
 
   const canResizePhases = Boolean(focusMode && !mobileLayout && onUpdateProject);
+  const canMovePhases = Boolean(focusMode && onUpdateProject);
 
   const pct = (day) => ((day - minDay) / totalDays) * 100;
 
@@ -2759,6 +2813,8 @@ function GanttChartInner({
     if (expandedProjectId) return undefined;
     setResizePreviewProject(null);
     resizePreviewRef.current = null;
+    setPhaseMovePhaseId(null);
+    setPhaseMovePendingId(null);
     return undefined;
   }, [expandedProjectId]);
 
@@ -2814,6 +2870,88 @@ function GanttChartInner({
       setResizePreviewProject(null);
       if (committed && onUpdateProject) onUpdateProject(committed);
     };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', finish);
+  }, [minDay, onUpdateProject, totalDays]);
+
+  const beginPhaseMove = useCallback((event, project, phase) => {
+    if (!onUpdateProject || !phase?.startDate || !phase?.endDate) return;
+    if (event.target.closest('.gantt-bar-resize-handle')) return;
+
+    const surfaceEl = event.currentTarget;
+    const track = surfaceEl.querySelector('.gantt-track--phase-lane');
+    if (!track) return;
+
+    const pointerId = event.pointerId;
+    let dragActive = false;
+    let holdTimer = null;
+    let pendingTimer = null;
+    const startX = event.clientX;
+    let lastClientX = startX;
+    const phaseStartDay = daysFromEpoch(phase.startDate);
+    let grabDayOffset = pointerDayFromTrack(startX, track, minDay, totalDays) - phaseStartDay;
+
+    const applyFromPointer = (clientX) => {
+      const pointerDay = pointerDayFromTrack(clientX, track, minDay, totalDays);
+      const newStartIso = isoFromTimelineDay(pointerDay - grabDayOffset, phase.startDate);
+      const next = updateProjectPhaseStartDate(project, phase.id, newStartIso);
+      resizePreviewRef.current = next;
+      setResizePreviewProject(next);
+    };
+
+    const finish = (upEvent) => {
+      if (upEvent && upEvent.pointerId !== pointerId) return;
+      clearTimeout(holdTimer);
+      clearTimeout(pendingTimer);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', finish);
+      document.removeEventListener('pointercancel', finish);
+      setPhaseMovePendingId(null);
+      setPhaseMovePhaseId(null);
+
+      if (dragActive) {
+        upEvent?.preventDefault();
+        upEvent?.stopPropagation();
+        phaseMoveSuppressClickRef.current = true;
+        window.setTimeout(() => {
+          phaseMoveSuppressClickRef.current = false;
+        }, 0);
+        document.body.classList.remove('gantt-phase-move-active');
+        phaseMoveActiveRef.current = false;
+        surfaceEl.releasePointerCapture?.(pointerId);
+        const committed = resizePreviewRef.current;
+        resizePreviewRef.current = null;
+        setResizePreviewProject(null);
+        if (committed && onUpdateProject) onUpdateProject(committed);
+      }
+    };
+
+    const startDrag = () => {
+      dragActive = true;
+      grabDayOffset = pointerDayFromTrack(lastClientX, track, minDay, totalDays) - phaseStartDay;
+      phaseMoveActiveRef.current = true;
+      setPhaseMovePendingId(null);
+      setPhaseMovePhaseId(phase.id);
+      document.body.classList.add('gantt-phase-move-active');
+      surfaceEl.setPointerCapture?.(pointerId);
+      applyFromPointer(lastClientX);
+    };
+
+    const onMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      lastClientX = moveEvent.clientX;
+      if (!dragActive) return;
+      moveEvent.preventDefault();
+      applyFromPointer(moveEvent.clientX);
+    };
+
+    pendingTimer = setTimeout(() => {
+      if (!dragActive) setPhaseMovePendingId(phase.id);
+    }, Math.round(PHASE_TIMELINE_HOLD_MS * 0.55));
+
+    holdTimer = setTimeout(startDrag, PHASE_TIMELINE_HOLD_MS);
 
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', finish);
@@ -2975,7 +3113,7 @@ function GanttChartInner({
     );
   };
 
-  const renderDesktopPhaseTasks = (project, phase) => {
+  const renderDesktopPhaseTasks = (project, phase, { allowEdit = true } = {}) => {
     if (phase.tasks.length === 0) return null;
     return (
       <div className="gantt-task-stack">
@@ -2985,7 +3123,7 @@ function GanttChartInner({
             <div
               key={task.id}
               className="gantt-row gantt-row--task gantt-row--task-checklist gantt-row--track-only"
-              {...editableRowProps(project, `Edit ${project.name} — ${taskTitle}`)}
+              {...(allowEdit ? editableRowProps(project, `Edit ${project.name} — ${taskTitle}`) : {})}
             >
               <div className="gantt-track gantt-track--lane gantt-track--task-checklist">
                 {renderLaneLabel(phase.startDate, taskTitle, 'task')}
@@ -3000,7 +3138,8 @@ function GanttChartInner({
   const canInteract = Boolean(onSelectProject);
 
   const openProjectEdit = (project) => {
-    if (!onSelectProject || phaseResizeActiveRef.current) return;
+    if (!onSelectProject || phaseResizeActiveRef.current || phaseMoveActiveRef.current) return;
+    if (phaseMoveSuppressClickRef.current) return;
     onSelectProject(project);
   };
 
@@ -3021,6 +3160,28 @@ function GanttChartInner({
   };
 
   const mobilePhaseRowProps = (project, phase, phaseTitle) => {
+    if (focusMode) {
+      if (!mobileLayout || phase.tasks.length === 0) return {};
+      const tasksOpen = isMobilePhaseTasksOpen(project.id, phase.id);
+      const taskCount = phase.tasks.length;
+      return {
+        role: 'button',
+        tabIndex: 0,
+        'aria-expanded': tasksOpen,
+        'aria-label': `${tasksOpen ? 'Hide' : 'Show'} ${taskCount} task${taskCount !== 1 ? 's' : ''} for ${phaseTitle}`,
+        onClick: (e) => {
+          if (phaseMoveSuppressClickRef.current) return;
+          e.stopPropagation();
+          toggleMobilePhaseTasks(project.id, phase.id);
+        },
+        onKeyDown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleMobilePhaseTasks(project.id, phase.id);
+          }
+        },
+      };
+    }
     if (!mobileLayout) {
       return editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`);
     }
@@ -3047,15 +3208,20 @@ function GanttChartInner({
 
   const handleProjectRowClick = (project) => {
     if (!onSelectProject) return;
-    if (focusMode) {
-      openProjectEdit(project);
-      return;
-    }
+    if (focusMode) return;
     if (projectHasMilestones(project)) {
       setExpandedProjectId((cur) => (cur === project.id ? null : project.id));
       return;
     }
     openProjectEdit(project);
+  };
+
+  const phaseGroupMoveProps = (project, phase, phaseTitle) => {
+    if (!canMovePhases) return {};
+    return {
+      onPointerDown: (e) => beginPhaseMove(e, project, phase),
+      'aria-label': `Move ${phaseTitle} on timeline. Press and hold, then drag.`,
+    };
   };
 
   const zoomStep = focusMode ? focusZoomStep : mainZoomStep;
@@ -3278,9 +3444,6 @@ function GanttChartInner({
                       <div className="gantt-job-focus-body">
                         <div
                           className="gantt-row gantt-row--job gantt-row--track-only"
-                          {...(!mobileLayout
-                            ? editableRowProps(project, `Edit ${project.name}`)
-                            : {})}
                         >
                           <div className="gantt-track">
                             {renderJobAvatarPopover(project.startDate, assignedDesigners)}
@@ -3300,7 +3463,16 @@ function GanttChartInner({
                           {project.milestones.map((phase, phaseIndex) => {
                             const phaseTitle = phase.title.trim() || `Phase ${phaseIndex + 1}`;
                             return (
-                              <div key={phase.id} className="gantt-phase-group">
+                              <div
+                                key={phase.id}
+                                className={[
+                                  'gantt-phase-group',
+                                  canMovePhases ? 'gantt-phase-group--movable' : '',
+                                  phaseMovePhaseId === phase.id ? 'gantt-phase-group--moving' : '',
+                                  phaseMovePendingId === phase.id ? 'gantt-phase-group--pending' : '',
+                                ].filter(Boolean).join(' ')}
+                                {...phaseGroupMoveProps(project, phase, phaseTitle)}
+                              >
                                 <div
                                   className={[
                                     'gantt-row',
@@ -3310,7 +3482,7 @@ function GanttChartInner({
                                   ].filter(Boolean).join(' ')}
                                   {...(mobileLayout
                                     ? mobilePhaseRowProps(project, phase, phaseTitle)
-                                    : editableRowProps(project, `Edit ${project.name} — ${phaseTitle}`))}
+                                    : {})}
                                 >
                                   <div className="gantt-track gantt-track--lane gantt-track--phase-lane">
                                     {renderLaneLabel(phase.startDate, phaseTitle, 'phase')}
@@ -3331,7 +3503,7 @@ function GanttChartInner({
                                 </div>
                                 {mobileLayout
                                   ? renderMobilePhaseTasks(project, phase)
-                                  : renderDesktopPhaseTasks(project, phase)}
+                                  : renderDesktopPhaseTasks(project, phase, { allowEdit: false })}
                               </div>
                             );
                           })}
