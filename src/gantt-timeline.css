@@ -373,6 +373,26 @@ button.gantt-focus-copy:focus-visible {
   background: var(--gantt-weekend-bg);
 }
 
+.gantt-chart-today {
+  position: absolute;
+  top: var(--gantt-ruler-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  z-index: 6;
+  height: auto;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.gantt-today-track {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  min-height: 100%;
+}
+
 .gantt-lines-spacer {
   flex-shrink: 0;
   width: var(--gantt-lead-w);
@@ -495,9 +515,8 @@ button.gantt-focus-copy:focus-visible {
   transform: translateX(-50%);
   background: #E85D4A;
   border-radius: 1px;
-  z-index: 2;
+  opacity: 0.2;
   pointer-events: none;
-  box-shadow: 0 0 0 1px rgba(232, 93, 74, 0.25);
 }
 
 .gantt-chart-body {
@@ -746,6 +765,10 @@ button.gantt-focus-copy:focus-visible {
 
   .gantt-today-marker {
     width: 2px;
+  }
+
+  .gantt-chart-today {
+    z-index: 7;
   }
 
   .gantt-main-zoom-bar {

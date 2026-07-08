@@ -4,7 +4,7 @@ export const MILESTONE_PHASE_CATALOG = [
   {
     key: 'strategy',
     title: 'Strategy',
-    tasks: ['Strategy', 'Discovery', 'Research', 'Benchmarking', 'Insight'],
+    tasks: ['Discovery', 'Research', 'Benchmarking', 'Insight', 'Strategy'],
   },
   {
     key: 'brand-expression',
@@ -14,24 +14,31 @@ export const MILESTONE_PHASE_CATALOG = [
   {
     key: 'production',
     title: 'Production',
-    tasks: ['Photography', 'Animation', 'Video'],
+    tasks: ['Plan & Brief', 'Creative Direction', 'Photography', 'Animation', 'Video', 'Copywriting'],
   },
   {
     key: 'rollout',
     title: 'Rollout',
-    tasks: ['Audit & scoping', 'Concept', 'Refinement', 'Artworking & Documentation', 'Quality Control'],
+    tasks: ['Audit & Scope', 'Concept', 'Refinement', 'Artworking & Documentation', 'Production Management'],
   },
   {
     key: 'signage',
     title: 'Signage',
-    tasks: ['Site audit & scoping', 'Concept', 'Refinement', 'Artworking & Documentation', 'Quality Control'],
+    tasks: ['Site audit & scoping', 'Concept', 'Refinement', 'Artworking & Documentation', 'Production Management'],
   },
   {
     key: 'publication',
     title: 'Publication',
-    tasks: ['Concept', 'Refinement', 'Flow through', 'Mark-ups', 'Art working', 'Print management'],
+    tasks: ['Concept', 'Refinement', 'Flow through', 'Mark-ups', 'Artworking', 'Print Management'],
   },
 ];
+
+/** Maps retired task keys/titles to their current catalog labels. */
+const LEGACY_TASK_ALIASES = {
+  'audit-and-scoping': 'Audit & Scope',
+  'quality-control': 'Production Management',
+  'art-working': 'Artworking',
+};
 
 export function taskKeyFromTitle(title) {
   return String(title || '')
@@ -56,12 +63,35 @@ export function getPhaseCatalogIndex(key) {
   return MILESTONE_PHASE_CATALOG.findIndex((phase) => phase.key === key);
 }
 
+export function getTaskCatalogIndex(phaseKey, taskKeyOrTitle) {
+  const phase = getPhaseByKey(phaseKey);
+  if (!phase) return -1;
+  const needle = String(taskKeyOrTitle || '').trim();
+  if (!needle) return -1;
+  const byKey = taskKeyFromTitle(needle);
+  return phase.tasks.findIndex(
+    (task) => taskKeyFromTitle(task) === byKey || task.toLowerCase() === needle.toLowerCase(),
+  );
+}
+
+export function sortTasksByCatalog(phaseKey, tasks) {
+  return (tasks || []).slice().sort((a, b) => {
+    const ai = getTaskCatalogIndex(phaseKey, a.taskKey || a.title);
+    const bi = getTaskCatalogIndex(phaseKey, b.taskKey || b.title);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
+}
+
 export function getTaskTitleForPhase(phaseKey, taskKeyOrTitle) {
   const phase = getPhaseByKey(phaseKey);
   if (!phase) return null;
   const needle = String(taskKeyOrTitle || '').trim();
   if (!needle) return null;
   const byKey = taskKeyFromTitle(needle);
+  const legacyTitle = LEGACY_TASK_ALIASES[byKey] || LEGACY_TASK_ALIASES[needle];
+  if (legacyTitle) {
+    return phase.tasks.find((task) => task === legacyTitle) || null;
+  }
   return phase.tasks.find(
     (task) => taskKeyFromTitle(task) === byKey || task.toLowerCase() === needle.toLowerCase(),
   ) || null;

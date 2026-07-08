@@ -1491,6 +1491,10 @@ html, body, #root {
   border-radius: 999px;
 }
 
+.sheet-date-calendar__day--range-start-locked {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
 .sheet-date-calendar__day--range-start:hover,
 .sheet-date-calendar__day--range-end:hover {
   background: var(--text-primary);
@@ -1525,8 +1529,44 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
+.sheet-date-calendar__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.sheet-date-calendar__actions--split {
+  flex-direction: row;
+  gap: 8px;
+}
+
+.sheet-date-calendar__clear {
+  flex: 1;
+  min-height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.16);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.sheet-date-calendar__clear:hover {
+  background: rgba(120, 120, 128, 0.24);
+}
+
+.sheet-date-calendar__clear:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
 .sheet-date-calendar__save {
   width: 100%;
+  flex: 1;
   min-height: 36px;
   border: none;
   border-radius: 999px;
