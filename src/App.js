@@ -2539,9 +2539,12 @@ function GanttChartInner({
     1,
     chartMinWidthPx - (mobileLayout ? 0 : GANTT_LEAD_W_DESKTOP),
   );
-  const sectionsToRender = focusMode && timelineFocusProject
-    ? [{ key: 'focus', label: null, projects: [timelineFocusProject] }]
-    : timelineSections;
+  const sectionsToRender = useMemo(
+    () => (focusMode && timelineFocusProject
+      ? [{ key: 'focus', label: null, projects: [timelineFocusProject] }]
+      : timelineSections),
+    [focusMode, timelineFocusProject, timelineSections],
+  );
 
   const canResizePhases = Boolean(focusMode && !mobileLayout && onUpdateProject);
 
