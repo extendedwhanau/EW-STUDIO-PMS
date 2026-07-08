@@ -3243,7 +3243,6 @@ function GanttChartInner({
                         <div className="gantt-job-phases">
                           {project.milestones.map((phase, phaseIndex) => {
                             const phaseTitle = phase.title.trim() || `Phase ${phaseIndex + 1}`;
-                            const phaseTasksOpen = isMobilePhaseTasksOpen(project.id, phase.id);
                             return (
                               <div key={phase.id} className="gantt-phase-group">
                                 <div
@@ -3336,7 +3335,6 @@ function GanttChartInner({
                     <div className="gantt-job-phases">
                       {project.milestones.map((phase, phaseIndex) => {
                         const phaseTitle = phase.title.trim() || `Phase ${phaseIndex + 1}`;
-                        const phaseTasksOpen = isMobilePhaseTasksOpen(project.id, phase.id);
                         return (
                         <div key={phase.id} className="gantt-phase-group">
                           <div
