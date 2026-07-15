@@ -745,8 +745,8 @@ function buildSampleProjects() {
         },
         {
           id: 'ms2',
-          phaseKey: 'brand-expression',
-          title: 'Expression',
+          phaseKey: 'design',
+          title: 'Design',
           scheduleMode: 'weeks',
           durationWeeks: 7,
           startDate: '2026-08-28',

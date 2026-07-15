@@ -4,11 +4,11 @@ export const MILESTONE_PHASE_CATALOG = [
   {
     key: 'strategy',
     title: 'Strategy',
-    tasks: ['Discovery', 'Research', 'Benchmarking', 'Insight', 'Strategy'],
+    tasks: ['Discovery', 'Research', 'Territory', 'Insight', 'Strategy'],
   },
   {
-    key: 'brand-expression',
-    title: 'Expression',
+    key: 'design',
+    title: 'Design',
     tasks: ['Concept', 'Refinement', 'Guidelines', 'Assets'],
   },
   {
@@ -24,20 +24,41 @@ export const MILESTONE_PHASE_CATALOG = [
   {
     key: 'signage',
     title: 'Signage',
-    tasks: ['Site audit & scoping', 'Concept', 'Refinement', 'Artworking & Documentation', 'Production Management'],
+    tasks: ['Site Audit & Scoping', 'Concept', 'Refinement', 'Artworking & Documentation', 'Production Management'],
   },
   {
     key: 'publication',
     title: 'Publication',
-    tasks: ['Concept', 'Refinement', 'Flow through', 'Mark-ups', 'Artworking', 'Print Management'],
+    tasks: ['Concept', 'Refinement', 'Content Flow', 'Mark-ups', 'Artworking', 'Print Management'],
+  },
+  {
+    key: 'website',
+    title: 'Website',
+    tasks: [
+      'Concept',
+      'Refinement',
+      'Design System',
+      'Development Handover',
+      'Copywriting & Content',
+      'Build & Quality Assurance',
+      'Testing & Refinement',
+      'Launch Management',
+    ],
   },
 ];
+
+/** Maps retired phase keys to their current catalog keys. */
+const LEGACY_PHASE_KEYS = {
+  'brand-expression': 'design',
+};
 
 /** Maps retired task keys/titles to their current catalog labels. */
 const LEGACY_TASK_ALIASES = {
   'audit-and-scoping': 'Audit & Scope',
   'quality-control': 'Production Management',
   'art-working': 'Artworking',
+  benchmarking: 'Territory',
+  'flow-through': 'Content Flow',
 };
 
 export function taskKeyFromTitle(title) {
@@ -49,18 +70,22 @@ export function taskKeyFromTitle(title) {
 }
 
 export function getPhaseByKey(key) {
-  return MILESTONE_PHASE_CATALOG.find((phase) => phase.key === key) || null;
+  const resolved = LEGACY_PHASE_KEYS[key] || key;
+  return MILESTONE_PHASE_CATALOG.find((phase) => phase.key === resolved) || null;
 }
 
 export function getPhaseByTitle(title) {
   const normalized = String(title || '').trim().toLowerCase();
   if (!normalized) return null;
-  if (normalized === 'brand expression') return getPhaseByKey('brand-expression');
+  if (normalized === 'brand expression' || normalized === 'expression') {
+    return getPhaseByKey('design');
+  }
   return MILESTONE_PHASE_CATALOG.find((phase) => phase.title.toLowerCase() === normalized) || null;
 }
 
 export function getPhaseCatalogIndex(key) {
-  return MILESTONE_PHASE_CATALOG.findIndex((phase) => phase.key === key);
+  const resolved = LEGACY_PHASE_KEYS[key] || key;
+  return MILESTONE_PHASE_CATALOG.findIndex((phase) => phase.key === resolved);
 }
 
 export function getTaskCatalogIndex(phaseKey, taskKeyOrTitle) {
@@ -69,6 +94,10 @@ export function getTaskCatalogIndex(phaseKey, taskKeyOrTitle) {
   const needle = String(taskKeyOrTitle || '').trim();
   if (!needle) return -1;
   const byKey = taskKeyFromTitle(needle);
+  const legacyTitle = LEGACY_TASK_ALIASES[byKey] || LEGACY_TASK_ALIASES[needle];
+  if (legacyTitle) {
+    return phase.tasks.findIndex((task) => task === legacyTitle);
+  }
   return phase.tasks.findIndex(
     (task) => taskKeyFromTitle(task) === byKey || task.toLowerCase() === needle.toLowerCase(),
   );
@@ -98,7 +127,11 @@ export function getTaskTitleForPhase(phaseKey, taskKeyOrTitle) {
 }
 
 export function availablePhases(currentPhases) {
-  const used = new Set((currentPhases || []).map((phase) => phase.phaseKey).filter(Boolean));
+  const used = new Set(
+    (currentPhases || [])
+      .map((phase) => getPhaseByKey(phase.phaseKey)?.key || phase.phaseKey)
+      .filter(Boolean),
+  );
   return MILESTONE_PHASE_CATALOG.filter((phase) => !used.has(phase.key));
 }
 
