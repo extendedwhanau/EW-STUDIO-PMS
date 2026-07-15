@@ -71,3 +71,66 @@ export function shouldUseDevTimelinePreview(activeProjects) {
   }
   return activeProjects.filter((p) => p.startDate && p.endDate).length === 0;
 }
+
+/** Five-phase sample for client overview PDF layout testing. */
+export function getDevOverviewPreviewProject() {
+  return {
+    id: 'preview-overview',
+    name: 'Same Point Size',
+    client: 'Extended Whānau',
+    status: 'In Progress',
+    startDate: '2026-07-07',
+    endDate: '2026-10-16',
+    milestones: [
+      {
+        id: 'ov-1',
+        title: 'Strategy',
+        startDate: '2026-07-07',
+        endDate: '2026-08-10',
+        tasks: [
+          { id: 'ov-1a', title: 'Stakeholder interviews' },
+          { id: 'ov-1b', title: 'Audience mapping' },
+        ],
+      },
+      {
+        id: 'ov-2',
+        title: 'Concept',
+        startDate: '2026-08-11',
+        endDate: '2026-09-05',
+        tasks: [
+          { id: 'ov-2a', title: 'Creative territories' },
+        ],
+      },
+      {
+        id: 'ov-3',
+        title: 'Design',
+        startDate: '2026-09-06',
+        endDate: '2026-09-25',
+        tasks: [
+          { id: 'ov-3a', title: 'Key visual development' },
+          { id: 'ov-3b', title: 'Asset production' },
+        ],
+      },
+      {
+        id: 'ov-4',
+        title: 'Production',
+        startDate: '2026-09-26',
+        endDate: '2026-10-10',
+        tasks: [],
+      },
+      {
+        id: 'ov-5',
+        title: 'Delivery',
+        startDate: '2026-10-11',
+        endDate: '2026-10-16',
+        tasks: [],
+      },
+    ],
+  };
+}
+
+export function shouldShowDevOverviewPreview() {
+  if (process.env.NODE_ENV !== 'development') return false;
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('preview') === 'overview';
+}

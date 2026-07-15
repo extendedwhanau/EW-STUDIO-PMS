@@ -15,7 +15,9 @@ import {
 } from './supabaseData';
 import {
   getDevTimelinePreviewProjects,
+  getDevOverviewPreviewProject,
   shouldUseDevTimelinePreview,
+  shouldShowDevOverviewPreview,
 } from './devTimelinePreview';
 import {
   availablePhases,
@@ -1710,6 +1712,232 @@ function ProjectDetailsPanel({
   );
 }
 
+function overviewTimelineBounds(project, phases) {
+  const dates = [];
+  if (project.startDate) dates.push(project.startDate);
+  if (project.endDate) dates.push(project.endDate);
+  (phases || []).forEach((phase) => {
+    if (phase.startDate) dates.push(phase.startDate);
+    if (phase.endDate) dates.push(phase.endDate);
+  });
+  dates.sort();
+  const startDate = dates[0] || project.startDate || today();
+  const endDate = dates[dates.length - 1] || project.endDate || startDate;
+  return { startDate, endDate };
+}
+
+function overviewBarStyle(phase, rangeStart, rangeEnd) {
+  if (!phase.startDate || !phase.endDate || !rangeStart || !rangeEnd) {
+    return null;
+  }
+  const minDay = daysFromEpoch(rangeStart);
+  const maxDay = daysFromEpoch(rangeEnd);
+  const span = Math.max(1, maxDay - minDay + 1);
+  const startDay = Math.max(minDay, daysFromEpoch(phase.startDate));
+  const endDay = Math.max(startDay, Math.min(maxDay, daysFromEpoch(phase.endDate)));
+  const left = ((startDay - minDay) / span) * 100;
+  const width = ((endDay - startDay + 1) / span) * 100;
+  return {
+    left: `${left}%`,
+    width: `${Math.max(width, 1.2)}%`,
+  };
+}
+
+function overviewLabelLeftPct(date, rangeStart, rangeEnd) {
+  if (!date || !rangeStart || !rangeEnd) return 0;
+  const minDay = daysFromEpoch(rangeStart);
+  const maxDay = daysFromEpoch(rangeEnd);
+  const span = Math.max(1, maxDay - minDay + 1);
+  const day = Math.max(minDay, Math.min(maxDay, daysFromEpoch(date)));
+  return ((day - minDay) / span) * 100;
+}
+
+/** Export timeline track usable width ≈ doc width minus horizontal padding. */
+const OVERVIEW_TRACK_USABLE_PX = 740;
+const OVERVIEW_DATE_GAP_PX = 10;
+const OVERVIEW_DATE_CHAR_PX = 5.15;
+
+function estimateOverviewDateLabelPx(label) {
+  if (!label) return 0;
+  return label.length * OVERVIEW_DATE_CHAR_PX + 2;
+}
+
+function overviewPhaseDatesLayout(startPct, endPct, startLabel, endLabel) {
+  const barPct = Math.max(0, endPct - startPct);
+  if (!startLabel && !endLabel) return null;
+  if (!startLabel || !endLabel) {
+    return {
+      marginLeft: `${startPct}%`,
+      width: `${Math.max(barPct, 0.5)}%`,
+    };
+  }
+
+  const minWidthPx = estimateOverviewDateLabelPx(startLabel)
+    + OVERVIEW_DATE_GAP_PX
+    + estimateOverviewDateLabelPx(endLabel);
+  const minWidthPct = (minWidthPx / OVERVIEW_TRACK_USABLE_PX) * 100;
+
+  return {
+    marginLeft: `${startPct}%`,
+    width: `${Math.max(barPct, minWidthPct)}%`,
+  };
+}
+
+function formatOverviewPhaseDate(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long' });
+}
+
+function ClientOverviewModal({ project, onClose }) {
+  const phases = project.milestones || [];
+  const projectName = project.name?.trim() || 'Untitled project';
+  const clientName = project.client?.trim() || '';
+  const { startDate: rangeStart, endDate: rangeEnd } = overviewTimelineBounds(project, phases);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.body.classList.add('client-overview-open');
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('client-overview-open');
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="client-overview-root"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Client project overview"
+    >
+      <div
+        className="client-overview-backdrop client-overview-no-print"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="client-overview-shell">
+        <div className="client-overview-toolbar client-overview-no-print">
+          <p className="client-overview-toolbar-hint">Preview</p>
+          <div className="client-overview-toolbar-actions">
+            <button type="button" className="client-overview-btn client-overview-btn--close" onClick={onClose}>
+              Close
+            </button>
+            <button type="button" className="client-overview-btn client-overview-btn--save" onClick={handlePrint}>
+              Save
+            </button>
+          </div>
+        </div>
+
+        <article className="client-overview-doc">
+          <header className="client-overview-header">
+            <div className="client-overview-header-lead">
+              <p className="client-overview-brand">Extended Whānau</p>
+              <p className="client-overview-prepared">
+                {formatDueDateLong(today())}
+              </p>
+            </div>
+            <p className="client-overview-kicker">Timeline</p>
+          </header>
+
+          <div className="client-overview-hero">
+            <p className="client-overview-hero-line">
+              <span className="client-overview-project">{projectName}</span>
+              {clientName ? (
+                <span className="client-overview-client">{clientName}</span>
+              ) : null}
+            </p>
+          </div>
+
+          <section className="client-overview-timeline" aria-label="Stage timeline">
+            <div className="client-overview-timeline-axis-wrap">
+              <div className="client-overview-timeline-axis" aria-hidden="true">
+                <span>{formatDueDateLong(rangeStart)}</span>
+                <span>{formatDueDateLong(rangeEnd)}</span>
+              </div>
+              <div className="client-overview-rule" aria-hidden="true" />
+            </div>
+            {phases.length === 0 ? (
+              <p className="client-overview-empty">No stages added yet.</p>
+            ) : (
+              <div className="client-overview-timeline-board">
+                <div className="client-overview-timeline-rows">
+                  {phases.map((phase) => {
+                    const barStyle = overviewBarStyle(phase, rangeStart, rangeEnd);
+                    const startPct = overviewLabelLeftPct(phase.startDate, rangeStart, rangeEnd);
+                    const endPct = overviewLabelLeftPct(phase.endDate, rangeStart, rangeEnd);
+                    const phaseTitle = phase.title?.trim() || 'Stage';
+                    const startDateLabel = formatOverviewPhaseDate(phase.startDate);
+                    const endDateLabel = formatOverviewPhaseDate(phase.endDate);
+                    const datesLayout = overviewPhaseDatesLayout(
+                      startPct,
+                      endPct,
+                      startDateLabel,
+                      endDateLabel,
+                    );
+                    return (
+                      <div key={phase.id} className="client-overview-stage">
+                        <div className="client-overview-stage-lane">
+                          <p
+                            className="client-overview-stage-caption"
+                            style={{ marginLeft: `${startPct}%` }}
+                          >
+                            {phaseTitle}
+                          </p>
+                          {(startDateLabel || endDateLabel) && datesLayout ? (
+                            <div
+                              className="client-overview-stage-dates"
+                              style={datesLayout}
+                            >
+                              {startDateLabel ? (
+                                <span className="client-overview-stage-date client-overview-stage-date--start">
+                                  {startDateLabel}
+                                </span>
+                              ) : null}
+                              {endDateLabel ? (
+                                <span className="client-overview-stage-date client-overview-stage-date--end">
+                                  {endDateLabel}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          <div className="client-overview-stage-track">
+                            {barStyle ? (
+                              <div className="client-overview-stage-bar" style={barStyle} />
+                            ) : null}
+                          </div>
+                          {(phase.tasks || []).length > 0 ? (
+                            <ul
+                              className="client-overview-tasks"
+                              style={{ marginLeft: `${startPct}%` }}
+                            >
+                              {phase.tasks.map((task) => (
+                                <li key={task.id}>{task.title}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+        </article>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function ProjectModal({
   project,
   designers,
@@ -1721,6 +1949,7 @@ function ProjectModal({
   onOpenTimeline,
 }) {
   const [modalTab, setModalTab] = useState(initialTab);
+  const [showOverview, setShowOverview] = useState(false);
 
   useEffect(() => {
     setModalTab(initialTab);
@@ -1783,7 +2012,13 @@ function ProjectModal({
     onOpenTimeline(normalizeProjectMilestones(form));
   };
 
+  const overviewProject = useMemo(
+    () => normalizeProjectMilestones(form),
+    [form],
+  );
+
   return (
+    <>
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal--project">
         <div className="modal-header modal-header--project">
@@ -1848,6 +2083,15 @@ function ProjectModal({
             </button>
           )}
           <div className="modal-footer-actions">
+            <button
+              type="button"
+              className="modal-btn-close"
+              onClick={() => setShowOverview(true)}
+              disabled={!form.name.trim()}
+              title={!form.name.trim() ? 'Add a project name first' : 'Preview client overview PDF'}
+            >
+              Export
+            </button>
             <button type="button" className="modal-btn-close" onClick={onClose}>
               Close
             </button>
@@ -1863,6 +2107,13 @@ function ProjectModal({
         </form>
       </div>
     </div>
+    {showOverview ? (
+      <ClientOverviewModal
+        project={overviewProject}
+        onClose={() => setShowOverview(false)}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -2473,6 +2724,12 @@ function GanttChartInner({
   const mobileLayout = useGanttMobileLayout();
   const todayDay = daysFromEpoch(today());
   const [expandedProjectId, setExpandedProjectId] = useState(null);
+  const [showOverview, setShowOverview] = useState(false);
+
+  useEffect(() => {
+    if (!expandedProjectId) setShowOverview(false);
+  }, [expandedProjectId]);
+
   const [mobileExpandedPhases, setMobileExpandedPhases] = useState(() => new Set());
   const [mainZoomStep, setMainZoomStep] = useState(() => defaultMainZoomStep(
     typeof window !== 'undefined' && window.matchMedia(GANTT_MOBILE_MQ).matches,
@@ -3268,6 +3525,7 @@ function GanttChartInner({
   );
 
   return (
+    <>
     <div className={`gantt-frame${focusMode ? ' gantt-frame--focused' : ''}`}>
       <div
         className={[
@@ -3319,6 +3577,17 @@ function GanttChartInner({
               </span>
             </div>
           )
+        ) : null}
+        {focusMode && timelineFocusProject ? (
+          <button
+            type="button"
+            className="gantt-export-btn"
+            onClick={() => setShowOverview(true)}
+            disabled={!projectHasMilestones(timelineFocusProject)}
+            title={!projectHasMilestones(timelineFocusProject) ? 'Add milestones to export' : 'Export timeline overview'}
+          >
+            Export
+          </button>
         ) : null}
       </div>
       <div className="gantt-wrapper" ref={scrollRef}>
@@ -3607,6 +3876,13 @@ function GanttChartInner({
         </div>
       </div>
     </div>
+    {showOverview && timelineFocusProject ? (
+      <ClientOverviewModal
+        project={normalizeProjectMilestones(timelineFocusProject)}
+        onClose={() => setShowOverview(false)}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -3740,6 +4016,9 @@ export default function App() {
   const [teamOpen, setTeamOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ganttFocusProjectId, setGanttFocusProjectId] = useState(null);
+  const [overviewPreviewProject, setOverviewPreviewProject] = useState(() => (
+    shouldShowDevOverviewPreview() ? getDevOverviewPreviewProject() : null
+  ));
   /** After first Supabase pull (or immediately if Supabase off), cloud saves are allowed. */
   const [cloudReady, setCloudReady] = useState(() => !isSupabaseConfigured());
 
@@ -4459,6 +4738,12 @@ export default function App() {
           }}
           onSave={saveDesigner}
           onDelete={deleteDesigner}
+        />
+      )}
+      {overviewPreviewProject && (
+        <ClientOverviewModal
+          project={overviewPreviewProject}
+          onClose={() => setOverviewPreviewProject(null)}
         />
       )}
     </div>
