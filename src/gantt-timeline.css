@@ -127,38 +127,115 @@
 
 .gantt-timeline-chrome--focus {
   width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 28px;
 }
 
-.gantt-export-btn {
+.gantt-focus-controls {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 28px;
+}
+
+.gantt-export-btn,
+.gantt-focus-action-btn {
   flex-shrink: 0;
-  margin-left: auto;
-  align-self: flex-start;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: inherit;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  line-height: 1.2;
+  line-height: 1;
   color: var(--text-secondary);
   background: none;
   border: none;
-  padding: 0 8px 0 0;
+  padding: 0;
+  margin: 0;
+  min-height: 28px;
   cursor: pointer;
   transition: color 0.12s ease, opacity 0.12s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.gantt-export-btn:hover:not(:disabled) {
+.gantt-export-btn:hover:not(:disabled),
+.gantt-focus-action-btn:hover:not(:disabled) {
   color: var(--text-primary);
 }
 
-.gantt-export-btn:focus-visible {
+.gantt-export-btn:focus-visible,
+.gantt-focus-action-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--text-primary);
 }
 
-.gantt-export-btn:disabled {
+.gantt-export-btn:disabled,
+.gantt-focus-action-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.gantt-focus-action-btn--primary {
+  color: var(--text-primary);
+}
+
+.gantt-focus-edit-badge {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(60, 60, 67, 0.55);
+  padding: 0 7px;
+  border-radius: 4px;
+  background: rgba(60, 60, 67, 0.08);
+}
+
+.gantt-focus-edit-hint {
+  margin: 0 0 8px;
+  padding: 0 0 0 7px;
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: rgba(60, 60, 67, 0.62);
+}
+
+.gantt-timeline-chrome--editing {
+  margin-bottom: 4px;
+}
+
+.gantt-frame--editing .gantt-wrapper {
+  border-radius: 10px;
+  background: rgba(60, 60, 67, 0.03);
+  box-shadow: inset 0 0 0 1px rgba(60, 60, 67, 0.08);
+}
+
+.gantt-chart--editing .gantt-phase-group--editable {
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(60, 60, 67, 0.06);
+}
+
+.gantt-chart--editing .gantt-bar--phase {
+  height: 8px;
+  min-height: 8px !important;
+  max-height: 8px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.gantt-chart--editing .gantt-bar--resizable .gantt-bar-resize-handle::after {
+  opacity: 0.85;
 }
 
 .gantt-chart-header--focus {
@@ -179,45 +256,104 @@
   box-sizing: border-box;
 }
 
-.gantt-focus-back {
+.gantt-focus-back.sheet-milestone-add-task {
   flex-shrink: 0;
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  color: var(--text-secondary);
-  background: none;
-  border: none;
+  align-self: center;
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: -0.06em;
+  line-height: 1;
   padding: 0;
-  margin: 0;
-  border-radius: 0;
-  cursor: pointer;
-  transition: color 0.12s ease;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .gantt-focus-back-icon {
-  display: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transform: translateX(-0.5px);
 }
 
-.gantt-focus-back-label {
-  display: inline;
+.gantt-timeline-chrome-main {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  min-height: 28px;
 }
 
-.gantt-focus-back:hover {
+.gantt-toolbar--tools {
+  flex-shrink: 0;
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
+
+.gantt-toolbar-inner--bubble {
+  gap: 0;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.08);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+
+.gantt-toolbar--tools .gantt-toolbar-inner {
+  align-items: center;
+}
+
+.gantt-toolbar--tools .gantt-nav-btn {
+  min-height: 28px;
+  min-width: 28px;
+  line-height: 1;
+  padding: 0 8px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-secondary);
+  border-radius: 999px;
+}
+
+.gantt-toolbar--tools .gantt-nav-btn--icon {
+  min-width: 28px;
+  padding: 0;
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: -0.06em;
+}
+
+.gantt-toolbar--tools .gantt-nav-btn--arrow {
+  min-width: 28px;
+  padding: 0;
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: -0.06em;
+}
+
+.gantt-toolbar--tools .gantt-nav-btn--today {
+  min-width: unset;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gantt-toolbar--tools .gantt-nav-btn:hover:not(:disabled) {
   color: var(--text-primary);
-  background: none;
+  background: rgba(120, 120, 128, 0.1);
 }
 
-.gantt-focus-back:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--text-primary);
+.gantt-toolbar--tools .gantt-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.gantt-toolbar-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: rgba(60, 60, 67, 0.16);
 }
 
 .gantt-focus-copy {
@@ -282,6 +418,10 @@ button.gantt-focus-copy:focus-visible {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 20px;
+}
+
+.gantt-timeline-chrome--focus .gantt-focus-zoom {
   gap: 20px;
 }
 
@@ -1131,6 +1271,22 @@ body.gantt-phase-move-active * {
   height: 5px;
   min-height: 5px !important;
   max-height: 5px;
+  border-radius: 999px;
+}
+
+.gantt-row--task-scheduled {
+  min-height: 26px;
+}
+
+.gantt-track--task-lane .gantt-lane-label--task {
+  top: 0;
+  font-size: 11px;
+  line-height: 1.15;
+  color: rgba(60, 60, 67, 0.72);
+}
+
+.gantt-track--task-lane .gantt-bar--task {
+  top: 15px;
 }
 
 .gantt-bar--overview {
@@ -1331,15 +1487,29 @@ body.gantt-phase-move-active * {
 
   .gantt-timeline-chrome--focus {
     display: flex;
-    align-items: flex-start;
-    gap: 0;
+    align-items: center;
+    gap: 18px;
     padding: 0;
     width: 100%;
   }
 
-  .gantt-export-btn {
+  .gantt-focus-controls {
+    gap: 18px;
+  }
+
+  .gantt-export-btn,
+  .gantt-focus-action-btn {
     font-size: 14px;
-    padding-right: 0;
+  }
+
+  .gantt-focus-edit-hint {
+    padding-left: 0;
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
+  .gantt-focus-edit-badge {
+    font-size: 10px;
   }
 
   .gantt-timeline-chrome-lead {
@@ -1347,52 +1517,41 @@ body.gantt-phase-move-active * {
     padding-left: 0;
   }
 
-  .gantt-focus-back {
-    flex-shrink: 0;
-    align-self: flex-start;
-    min-height: 0;
-    padding: 0;
-    background: none;
-    border-radius: 0;
+  .gantt-focus-back.sheet-milestone-add-task {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    font-size: 20px;
+  }
+
+  .gantt-toolbar--tools {
+    margin-left: auto;
+  }
+
+  .gantt-toolbar-inner--bubble {
+    padding: 2px 3px;
+  }
+
+  .gantt-toolbar--tools .gantt-nav-btn {
+    min-height: 30px;
+    min-width: 30px;
     font-size: 14px;
-    font-weight: 600;
-    line-height: 1.2;
-    color: var(--text-secondary);
+    padding: 0 6px;
   }
 
-  .gantt-focus-back:active {
-    color: var(--text-primary);
-    background: none;
-  }
-
-  .gantt-focus-copy {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
-    flex: 1;
-    min-width: 0;
+  .gantt-toolbar--tools .gantt-nav-btn--icon,
+  .gantt-toolbar--tools .gantt-nav-btn--arrow {
+    font-size: 18px;
     padding: 0;
   }
 
-  .gantt-focus-name {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    width: 100%;
-  }
-
-  .gantt-focus-dates {
-    width: 100%;
+  .gantt-toolbar--tools .gantt-nav-btn--today {
+    padding: 0 8px;
+    font-size: 12px;
   }
 
   .gantt-focus-zoom {
     gap: 16px;
-  }
-
-  .gantt-focus-name,
-  .gantt-focus-dates {
-    font-size: 14px;
   }
 
   .gantt-focus-zoom-btn {

@@ -32,6 +32,7 @@ import {
   sortTasksByCatalog,
   taskKeyFromTitle,
 } from './milestoneCatalog';
+import { importTimelineCsv } from './streamtimeCsvImport';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -556,6 +557,18 @@ function updateProjectPhaseEndDate(project, phaseId, endDate) {
   return applyProjectMilestoneUpdate(project, milestones);
 }
 
+function shiftTaskDates(tasks, deltaDays) {
+  if (!deltaDays) return tasks || [];
+  return (tasks || []).map((task) => {
+    if (!task?.startDate && !task?.endDate) return task;
+    const startDate = task.startDate ? addDays(task.startDate, deltaDays) : '';
+    const endDate = task.endDate
+      ? addDays(task.endDate, deltaDays)
+      : startDate;
+    return { ...task, startDate, endDate };
+  });
+}
+
 function updateProjectPhaseStartDate(project, phaseId, startDate) {
   if (!project?.milestones?.length) return project;
   const milestones = project.milestones.map((ph) => {
@@ -571,9 +584,14 @@ function updateProjectPhaseStartDate(project, phaseId, startDate) {
         ...ph,
         startDate: nextStart,
         endDate: addDays(prevEnd, deltaDays),
+        tasks: shiftTaskDates(ph.tasks, deltaDays),
       };
     }
-    return { ...ph, startDate: nextStart };
+    return {
+      ...ph,
+      startDate: nextStart,
+      tasks: shiftTaskDates(ph.tasks, deltaDays),
+    };
   });
   return applyProjectMilestoneUpdate(project, milestones);
 }
@@ -604,9 +622,24 @@ function milestoneScheduleBounds(phases) {
   phases.forEach((phase) => {
     if (phase.startDate) dates.push(phase.startDate);
     if (phase.endDate) dates.push(phase.endDate);
+    (phase.tasks || []).forEach((task) => {
+      if (task.startDate) dates.push(task.startDate);
+      if (task.endDate) dates.push(task.endDate);
+    });
   });
   dates.sort();
   return { startDate: dates[0] || '', endDate: dates[dates.length - 1] || '' };
+}
+
+function normalizeTaskDates(task) {
+  const startDate = task.startDate || '';
+  const endDate = task.endDate && (!startDate || task.endDate >= startDate)
+    ? task.endDate
+    : startDate;
+  if (!startDate) {
+    return { startDate: '', endDate: '' };
+  }
+  return { startDate, endDate: endDate || startDate };
 }
 
 function normalizeMilestonePhase(phase) {
@@ -640,10 +673,13 @@ function normalizeMilestonePhase(phase) {
         task.taskKey || task.title,
       );
       if (!matchedTitle) return null;
+      const { startDate: taskStart, endDate: taskEnd } = normalizeTaskDates(task);
       return {
         id: task.id || uuidv4(),
         taskKey: taskKeyFromTitle(matchedTitle),
         title: matchedTitle,
+        startDate: taskStart,
+        endDate: taskEnd,
       };
     })
     .filter(Boolean);
@@ -1386,6 +1422,9 @@ function MilestonePhaseBlock({
 
 function MilestonesPanel({ form, setForm, isEditing = false }) {
   const phases = form.milestones || [];
+  const [importError, setImportError] = useState('');
+  const [importNotice, setImportNotice] = useState('');
+  const csvInputRef = useRef(null);
   const projectNameSize = Math.max(10, (form.name.trim() || 'Project name').length + 1);
   const phaseOptions = availablePhases(phases).map((phase) => ({
     key: phase.key,
@@ -1460,6 +1499,42 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
     setForm((f) => applyProjectDatePatch(f, patch));
   };
 
+  const applyImportedPhases = (imported, warnings = []) => {
+    setForm((f) => applyMilestoneScheduleToForm(f, {
+      milestones: sortPhasesByCatalog(imported),
+    }));
+    setImportError('');
+    setImportNotice(warnings.length ? warnings.slice(0, 4).join(' ') : '');
+  };
+
+  const handleCsvUpload = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const { phases: imported, warnings } = importTimelineCsv(String(reader.result || ''));
+        if (phases.length > 0) {
+          const replace = window.confirm(
+            'Replace existing phases with the imported Streamtime schedule?',
+          );
+          if (!replace) return;
+        }
+        applyImportedPhases(imported, warnings);
+      } catch (err) {
+        setImportNotice('');
+        setImportError(err.message || 'Could not parse CSV.');
+      }
+    };
+    reader.onerror = () => {
+      setImportNotice('');
+      setImportError('Could not read file.');
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <>
       <div className="sheet-modal-section sheet-modal-section--project-name">
@@ -1494,6 +1569,23 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
       <div className="sheet-pair sheet-pair--priority-top">
         <span className="sheet-field-label">Phases</span>
         <div className="sheet-field-value sheet-milestone-phase-actions">
+          <button
+            type="button"
+            className="sheet-milestone-add-task sheet-milestone-add-task--label"
+            onClick={() => csvInputRef.current?.click()}
+            aria-label="Import CSV"
+          >
+            Import
+          </button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="sheet-csv-import-input"
+            onChange={handleCsvUpload}
+            aria-hidden
+            tabIndex={-1}
+          />
           <MilestoneCatalogAddButton
             options={phaseOptions}
             onSelect={addPhase}
@@ -1501,6 +1593,13 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
           />
         </div>
       </div>
+
+      {importError ? (
+        <p className="sheet-csv-import-error" role="alert">{importError}</p>
+      ) : null}
+      {importNotice ? (
+        <p className="sheet-csv-import-notice" role="status">{importNotice}</p>
+      ) : null}
 
       <div className="sheet-milestone-list">
       {phases.map((phase) => (
@@ -2613,12 +2712,6 @@ const PHASE_TIMELINE_HOLD_MS = 400;
 /** Match --gantt-lead-w in gantt-timeline.css (10px pad + label + 4px gap). */
 const GANTT_LEAD_W_DESKTOP = 124;
 const GANTT_LEAD_W_MOBILE = 86;
-const GANTT_FOCUS_BANNER_PAD = 10;
-const GANTT_FOCUS_BACK_W = 34;
-/** Desktop "Back" pill — text matches .gantt-focus-name (15px bold). */
-const GANTT_FOCUS_BACK_DESKTOP_W = 54;
-/** Matches the flex gap on .gantt-timeline-chrome. */
-const GANTT_FOCUS_BANNER_GAP = 12;
 const GANTT_WEEKEND_BAND_MAX_PX = 10;
 const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
 
@@ -2648,8 +2741,16 @@ function getProjectTimelineDays(project) {
   (project?.milestones || []).forEach((ph) => {
     if (ph.startDate) days.push(daysFromEpoch(ph.startDate));
     if (ph.endDate) days.push(daysFromEpoch(ph.endDate));
+    (ph.tasks || []).forEach((task) => {
+      if (task.startDate) days.push(daysFromEpoch(task.startDate));
+      if (task.endDate) days.push(daysFromEpoch(task.endDate));
+    });
   });
   return days;
+}
+
+function taskHasSchedule(task) {
+  return Boolean(task?.startDate && task?.endDate);
 }
 
 function timelineDesignerRank(project, rank, tail) {
@@ -2682,6 +2783,7 @@ function GanttChart({
   onSelectProject,
   onUpdateProject,
   onRegisterNav,
+  onFocusMetaChange,
   previewMode,
   focusProjectId,
   onFocusProjectHandled,
@@ -2704,6 +2806,7 @@ function GanttChart({
         onSelectProject={previewMode ? undefined : onSelectProject}
         onUpdateProject={previewMode ? undefined : onUpdateProject}
         onRegisterNav={onRegisterNav}
+        onFocusMetaChange={onFocusMetaChange}
         focusProjectId={focusProjectId}
         onFocusProjectHandled={onFocusProjectHandled}
       />
@@ -2717,6 +2820,7 @@ function GanttChartInner({
   onSelectProject,
   onUpdateProject,
   onRegisterNav,
+  onFocusMetaChange,
   focusProjectId,
   onFocusProjectHandled,
 }) {
@@ -2725,9 +2829,19 @@ function GanttChartInner({
   const todayDay = daysFromEpoch(today());
   const [expandedProjectId, setExpandedProjectId] = useState(null);
   const [showOverview, setShowOverview] = useState(false);
+  const [timelineEditMode, setTimelineEditMode] = useState(false);
+  const timelineEditSnapshotRef = useRef(null);
+  const focusBackRef = useRef(null);
+  const focusChromeRef = useRef(null);
+  const [focusControlsAlignPx, setFocusControlsAlignPx] = useState(0);
 
   useEffect(() => {
-    if (!expandedProjectId) setShowOverview(false);
+    if (!expandedProjectId) {
+      setShowOverview(false);
+      setTimelineEditMode(false);
+      timelineEditSnapshotRef.current = null;
+      setFocusControlsAlignPx(0);
+    }
   }, [expandedProjectId]);
 
   const [mobileExpandedPhases, setMobileExpandedPhases] = useState(() => new Set());
@@ -2736,9 +2850,6 @@ function GanttChartInner({
   ));
   const centerOnTodayPendingRef = useRef(true);
   const [focusZoomStep, setFocusZoomStep] = useState(0);
-  const focusCopyMarginLockedForRef = useRef(null);
-  const focusBackRef = useRef(null);
-  const [focusCopyMarginPx, setFocusCopyMarginPx] = useState(undefined);
   const [resizePreviewProject, setResizePreviewProject] = useState(null);
   const resizePreviewRef = useRef(null);
   const phaseResizeActiveRef = useRef(false);
@@ -2856,8 +2967,56 @@ function GanttChartInner({
     [focusMode, timelineFocusProject, timelineSections],
   );
 
-  const canResizePhases = Boolean(focusMode && !mobileLayout && onUpdateProject);
-  const canMovePhases = Boolean(focusMode && onUpdateProject);
+  const canResizePhases = Boolean(
+    focusMode && timelineEditMode && !mobileLayout && onUpdateProject,
+  );
+  const canMovePhases = Boolean(focusMode && timelineEditMode && onUpdateProject);
+
+  const beginTimelineEdit = useCallback(() => {
+    if (!focusedProject || !onUpdateProject) return;
+    timelineEditSnapshotRef.current = {
+      id: focusedProject.id,
+      startDate: focusedProject.startDate,
+      endDate: focusedProject.endDate,
+      milestones: JSON.parse(JSON.stringify(focusedProject.milestones || [])),
+    };
+    setTimelineEditMode(true);
+  }, [focusedProject, onUpdateProject]);
+
+  const finishTimelineEdit = useCallback(() => {
+    resizePreviewRef.current = null;
+    setResizePreviewProject(null);
+    setPhaseMovePhaseId(null);
+    setPhaseMovePendingId(null);
+    timelineEditSnapshotRef.current = null;
+    setTimelineEditMode(false);
+  }, []);
+
+  const cancelTimelineEdit = useCallback(() => {
+    const snap = timelineEditSnapshotRef.current;
+    resizePreviewRef.current = null;
+    setResizePreviewProject(null);
+    setPhaseMovePhaseId(null);
+    setPhaseMovePendingId(null);
+    if (snap && onUpdateProject) {
+      const current = validProjects.find((p) => p.id === snap.id);
+      if (current) {
+        onUpdateProject({
+          ...current,
+          startDate: snap.startDate,
+          endDate: snap.endDate,
+          milestones: snap.milestones,
+        });
+      }
+    }
+    timelineEditSnapshotRef.current = null;
+    setTimelineEditMode(false);
+  }, [onUpdateProject, validProjects]);
+
+  const exitFocusView = useCallback(() => {
+    if (timelineEditMode) finishTimelineEdit();
+    setExpandedProjectId(null);
+  }, [timelineEditMode, finishTimelineEdit]);
 
   const pct = (day) => ((day - minDay) / totalDays) * 100;
 
@@ -2884,34 +3043,63 @@ function GanttChartInner({
   const weekendBands = timelineSchedule.weekendBands;
 
   useEffect(() => {
-    if (!focusMode || !expandedProjectId || !focusRange) {
-      if (!focusMode) {
-        focusCopyMarginLockedForRef.current = null;
-        setFocusCopyMarginPx(undefined);
-      }
-      return;
+    if (!onFocusMetaChange) return undefined;
+    if (!focusMode || !timelineFocusProject) {
+      onFocusMetaChange(null);
+      return undefined;
     }
-    const anchor = gridLines[0];
-    if (!anchor) return;
-    if (focusCopyMarginLockedForRef.current === expandedProjectId) return;
+    onFocusMetaChange({
+      id: timelineFocusProject.id,
+      name: timelineFocusProject.name,
+      startDate: timelineFocusProject.startDate,
+      endDate: timelineFocusProject.endDate,
+    });
+    return () => onFocusMetaChange(null);
+  }, [
+    focusMode,
+    onFocusMetaChange,
+    timelineFocusProject?.id,
+    timelineFocusProject?.name,
+    timelineFocusProject?.startDate,
+    timelineFocusProject?.endDate,
+  ]);
 
-    const initialPxPerDay = FOCUS_ZOOM_STEPS[defaultFocusZoomStep(focusRange.totalDays)]
-      ?? FOCUS_ZOOM_STEPS[0];
-    const initialChartWidthPx = Math.ceil(focusRange.totalDays * initialPxPerDay);
-    const linePct = anchor.left;
-    const leadW = mobileLayout
-      ? (focusMode ? 0 : GANTT_LEAD_W_MOBILE)
-      : GANTT_LEAD_W_DESKTOP;
-    const trackWidthPx = Math.max(0, initialChartWidthPx - leadW);
-    const trackInsetPx = (linePct / 100) * trackWidthPx;
-    /** Actual rendered back-pill width + flex gap before the title copy. */
-    const backW = focusBackRef.current?.offsetWidth
-      ?? (mobileLayout ? GANTT_FOCUS_BACK_W : GANTT_FOCUS_BACK_DESKTOP_W);
-    focusCopyMarginLockedForRef.current = expandedProjectId;
-    setFocusCopyMarginPx(
-      Math.round(leadW + trackInsetPx - GANTT_FOCUS_BANNER_PAD - backW - GANTT_FOCUS_BANNER_GAP),
-    );
-  }, [focusMode, expandedProjectId, focusRange, gridLines, mobileLayout]);
+  useLayoutEffect(() => {
+    if (!focusMode || !timelineFocusProject) {
+      setFocusControlsAlignPx(0);
+      return undefined;
+    }
+
+    const alignFocusControls = () => {
+      const nameEl = document.querySelector('.page-title-focus-meta');
+      const backEl = focusBackRef.current;
+      const chromeEl = focusChromeRef.current;
+      if (!nameEl || !backEl || !chromeEl) return;
+
+      const gap = parseFloat(getComputedStyle(chromeEl).columnGap || getComputedStyle(chromeEl).gap) || 20;
+      const next = Math.round(
+        nameEl.getBoundingClientRect().left - backEl.getBoundingClientRect().right - gap,
+      );
+      setFocusControlsAlignPx((prev) => {
+        const clamped = Math.max(0, next);
+        return prev === clamped ? prev : clamped;
+      });
+    };
+
+    alignFocusControls();
+    const raf = window.requestAnimationFrame(alignFocusControls);
+    window.addEventListener('resize', alignFocusControls);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener('resize', alignFocusControls);
+    };
+  }, [
+    focusMode,
+    timelineFocusProject?.id,
+    timelineFocusProject?.name,
+    timelineEditMode,
+    mobileLayout,
+  ]);
 
   const todayPct = pct(todayDay);
 
@@ -2928,13 +3116,20 @@ function GanttChartInner({
   const scrollToToday = useCallback((behavior = 'smooth') => {
     const el = scrollRef.current;
     if (!el) return;
+    const scrollBehavior = behavior === 'auto' ? 'auto' : 'smooth';
     if (todayPct < 0 || todayPct > 100) {
-      el.scrollTo({ left: 0, behavior });
+      // In focused project view, today may sit outside the visible range —
+      // pin to the nearest end instead of a no-op feel.
+      const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+      el.scrollTo({
+        left: todayPct < 0 ? 0 : maxScroll,
+        behavior: scrollBehavior,
+      });
       return;
     }
     const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
     const x = (todayPct / 100) * el.scrollWidth - el.clientWidth / 2;
-    el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior });
+    el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior: scrollBehavior });
   }, [todayPct]);
 
   const updateJobLabelPins = useCallback(() => {
@@ -3238,6 +3433,7 @@ function GanttChartInner({
     const widthPct = endPct - startPct;
     const hasLabels = showLabels && (labelPrimary || labelSecondary);
     const isBandBar = /\bgantt-bar--(?:job|phase|task|overview)\b/.test(barClass);
+    const isTaskBand = barClass.includes('gantt-bar--task');
     const bandColor = isComplete ? '#C7C7CC' : colors.bar;
     return (
       <div
@@ -3252,7 +3448,9 @@ function GanttChartInner({
           width: `${Math.max(widthPct, 0.35)}%`,
           background: isBandBar ? bandColor : (isComplete ? '#F2F2F7' : colors.bg),
           opacity: isBandBar
-            ? (isAwaitingStart ? 0.5 : barClass.includes('gantt-bar--overview') ? 0.45 : 1)
+            ? (isTaskBand
+              ? (isAwaitingStart ? 0.22 : isComplete ? 0.28 : 0.34)
+              : (isAwaitingStart ? 0.5 : barClass.includes('gantt-bar--overview') ? 0.45 : 1))
             : (isWaiting ? 0.55 : isAwaitingStart ? 0.62 : 1),
           backgroundImage: isBandBar
             ? 'none'
@@ -3348,46 +3546,85 @@ function GanttChartInner({
     );
   };
 
-  const renderMobilePhaseTasks = (project, phase) => {
-    if (!mobileLayout || phase.tasks.length === 0) return null;
-    if (!isMobilePhaseTasksOpen(project.id, phase.id)) return null;
+  const renderPhaseTaskRow = (project, phase, task, {
+    allowEdit = true,
+    colors,
+    isComplete = false,
+    isAwaitingStart = false,
+    readonly = false,
+  } = {}) => {
+    const taskTitle = task.title.trim() || 'Task';
+    const dated = taskHasSchedule(task);
+    const labelStart = dated ? task.startDate : phase.startDate;
     return (
-      <div className="gantt-task-stack gantt-task-stack--mobile">
-        {phase.tasks.map((task) => {
-          const taskTitle = task.title.trim() || 'Task';
-          return (
-            <div
-              key={task.id}
-              className="gantt-row gantt-row--task gantt-row--task-checklist gantt-row--track-only gantt-row--readonly"
-            >
-              <div className="gantt-track gantt-track--lane gantt-track--task-checklist">
-                {renderLaneLabel(phase.startDate, taskTitle, 'task')}
-              </div>
-            </div>
-          );
-        })}
+      <div
+        key={task.id}
+        className={[
+          'gantt-row',
+          'gantt-row--task',
+          dated ? 'gantt-row--task-scheduled' : 'gantt-row--task-checklist',
+          'gantt-row--track-only',
+          readonly ? 'gantt-row--readonly' : '',
+        ].filter(Boolean).join(' ')}
+        {...(allowEdit && !readonly
+          ? editableRowProps(project, `Edit ${project.name} — ${taskTitle}`)
+          : {})}
+      >
+        <div
+          className={[
+            'gantt-track',
+            'gantt-track--lane',
+            dated ? 'gantt-track--task-lane' : 'gantt-track--task-checklist',
+          ].filter(Boolean).join(' ')}
+        >
+          {renderLaneLabel(labelStart, taskTitle, 'task')}
+          {dated
+            ? renderGanttBar({
+              startDate: task.startDate,
+              endDate: task.endDate,
+              colors,
+              barClass: 'gantt-bar--task',
+              showLabels: false,
+              isComplete,
+              isAwaitingStart,
+            })
+            : null}
+        </div>
       </div>
     );
   };
 
-  const renderDesktopPhaseTasks = (project, phase, { allowEdit = true } = {}) => {
+  const renderMobilePhaseTasks = (project, phase, colors, { isComplete = false, isAwaitingStart = false } = {}) => {
+    if (!mobileLayout || phase.tasks.length === 0) return null;
+    if (!isMobilePhaseTasksOpen(project.id, phase.id)) return null;
+    return (
+      <div className="gantt-task-stack gantt-task-stack--mobile">
+        {phase.tasks.map((task) => renderPhaseTaskRow(project, phase, task, {
+          allowEdit: false,
+          colors,
+          isComplete,
+          isAwaitingStart,
+          readonly: true,
+        }))}
+      </div>
+    );
+  };
+
+  const renderDesktopPhaseTasks = (project, phase, {
+    allowEdit = true,
+    colors,
+    isComplete = false,
+    isAwaitingStart = false,
+  } = {}) => {
     if (phase.tasks.length === 0) return null;
     return (
       <div className="gantt-task-stack">
-        {phase.tasks.map((task) => {
-          const taskTitle = task.title.trim() || 'Task';
-          return (
-            <div
-              key={task.id}
-              className="gantt-row gantt-row--task gantt-row--task-checklist gantt-row--track-only"
-              {...(allowEdit ? editableRowProps(project, `Edit ${project.name} — ${taskTitle}`) : {})}
-            >
-              <div className="gantt-track gantt-track--lane gantt-track--task-checklist">
-                {renderLaneLabel(phase.startDate, taskTitle, 'task')}
-              </div>
-            </div>
-          );
-        })}
+        {phase.tasks.map((task) => renderPhaseTaskRow(project, phase, task, {
+          allowEdit,
+          colors,
+          isComplete,
+          isAwaitingStart,
+        }))}
       </div>
     );
   };
@@ -3489,26 +3726,95 @@ function GanttChartInner({
     setZoomStep((s) => Math.max(0, Math.min(FOCUS_ZOOM_STEPS.length - 1, s + delta)));
   }, [setZoomStep]);
 
-  const timelineZoomControls = (
-    <div className="gantt-focus-zoom" role="group" aria-label="Timeline zoom">
-      <button
-        type="button"
-        className="gantt-focus-zoom-btn"
-        onClick={() => changeZoomStep(-1)}
-        disabled={zoomStep <= 0}
-        aria-label="Zoom out"
-      >
-        −
-      </button>
-      <button
-        type="button"
-        className="gantt-focus-zoom-btn"
-        onClick={() => changeZoomStep(1)}
-        disabled={zoomStep >= FOCUS_ZOOM_STEPS.length - 1}
-        aria-label="Zoom in"
-      >
-        +
-      </button>
+  // Trackpad pinch (ctrl/meta + wheel) and ⌘/Ctrl + − to zoom the timeline.
+  useEffect(() => {
+    const wrapper = scrollRef.current;
+    if (!wrapper) return undefined;
+
+    let wheelAcc = 0;
+    const onWheel = (event) => {
+      // Pinch-zoom on trackpads reports as wheel with ctrlKey (Chrome/Safari/Firefox).
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      wheelAcc += event.deltaY;
+      if (Math.abs(wheelAcc) < 28) return;
+      changeZoomStep(wheelAcc > 0 ? -1 : 1);
+      wheelAcc = 0;
+    };
+
+    const isEditableTarget = (target) => {
+      if (!(target instanceof Element)) return false;
+      return Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+    };
+
+    const onKeyDown = (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      if (isEditableTarget(event.target)) return;
+
+      const zoomIn = event.key === '=' || event.key === '+'
+        || event.code === 'Equal' || event.code === 'NumpadAdd';
+      const zoomOut = event.key === '-' || event.key === '_'
+        || event.code === 'Minus' || event.code === 'NumpadSubtract';
+      if (!zoomIn && !zoomOut) return;
+
+      event.preventDefault();
+      changeZoomStep(zoomIn ? 1 : -1);
+    };
+
+    wrapper.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      wrapper.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [changeZoomStep, focusMode, chartMinWidthPx]);
+
+  const timelineToolCluster = (
+    <div className="gantt-toolbar gantt-toolbar--tools" role="toolbar" aria-label="Timeline tools">
+      <div className="gantt-toolbar-inner gantt-toolbar-inner--bubble">
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--icon"
+          onClick={() => changeZoomStep(-1)}
+          disabled={zoomStep <= 0}
+          aria-label="Zoom out"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--icon"
+          onClick={() => changeZoomStep(1)}
+          disabled={zoomStep >= FOCUS_ZOOM_STEPS.length - 1}
+          aria-label="Zoom in"
+        >
+          +
+        </button>
+        <span className="gantt-toolbar-divider" aria-hidden />
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--arrow"
+          onClick={() => scrollTimelineBy(-1)}
+          aria-label="Pan timeline left"
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--today"
+          onClick={() => scrollToToday()}
+        >
+          Today
+        </button>
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--arrow"
+          onClick={() => scrollTimelineBy(1)}
+          aria-label="Pan timeline right"
+        >
+          ›
+        </button>
+      </div>
     </div>
   );
 
@@ -3526,76 +3832,103 @@ function GanttChartInner({
 
   return (
     <>
-    <div className={`gantt-frame${focusMode ? ' gantt-frame--focused' : ''}`}>
+    <div
+      className={[
+        'gantt-frame',
+        focusMode ? 'gantt-frame--focused' : '',
+        focusMode && timelineEditMode ? 'gantt-frame--editing' : '',
+      ].filter(Boolean).join(' ')}
+    >
       <div
+        ref={focusChromeRef}
         className={[
           'gantt-timeline-chrome',
           focusMode && timelineFocusProject ? 'gantt-timeline-chrome--focus' : '',
+          focusMode && timelineEditMode ? 'gantt-timeline-chrome--editing' : '',
         ].filter(Boolean).join(' ')}
       >
-        <div className="gantt-timeline-chrome-lead">
-          {focusMode && timelineFocusProject ? (
+        {focusMode && timelineFocusProject ? (
+          <>
             <button
               ref={focusBackRef}
               type="button"
-              className="gantt-focus-back"
-              onClick={() => setExpandedProjectId(null)}
+              className="sheet-milestone-add-task gantt-focus-back"
+              onClick={exitFocusView}
               aria-label="Back to all jobs"
             >
               <span className="gantt-focus-back-icon" aria-hidden>‹</span>
-              <span className="gantt-focus-back-label">Back</span>
             </button>
-          ) : null}
-          {timelineZoomControls}
-        </div>
-        {focusMode && timelineFocusProject ? (
-          canInteract ? (
-            <button
-              type="button"
-              className="gantt-focus-copy"
-              style={focusCopyMarginPx != null && !mobileLayout ? { marginLeft: focusCopyMarginPx } : undefined}
-              onClick={() => onSelectProject(timelineFocusProject)}
-              aria-label={`Edit ${timelineFocusProject.name}`}
-            >
-              <span className="gantt-focus-name">{timelineFocusProject.name}</span>
-              <span className="gantt-focus-dates">
-                {formatMilestoneDateShort(timelineFocusProject.startDate)}
-                {' — '}
-                {formatMilestoneDateShort(timelineFocusProject.endDate)}
-              </span>
-            </button>
-          ) : (
             <div
-              className="gantt-focus-copy"
-              style={focusCopyMarginPx != null && !mobileLayout ? { marginLeft: focusCopyMarginPx } : undefined}
+              className="gantt-focus-controls"
+              style={focusControlsAlignPx > 0 ? { marginLeft: focusControlsAlignPx } : undefined}
             >
-              <span className="gantt-focus-name">{timelineFocusProject.name}</span>
-              <span className="gantt-focus-dates">
-                {formatMilestoneDateShort(timelineFocusProject.startDate)}
-                {' — '}
-                {formatMilestoneDateShort(timelineFocusProject.endDate)}
-              </span>
+              {timelineEditMode ? (
+                <>
+                  <span className="gantt-focus-edit-badge" aria-live="polite">Editing</span>
+                  <button
+                    type="button"
+                    className="gantt-export-btn gantt-focus-action-btn"
+                    onClick={cancelTimelineEdit}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="gantt-export-btn gantt-focus-action-btn gantt-focus-action-btn--primary"
+                    onClick={finishTimelineEdit}
+                  >
+                    Done
+                  </button>
+                </>
+              ) : (
+                <>
+                  {onUpdateProject ? (
+                    <button
+                      type="button"
+                      className="gantt-export-btn gantt-focus-action-btn"
+                      onClick={beginTimelineEdit}
+                      disabled={!projectHasMilestones(timelineFocusProject)}
+                      title={
+                        projectHasMilestones(timelineFocusProject)
+                          ? 'Edit phase dates on the timeline'
+                          : 'Add milestones to edit schedule'
+                      }
+                    >
+                      Edit
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="gantt-export-btn gantt-focus-action-btn"
+                    onClick={() => setShowOverview(true)}
+                    disabled={!projectHasMilestones(timelineFocusProject)}
+                    title={!projectHasMilestones(timelineFocusProject) ? 'Add milestones to export' : 'Export timeline overview'}
+                  >
+                    Export
+                  </button>
+                </>
+              )}
             </div>
-          )
-        ) : null}
-        {focusMode && timelineFocusProject ? (
-          <button
-            type="button"
-            className="gantt-export-btn"
-            onClick={() => setShowOverview(true)}
-            disabled={!projectHasMilestones(timelineFocusProject)}
-            title={!projectHasMilestones(timelineFocusProject) ? 'Add milestones to export' : 'Export timeline overview'}
-          >
-            Export
-          </button>
-        ) : null}
+            {timelineToolCluster}
+          </>
+        ) : (
+          <div className="gantt-timeline-chrome-main">
+            {timelineToolCluster}
+          </div>
+        )}
       </div>
+      {focusMode && timelineEditMode ? (
+        <p className="gantt-focus-edit-hint" role="status">
+          Cancel restores the previous dates
+        </p>
+      ) : null}
       <div className="gantt-wrapper" ref={scrollRef}>
         <div
           className={[
             'gantt-chart',
             mobileLayout ? 'gantt-chart--mobile' : '',
             focusMode ? 'gantt-chart--focused' : '',
+            focusMode && timelineEditMode ? 'gantt-chart--editing' : '',
           ].filter(Boolean).join(' ')}
           style={{ minWidth: chartMinWidthPx }}
         >
@@ -3736,6 +4069,7 @@ function GanttChartInner({
                                 key={phase.id}
                                 className={[
                                   'gantt-phase-group',
+                                  timelineEditMode ? 'gantt-phase-group--editable' : '',
                                   canMovePhases ? 'gantt-phase-group--movable' : '',
                                   phaseMovePhaseId === phase.id ? 'gantt-phase-group--moving' : '',
                                   phaseMovePendingId === phase.id ? 'gantt-phase-group--pending' : '',
@@ -3771,8 +4105,13 @@ function GanttChartInner({
                                   </div>
                                 </div>
                                 {mobileLayout
-                                  ? renderMobilePhaseTasks(project, phase)
-                                  : renderDesktopPhaseTasks(project, phase, { allowEdit: false })}
+                                  ? renderMobilePhaseTasks(project, phase, colors, { isComplete, isAwaitingStart })
+                                  : renderDesktopPhaseTasks(project, phase, {
+                                    allowEdit: false,
+                                    colors,
+                                    isComplete,
+                                    isAwaitingStart,
+                                  })}
                               </div>
                             );
                           })}
@@ -3857,8 +4196,12 @@ function GanttChartInner({
                             </div>
                           </div>
                           {mobileLayout
-                            ? renderMobilePhaseTasks(project, phase)
-                            : renderDesktopPhaseTasks(project, phase)}
+                            ? renderMobilePhaseTasks(project, phase, colors, { isComplete, isAwaitingStart })
+                            : renderDesktopPhaseTasks(project, phase, {
+                              colors,
+                              isComplete,
+                              isAwaitingStart,
+                            })}
                         </div>
                         );
                       })}
@@ -4016,6 +4359,7 @@ export default function App() {
   const [teamOpen, setTeamOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ganttFocusProjectId, setGanttFocusProjectId] = useState(null);
+  const [ganttFocusMeta, setGanttFocusMeta] = useState(null);
   const [overviewPreviewProject, setOverviewPreviewProject] = useState(() => (
     shouldShowDevOverviewPreview() ? getDevOverviewPreviewProject() : null
   ));
@@ -4220,6 +4564,14 @@ export default function App() {
   const clearGanttFocusProject = useCallback(() => {
     setGanttFocusProjectId(null);
   }, []);
+
+  const handleGanttFocusMetaChange = useCallback((meta) => {
+    setGanttFocusMeta(meta);
+  }, []);
+
+  useEffect(() => {
+    if (view !== 'gantt') setGanttFocusMeta(null);
+  }, [view]);
 
   const saveProject = (p) => {
     const withDesigners = normalizeProjectDesignersOnProject(p);
@@ -4502,38 +4854,27 @@ export default function App() {
                       ? 'Archive'
                       : 'Timeline'}
               </h1>
+              {view === 'gantt' && ganttFocusMeta ? (
+                <button
+                  type="button"
+                  className="page-title-focus-meta"
+                  onClick={() => {
+                    const project = projects.find((p) => p.id === ganttFocusMeta.id);
+                    if (project) openProjectEdit(project, 'milestones');
+                  }}
+                  aria-label={`Open project details for ${ganttFocusMeta.name}`}
+                >
+                  <span className="page-title-focus-name">{ganttFocusMeta.name}</span>
+                  <span className="page-title-focus-dates">
+                    {formatMilestoneDateShort(ganttFocusMeta.startDate)}
+                    {' — '}
+                    {formatMilestoneDateShort(ganttFocusMeta.endDate)}
+                  </span>
+                </button>
+              ) : null}
             </div>
           </div>
           <div className="main-header-actions">
-            {view === 'gantt' && (
-              <div className="gantt-toolbar gantt-toolbar--header">
-                <div className="gantt-toolbar-inner" role="toolbar" aria-label="Timeline navigation">
-                  <button
-                    type="button"
-                    className="gantt-nav-btn gantt-nav-btn--arrow"
-                    onClick={() => ganttNavRef.current.scrollBy(-1)}
-                    aria-label="Pan timeline left"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    type="button"
-                    className="gantt-nav-btn gantt-nav-btn--today"
-                    onClick={() => ganttNavRef.current.scrollToToday()}
-                  >
-                    Today
-                  </button>
-                  <button
-                    type="button"
-                    className="gantt-nav-btn gantt-nav-btn--arrow"
-                    onClick={() => ganttNavRef.current.scrollBy(1)}
-                    aria-label="Pan timeline right"
-                  >
-                    ›
-                  </button>
-                </div>
-              </div>
-            )}
             {((view === 'projects' && mainProjectCount > 0)
               || (view === 'scheduled' && scheduledCount > 0)
               || (view === 'archive' && archivedCount > 0)
@@ -4693,6 +5034,7 @@ export default function App() {
               onSelectProject={(p) => openProjectEdit(p, 'milestones')}
               onUpdateProject={saveProject}
               onRegisterNav={registerGanttNav}
+              onFocusMetaChange={handleGanttFocusMetaChange}
               previewMode={devTimelinePreview}
               focusProjectId={ganttFocusProjectId}
               onFocusProjectHandled={clearGanttFocusProject}
