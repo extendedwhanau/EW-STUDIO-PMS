@@ -2711,7 +2711,6 @@ const GANTT_FOCUS_TAIL_DAYS = 62;
 const PHASE_TIMELINE_HOLD_MS = 400;
 /** Match --gantt-lead-w in gantt-timeline.css (10px pad + label + 4px gap). */
 const GANTT_LEAD_W_DESKTOP = 124;
-const GANTT_LEAD_W_MOBILE = 86;
 const GANTT_WEEKEND_BAND_MAX_PX = 10;
 const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
 
@@ -3055,14 +3054,7 @@ function GanttChartInner({
       endDate: timelineFocusProject.endDate,
     });
     return () => onFocusMetaChange(null);
-  }, [
-    focusMode,
-    onFocusMetaChange,
-    timelineFocusProject?.id,
-    timelineFocusProject?.name,
-    timelineFocusProject?.startDate,
-    timelineFocusProject?.endDate,
-  ]);
+  }, [focusMode, onFocusMetaChange, timelineFocusProject]);
 
   useLayoutEffect(() => {
     if (!focusMode || !timelineFocusProject) {
@@ -3093,13 +3085,7 @@ function GanttChartInner({
       window.cancelAnimationFrame(raf);
       window.removeEventListener('resize', alignFocusControls);
     };
-  }, [
-    focusMode,
-    timelineFocusProject?.id,
-    timelineFocusProject?.name,
-    timelineEditMode,
-    mobileLayout,
-  ]);
+  }, [focusMode, timelineFocusProject, timelineEditMode, mobileLayout]);
 
   const todayPct = pct(todayDay);
 
@@ -3628,8 +3614,6 @@ function GanttChartInner({
       </div>
     );
   };
-
-  const canInteract = Boolean(onSelectProject);
 
   const openProjectEdit = (project) => {
     if (!onSelectProject || phaseResizeActiveRef.current || phaseMoveActiveRef.current) return;

@@ -2,6 +2,10 @@
   command = "npm run build"
   publish = "build"
 
+# CRA treats ESLint warnings as errors when CI=true (Netlify’s default).
+[build.environment]
+  CI = "false"
+
 # Always fetch fresh index.html so deploys show up without a hard refresh
 [[headers]]
   for = "/index.html"
