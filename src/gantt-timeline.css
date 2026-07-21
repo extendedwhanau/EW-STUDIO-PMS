@@ -463,7 +463,7 @@ button.gantt-focus-copy:focus-visible {
 }
 
 .gantt-chart--focused .gantt-track--phase-lane {
-  min-height: 26px;
+  min-height: 46px;
 }
 
 .gantt-chart--focused .gantt-track--task-lane {
@@ -471,15 +471,16 @@ button.gantt-focus-copy:focus-visible {
 }
 
 .gantt-chart--focused .gantt-track--phase-lane .gantt-bar--phase {
-  top: 17px;
+  top: 14px;
+}
+
+.gantt-chart--focused .gantt-track--phase-lane .gantt-lane-label--phase {
+  top: 24px;
+  font-size: 11px;
 }
 
 .gantt-chart--focused .gantt-track--task-lane .gantt-bar--task {
   top: 16px;
-}
-
-.gantt-chart--focused .gantt-lane-label--phase {
-  font-size: 11px;
 }
 
 .gantt-chart--focused .gantt-lane-label--task {
@@ -812,6 +813,85 @@ button.gantt-focus-copy:focus-visible {
   min-width: 80px;
   min-height: 32px;
   align-self: stretch;
+}
+
+.gantt-marker {
+  position: absolute;
+  top: 10.5px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 72px;
+  pointer-events: auto;
+}
+
+.gantt-marker-dot {
+  display: block;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid currentColor;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+  flex-shrink: 0;
+}
+
+.gantt-marker-hover {
+  position: absolute;
+  left: -4px;
+  bottom: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.gantt-marker:hover .gantt-marker-hover,
+.gantt-marker:focus-visible .gantt-marker-hover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.gantt-marker-date {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(60, 60, 67, 0.72);
+  white-space: nowrap;
+}
+
+.gantt-marker-title {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: rgba(60, 60, 67, 0.78);
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gantt-chart--focused .gantt-marker {
+  top: 12.5px;
+}
+
+.gantt-chart--focused .gantt-marker-date {
+  font-size: 9px;
+}
+
+.gantt-chart--focused .gantt-marker-title {
+  font-size: 10px;
 }
 
 .gantt-bar {
@@ -1155,9 +1235,14 @@ button.gantt-focus-copy:focus-visible {
 }
 
 .gantt-track--phase-lane .gantt-bar--phase {
-  top: 15px;
+  top: 12px;
   bottom: auto;
   transform: none;
+}
+
+.gantt-track--phase-lane .gantt-lane-label--phase {
+  top: 22px;
+  line-height: 1.15;
 }
 
 .gantt-chart--focused .gantt-bar--phase.gantt-bar--resizable {
@@ -1412,7 +1497,8 @@ body.gantt-phase-move-active * {
 }
 
 .gantt-track--phase-lane {
-  min-height: 24px;
+  min-height: 42px;
+  overflow: visible;
 }
 
 .gantt-track--task-lane {
@@ -1428,9 +1514,8 @@ body.gantt-phase-move-active * {
   border-bottom: none;
 }
 
-.gantt-row--phase,
-.gantt-row--task {
-  min-height: 20px;
+.gantt-row--phase {
+  min-height: 42px;
 }
 
 .gantt-row--task {
@@ -1464,7 +1549,7 @@ body.gantt-phase-move-active * {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding-top: 5px;
+  padding-top: 2px;
   padding-bottom: 2px;
 }
 
@@ -1571,8 +1656,20 @@ body.gantt-phase-move-active * {
     color: var(--text-primary);
   }
 
+  .gantt-track--phase-lane {
+    min-height: 44px;
+  }
+
   .gantt-track--phase-lane .gantt-bar--phase {
-    top: 17px;
+    top: 14px;
+  }
+
+  .gantt-track--phase-lane .gantt-lane-label--phase {
+    top: 24px;
+  }
+
+  .gantt-marker {
+    top: 12.5px;
   }
 
   /* Touch feedback for clickable job / phase / task rows (no hover on touch) */
@@ -1582,7 +1679,7 @@ body.gantt-phase-move-active * {
 
   /* Slightly taller tap areas for nested rows on touch */
   .gantt-row--phase {
-    min-height: 34px;
+    min-height: 44px;
   }
   .gantt-row--task {
     min-height: 30px;
@@ -1592,9 +1689,5 @@ body.gantt-phase-move-active * {
   }
   .gantt-track--task-checklist {
     min-height: 22px;
-  }
-
-  .gantt-track--phase-lane {
-    min-height: 28px;
   }
 }

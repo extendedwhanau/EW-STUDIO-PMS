@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import {
   MILESTONE_PHASE_CATALOG,
   createCatalogPhase,
@@ -323,6 +324,7 @@ function detectFormat(headers) {
 
 function parseStreamtimeRows(lines, headers, col) {
   const groups = new Map();
+  const rawMarkers = [];
 
   for (let i = 1; i < lines.length; i += 1) {
     const cells = splitCsvLine(lines[i]);
@@ -331,10 +333,22 @@ function parseStreamtimeRows(lines, headers, col) {
     const name = col(cells, 'name', 'title');
     const startDate = parseMilestoneCsvDate(col(cells, 'start date'));
     const endDate = parseMilestoneCsvDate(col(cells, 'end date'));
+    const linkedTo = col(cells, 'linked to');
 
     if (!type || !phaseName) continue;
-    // Streamtime review/signoff rows — skip for catalog mapping (v1)
-    if (type === 'milestone') continue;
+
+    if (type === 'milestone') {
+      if (!name) continue;
+      rawMarkers.push({
+        phaseName,
+        name,
+        startDate,
+        endDate,
+        linkedTo,
+      });
+      continue;
+    }
+
     if (type !== 'item' && type !== 'task') continue;
     if (!name) continue;
 
@@ -345,7 +359,7 @@ function parseStreamtimeRows(lines, headers, col) {
     groups.get(key).items.push({ name, startDate, endDate });
   }
 
-  return [...groups.values()];
+  return { groups: [...groups.values()], rawMarkers };
 }
 
 function parseLegacyRows(lines, headers, col) {
@@ -390,12 +404,47 @@ function parseLegacyRows(lines, headers, col) {
     throw new Error(`Row ${i + 1}: Unknown type "${type}".`);
   }
 
-  return phaseOrder.map((key) => groups.get(key)).filter(Boolean);
+  return {
+    groups: phaseOrder.map((key) => groups.get(key)).filter(Boolean),
+    rawMarkers: [],
+  };
+}
+
+function buildMarkersFromImport(rawMarkers, phaseKeyBySourceName, warnings) {
+  const markers = [];
+
+  (rawMarkers || []).forEach((row) => {
+    const title = String(row.name || '').trim();
+    const date = row.startDate || row.endDate || '';
+    if (!title || !date) {
+      if (title) warnings.push(`Skipped milestone “${title}” — missing date.`);
+      return;
+    }
+
+    const sourceKey = String(row.phaseName || '').toLowerCase();
+    let phaseKey = phaseKeyBySourceName.get(sourceKey) || '';
+    if (!phaseKey) {
+      const match = matchCatalogPhase(row.phaseName, [title, row.linkedTo].filter(Boolean));
+      phaseKey = match.phase?.key || '';
+    }
+
+    markers.push({
+      id: uuidv4(),
+      title,
+      date,
+      phaseKey,
+      linkedTo: String(row.linkedTo || '').trim(),
+    });
+  });
+
+  return markers.sort((a, b) => (
+    a.date.localeCompare(b.date) || a.title.localeCompare(b.title)
+  ));
 }
 
 /**
- * Parse a Streamtime (or legacy) timeline CSV into catalog-only milestone phases.
- * @returns {{ phases: object[], warnings: string[] }}
+ * Parse a Streamtime (or legacy) timeline CSV into catalog phases + review milestones.
+ * @returns {{ phases: object[], markers: object[], warnings: string[] }}
  */
 export function importTimelineCsv(text) {
   const normalized = String(text || '').replace(/^\uFEFF/, '').trim();
@@ -418,17 +467,19 @@ export function importTimelineCsv(text) {
     throw new Error('CSV must include Type plus Name/Phase Name (Streamtime) or Title/Phase columns.');
   }
 
-  const groups = format === 'streamtime'
+  const parsed = format === 'streamtime'
     ? parseStreamtimeRows(lines, headers, col)
     : parseLegacyRows(lines, headers, col);
+  const { groups, rawMarkers } = parsed;
 
-  if (groups.length === 0) {
+  if (groups.length === 0 && rawMarkers.length === 0) {
     throw new Error('No timeline items found in CSV.');
   }
 
   const warnings = [];
   const phases = [];
   const usedPhaseKeys = new Set();
+  const phaseKeyBySourceName = new Map();
 
   groups.forEach((group) => {
     const itemNames = group.items.map((item) => item.name);
@@ -443,6 +494,7 @@ export function importTimelineCsv(text) {
       warnings.push(
         `“${group.phaseName}” also mapped to ${match.phase.title}, which is already imported — skipped duplicate.`,
       );
+      phaseKeyBySourceName.set(group.phaseName.toLowerCase(), match.phase.key);
       return;
     }
 
@@ -469,12 +521,18 @@ export function importTimelineCsv(text) {
     }
 
     usedPhaseKeys.add(match.phase.key);
+    phaseKeyBySourceName.set(group.phaseName.toLowerCase(), match.phase.key);
     phases.push(built);
   });
 
-  if (phases.length === 0) {
+  if (phases.length === 0 && rawMarkers.length === 0) {
     throw new Error('No phases could be mapped to the studio catalog.');
   }
 
-  return { phases, warnings };
+  const markers = buildMarkersFromImport(rawMarkers, phaseKeyBySourceName, warnings);
+  if (markers.length) {
+    warnings.push(`Imported ${markers.length} milestone${markers.length === 1 ? '' : 's'} (reviews / sendovers).`);
+  }
+
+  return { phases, markers, warnings };
 }

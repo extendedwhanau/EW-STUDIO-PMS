@@ -1790,6 +1790,99 @@ html, body, #root {
   color: rgba(60, 60, 67, 0.72);
 }
 
+.sheet-phase-markers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  width: 100%;
+}
+
+.sheet-phase-marker {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.sheet-phase-marker-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1.5px solid rgba(60, 60, 67, 0.55);
+  box-shadow: none;
+}
+
+.sheet-phase-marker-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sheet-phase-marker-date {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: rgba(60, 60, 67, 0.55);
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 0;
+}
+
+.sheet-phase-marker-date:hover,
+.sheet-phase-marker-date.sheet-date-range-btn--active {
+  color: var(--text-primary);
+  background: none;
+  box-shadow: none;
+}
+
+.sheet-phase-marker-date.sheet-date-range-btn--empty {
+  color: rgba(60, 60, 67, 0.4);
+}
+
+.sheet-phase-marker-title {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: rgba(60, 60, 67, 0.78);
+}
+
+.sheet-phase-marker-remove {
+  margin-left: 2px;
+  opacity: 0.55;
+}
+
+.sheet-phase-marker-add {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: rgba(60, 60, 67, 0.55);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.sheet-phase-marker-add:hover {
+  color: var(--text-primary);
+}
+
 .sheet-task-chip {
   display: inline-flex;
   flex-direction: row;

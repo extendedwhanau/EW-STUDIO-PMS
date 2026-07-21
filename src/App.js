@@ -376,11 +376,32 @@ function formatDueDaysDisplay(endDateStr) {
   return days === 1 ? '1 Day' : `${days} Days`;
 }
 
-/** Short date for milestone ranges, e.g. "07 Jul 26". */
+/** Day + month for marker labels, e.g. "29 July". */
+function formatMarkerDateLabel(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long' });
+}
+
+/** Short date for compact UI, e.g. "7 Jul 26". */
 function formatMilestoneDateShort(str) {
   if (!str) return '';
   const d = new Date(str + 'T00:00:00');
   return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: '2-digit' });
+}
+
+/** Phase dates in the project card, e.g. "7 Jul 2026". */
+function formatPhaseDateMedium(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** Task dates in the project card, e.g. "7 Jul". */
+function formatTaskDateShort(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
 }
 
 /** Schedule list cards — e.g. "17.01.26". */
@@ -393,10 +414,25 @@ function formatScheduleStartDate(str) {
   return `${day}.${month}.${year}`;
 }
 
+/** Project-level date visuals, e.g. "7 July 2026 — 13 February 2027". */
 function formatMilestoneDateRangeDisplay(start, end) {
   if (!start && !end) return '';
-  if (start && end) return `${formatScheduleStartDate(start)} — ${formatScheduleStartDate(end)}`;
-  return formatScheduleStartDate(start || end);
+  if (start && end) return `${formatDueDateLong(start)} — ${formatDueDateLong(end)}`;
+  return formatDueDateLong(start || end);
+}
+
+/** Phase date ranges in the project card, e.g. "7 Jul 2026 – 11 Aug 2026". */
+function formatPhaseDateRangeDisplay(start, end) {
+  if (!start && !end) return '';
+  if (start && end) return `${formatPhaseDateMedium(start)} – ${formatPhaseDateMedium(end)}`;
+  return formatPhaseDateMedium(start || end);
+}
+
+/** Task date ranges in the project card, e.g. "7 Jul – 11 Aug". */
+function formatTaskDateRangeDisplay(start, end) {
+  if (!start && !end) return '';
+  if (start && end) return `${formatTaskDateShort(start)} – ${formatTaskDateShort(end)}`;
+  return formatTaskDateShort(start || end);
 }
 
 function formatMilestoneDateRange(start, end) {
@@ -571,11 +607,14 @@ function shiftTaskDates(tasks, deltaDays) {
 
 function updateProjectPhaseStartDate(project, phaseId, startDate) {
   if (!project?.milestones?.length) return project;
+  const moving = project.milestones.find((ph) => ph.id === phaseId);
+  const prevStart = moving?.startDate || project.startDate || today();
+  const nextStart = startDate || prevStart;
+  const deltaDays = daysFromEpoch(nextStart) - daysFromEpoch(prevStart);
+  const phaseKey = moving?.phaseKey || '';
+
   const milestones = project.milestones.map((ph) => {
     if (ph.id !== phaseId) return ph;
-    const prevStart = ph.startDate || project.startDate || today();
-    const nextStart = startDate || prevStart;
-    const deltaDays = daysFromEpoch(nextStart) - daysFromEpoch(prevStart);
     if (ph.scheduleMode === 'custom') {
       const prevEnd = ph.endDate && ph.endDate >= prevStart
         ? ph.endDate
@@ -593,7 +632,15 @@ function updateProjectPhaseStartDate(project, phaseId, startDate) {
       tasks: shiftTaskDates(ph.tasks, deltaDays),
     };
   });
-  return applyProjectMilestoneUpdate(project, milestones);
+  const next = applyProjectMilestoneUpdate(project, milestones);
+  if (!deltaDays || !phaseKey) return next;
+  return {
+    ...next,
+    markers: (project.markers || []).map((marker) => {
+      if (marker.phaseKey !== phaseKey || !marker.date) return marker;
+      return { ...marker, date: addDays(marker.date, deltaDays) };
+    }),
+  };
 }
 
 function applyMilestoneScheduleToForm(form, patch = {}) {
@@ -696,24 +743,66 @@ function normalizeMilestonePhase(phase) {
   };
 }
 
+function normalizeProjectMarker(marker, { requireTitle = true } = {}) {
+  if (!marker) return null;
+  const title = String(marker.title || '').trim();
+  const date = marker.date || marker.startDate || '';
+  if (!date) return null;
+  if (requireTitle && !title) return null;
+  const phase = getPhaseByKey(marker.phaseKey);
+  return {
+    id: marker.id || uuidv4(),
+    title,
+    date,
+    phaseKey: phase?.key || '',
+    linkedTo: String(marker.linkedTo || '').trim(),
+  };
+}
+
+function sortProjectMarkers(markers) {
+  return (markers || []).slice().sort((a, b) => (
+    (a.date || '').localeCompare(b.date || '')
+    || (a.title || '').localeCompare(b.title || '')
+  ));
+}
+
+function normalizeProjectMarkers(markers, options = {}) {
+  return sortProjectMarkers(
+    (Array.isArray(markers) ? markers : [])
+      .map((marker) => normalizeProjectMarker(marker, options))
+      .filter(Boolean),
+  );
+}
+
 function normalizeProjectMilestones(p) {
   const raw = Array.isArray(p.milestones) ? p.milestones : [];
   const milestones = sortPhasesByCatalog(
     raw.map((phase) => normalizeMilestonePhase(phase)).filter(Boolean),
   );
+  const markers = normalizeProjectMarkers(p.markers);
   const { milestonesEnabled, ...rest } = p;
   if (!milestones.length) {
-    return { ...rest, milestones };
+    return { ...rest, milestones, markers };
   }
   const kickoff = rest.startDate || today();
   const savedEnd = rest.endDate || '';
   const { phases, startDate, endDate: resolvedEnd } = resolveMilestoneSchedule(kickoff, milestones);
   const endDate = pickProjectEndDate('', savedEnd, resolvedEnd);
-  return { ...rest, milestones: phases, startDate, endDate };
+  return { ...rest, milestones: phases, markers, startDate, endDate };
 }
 
 function projectHasMilestones(project) {
   return Boolean(project.milestones?.length > 0);
+}
+
+function emptyProjectMarker() {
+  return {
+    id: uuidv4(),
+    title: '',
+    date: today(),
+    phaseKey: '',
+    linkedTo: '',
+  };
 }
 
 function daysFromEpoch(str) {
@@ -891,6 +980,8 @@ function DateRangeBubbleCalendar({
   onClose,
   label = 'Choose dates',
   endDateOnly = false,
+  rangeFormat = 'long',
+  singleDate = false,
 }) {
   const popoverRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
@@ -903,13 +994,23 @@ function DateRangeBubbleCalendar({
   useEffect(() => {
     if (!open) return;
     setDatesCleared(false);
+    if (singleDate) {
+      const day = startDate || endDate || '';
+      setDraftStart(day);
+      setDraftEnd(day);
+      const base = day || today();
+      const d = parseISODateLocal(base);
+      setViewYear(d.getFullYear());
+      setViewMonth(d.getMonth());
+      return;
+    }
     setDraftStart(startDate || '');
     setDraftEnd(endDateOnly ? (endDate || startDate || '') : (endDate || ''));
     const base = startDate || endDate || today();
     const d = parseISODateLocal(base);
     setViewYear(d.getFullYear());
     setViewMonth(d.getMonth());
-  }, [open, startDate, endDate, endDateOnly]);
+  }, [open, startDate, endDate, endDateOnly, singleDate]);
 
   useLayoutEffect(() => {
     if (!open || !anchorRef?.current || !popoverRef.current) return;
@@ -965,9 +1066,14 @@ function DateRangeBubbleCalendar({
   };
 
   const pickingStartAfterClear = endDateOnly && datesCleared && !draftStart;
-  const lockedStartMode = endDateOnly && Boolean(draftStart) && !pickingStartAfterClear;
+  const lockedStartMode = !singleDate && endDateOnly && Boolean(draftStart) && !pickingStartAfterClear;
 
   const handleDayClick = (iso) => {
+    if (singleDate) {
+      setDraftStart(iso);
+      setDraftEnd(iso);
+      return;
+    }
     if (pickingStartAfterClear) {
       setDraftStart(iso);
       setDraftEnd('');
@@ -997,6 +1103,11 @@ function DateRangeBubbleCalendar({
   };
 
   const handleSave = () => {
+    if (singleDate) {
+      if (!draftStart) return;
+      onSave({ date: draftStart, startDate: draftStart, endDate: draftStart });
+      return;
+    }
     if (!draftStart || !draftEnd) return;
     if (endDateOnly && !datesCleared) {
       onSave({ endDate: draftEnd });
@@ -1007,19 +1118,32 @@ function DateRangeBubbleCalendar({
 
   if (!open) return null;
 
+  const formatRangeLabel = rangeFormat === 'task'
+    ? formatTaskDateRangeDisplay
+    : rangeFormat === 'phase'
+      ? formatPhaseDateRangeDisplay
+      : formatMilestoneDateRangeDisplay;
+  const formatSingleLabel = rangeFormat === 'task'
+    ? formatTaskDateShort
+    : rangeFormat === 'phase'
+      ? formatPhaseDateMedium
+      : formatDueDateLong;
+
   const todayIso = today();
-  const canSave = Boolean(draftStart && draftEnd);
-  const hintText = pickingStartAfterClear
-    ? 'Choose a start date'
-    : lockedStartMode
-      ? (draftEnd
-        ? `Start ${formatScheduleStartDate(draftStart)} — end ${formatScheduleStartDate(draftEnd)}`
-        : `Start locked at ${formatScheduleStartDate(draftStart)} — choose an end date`)
-      : !draftStart
-        ? 'Choose a start date'
-        : !draftEnd
-          ? 'Choose an end date'
-          : formatMilestoneDateRangeDisplay(draftStart, draftEnd);
+  const canSave = singleDate ? Boolean(draftStart) : Boolean(draftStart && draftEnd);
+  const hintText = singleDate
+    ? (draftStart ? formatSingleLabel(draftStart) : 'Choose a date')
+    : pickingStartAfterClear
+      ? 'Choose a start date'
+      : lockedStartMode
+        ? (draftEnd
+          ? `Start ${formatSingleLabel(draftStart)} — end ${formatSingleLabel(draftEnd)}`
+          : `Start locked at ${formatSingleLabel(draftStart)} — choose an end date`)
+        : !draftStart
+          ? 'Choose a start date'
+          : !draftEnd
+            ? 'Choose an end date'
+            : formatRangeLabel(draftStart, draftEnd);
 
   return createPortal(
     <div
@@ -1086,8 +1210,8 @@ function DateRangeBubbleCalendar({
       </div>
       <div className="sheet-date-calendar__footer">
         <p className="sheet-date-calendar__hint">{hintText}</p>
-        <div className={`sheet-date-calendar__actions${endDateOnly ? ' sheet-date-calendar__actions--split' : ''}`}>
-          {endDateOnly ? (
+        <div className={`sheet-date-calendar__actions${endDateOnly || singleDate ? ' sheet-date-calendar__actions--split' : ''}`}>
+          {endDateOnly || singleDate ? (
             <button
               type="button"
               className="sheet-date-calendar__clear"
@@ -1099,8 +1223,14 @@ function DateRangeBubbleCalendar({
           <button
             type="button"
             className="sheet-date-calendar__save"
-            disabled={!canSave}
-            onClick={handleSave}
+            disabled={singleDate ? false : !canSave}
+            onClick={() => {
+              if (singleDate && !draftStart) {
+                onSave({ date: '', startDate: '', endDate: '' });
+                return;
+              }
+              handleSave();
+            }}
           >
             Save
           </button>
@@ -1119,6 +1249,7 @@ function MilestoneDateRangePicker({
   emptyLabel = 'Add dates',
   ariaLabel = 'Set dates',
   endDateOnly = false,
+  rangeFormat = 'long',
 }, ref) {
   const rangeBtnRef = useRef(null);
   const sessionSnapshotRef = useRef(null);
@@ -1159,11 +1290,22 @@ function MilestoneDateRangePicker({
     setCalendarOpen(false);
   };
 
+  const formatRangeLabel = rangeFormat === 'task'
+    ? formatTaskDateRangeDisplay
+    : rangeFormat === 'phase'
+      ? formatPhaseDateRangeDisplay
+      : formatMilestoneDateRangeDisplay;
+  const formatSingleLabel = rangeFormat === 'task'
+    ? formatTaskDateShort
+    : rangeFormat === 'phase'
+      ? formatPhaseDateMedium
+      : formatDueDateLong;
+
   const rangeLabel = endDateOnly
     ? (startDate
-      ? `${formatScheduleStartDate(startDate)} — ${formatScheduleStartDate(endDate || startDate)}`
+      ? `${formatSingleLabel(startDate)} — ${formatSingleLabel(endDate || startDate)}`
       : emptyLabel)
-    : (formatMilestoneDateRangeDisplay(startDate, endDate) || emptyLabel);
+    : (formatRangeLabel(startDate, endDate) || emptyLabel);
   const hasDates = endDateOnly ? Boolean(startDate) : Boolean(startDate && endDate);
 
   return (
@@ -1193,12 +1335,63 @@ function MilestoneDateRangePicker({
         onClose={endPickSession}
         label={ariaLabel}
         endDateOnly={endDateOnly}
+        rangeFormat={rangeFormat}
       />
     </>
   );
 }
 
 const MilestoneDateRangePickerWithRef = forwardRef(MilestoneDateRangePicker);
+
+function MilestoneSingleDatePicker({
+  date,
+  onChange,
+  className = '',
+  emptyLabel = 'Add date',
+  ariaLabel = 'Set date',
+}) {
+  const btnRef = useRef(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
+  const handleSave = (patch) => {
+    onChange(patch.date || '');
+    setCalendarOpen(false);
+  };
+
+  const label = date ? formatPhaseDateMedium(date) : emptyLabel;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className={[
+          'sheet-date-range-btn',
+          className,
+          calendarOpen ? 'sheet-date-range-btn--active' : '',
+          date ? '' : 'sheet-date-range-btn--empty',
+        ].filter(Boolean).join(' ')}
+        onClick={() => setCalendarOpen((open) => !open)}
+        aria-label={ariaLabel}
+        aria-expanded={calendarOpen}
+        aria-live="polite"
+      >
+        {label}
+      </button>
+      <DateRangeBubbleCalendar
+        anchorRef={btnRef}
+        open={calendarOpen}
+        startDate={date}
+        endDate={date}
+        onSave={handleSave}
+        onClose={() => setCalendarOpen(false)}
+        label={ariaLabel}
+        singleDate
+        rangeFormat="phase"
+      />
+    </>
+  );
+}
 
 function MilestoneCatalogAddButton({
   options,
@@ -1271,11 +1464,12 @@ function MilestonePhaseDurationPicker({
           className="sheet-name-dates-range sheet-phase-duration-dates sheet-phase-duration-dates--picker"
           emptyLabel="Pick dates"
           ariaLabel={ariaLabelDates}
+          rangeFormat="phase"
         />
       ) : (
         phase.startDate && phase.endDate ? (
           <span className="sheet-phase-duration-dates">
-            {formatMilestoneDateRangeDisplay(phase.startDate, phase.endDate)}
+            {formatPhaseDateRangeDisplay(phase.startDate, phase.endDate)}
           </span>
         ) : null
       )}
@@ -1346,6 +1540,7 @@ function MilestonePhaseTitle({
 
 function MilestoneTaskChip({
   task,
+  onUpdate,
   onRemove,
 }) {
   const label = task.title.trim() || 'Task';
@@ -1354,6 +1549,17 @@ function MilestoneTaskChip({
     <div className="sheet-task-chip">
       <div className="sheet-bubble sheet-task-chip-bubble">
         <span className="sheet-task-chip-label">{label}</span>
+        <MilestoneDateRangePickerWithRef
+          startDate={task.startDate}
+          endDate={task.endDate}
+          onChange={(patch) => onUpdate({
+            ...normalizeTaskDates({ ...task, ...patch }),
+          })}
+          className="sheet-task-chip-range"
+          emptyLabel="Dates"
+          ariaLabel={`Set dates for ${label}`}
+          rangeFormat="task"
+        />
         <button
           type="button"
           className="sheet-designer-chip-remove sheet-task-chip-remove"
@@ -1369,9 +1575,14 @@ function MilestoneTaskChip({
 
 function MilestonePhaseBlock({
   phase,
+  markers = [],
   onRemovePhase,
   onAddTask,
   onRemoveTask,
+  onUpdateTask,
+  onAddMarker,
+  onRemoveMarker,
+  onUpdateMarker,
   onAdjustWeeks,
   onSelectCustom,
   onCustomDatesChange,
@@ -1380,6 +1591,7 @@ function MilestonePhaseBlock({
     key: taskKeyFromTitle(title),
     label: title,
   }));
+  const phaseMarkers = (markers || []).filter((marker) => marker.phaseKey === phase.phaseKey);
 
   return (
     <div className="sheet-milestone-block">
@@ -1406,6 +1618,7 @@ function MilestonePhaseBlock({
             <MilestoneTaskChip
               key={task.id}
               task={task}
+              onUpdate={(patch) => onUpdateTask(task.id, patch)}
               onRemove={() => onRemoveTask(task.id)}
             />
           ))}
@@ -1414,6 +1627,41 @@ function MilestonePhaseBlock({
             onSelect={(taskKey) => onAddTask(taskKey)}
             ariaLabel={`Add task to ${phase.title}`}
           />
+        </div>
+
+        <div className="sheet-phase-markers">
+          {phaseMarkers.map((marker) => (
+            <div key={marker.id} className="sheet-phase-marker">
+              <span className="sheet-phase-marker-dot" aria-hidden />
+              <div className="sheet-phase-marker-copy">
+                <MilestoneSingleDatePicker
+                  date={marker.date}
+                  onChange={(nextDate) => onUpdateMarker(marker.id, { date: nextDate })}
+                  className="sheet-phase-marker-date"
+                  emptyLabel="No date"
+                  ariaLabel={`Date for ${marker.title.trim() || 'milestone'}`}
+                />
+                <span className="sheet-phase-marker-title">
+                  {marker.title.trim() || 'Milestone'}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="sheet-designer-chip-remove sheet-phase-marker-remove"
+                onClick={() => onRemoveMarker(marker.id)}
+                aria-label={`Remove ${marker.title.trim() || 'milestone'}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="sheet-phase-marker-add"
+            onClick={() => onAddMarker(phase.phaseKey)}
+          >
+            + Milestone
+          </button>
         </div>
       </div>
     </div>
@@ -1468,6 +1716,49 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
     }));
   };
 
+  const updateTask = (phaseId, taskId, patch) => {
+    setPhases(phases.map((ph) => {
+      if (ph.id !== phaseId) return ph;
+      return {
+        ...ph,
+        tasks: ph.tasks.map((task) => (
+          task.id === taskId
+            ? { ...task, ...normalizeTaskDates({ ...task, ...patch }) }
+            : task
+        )),
+      };
+    }));
+  };
+
+  const setMarkers = (next) => {
+    setForm((f) => ({
+      ...f,
+      markers: normalizeProjectMarkers(next, { requireTitle: false }),
+    }));
+  };
+
+  const addPhaseMarker = (phaseKey) => {
+    setMarkers([
+      ...(form.markers || []),
+      {
+        ...emptyProjectMarker(),
+        phaseKey: phaseKey || '',
+        title: 'Milestone',
+        date: today(),
+      },
+    ]);
+  };
+
+  const removePhaseMarker = (markerId) => {
+    setMarkers((form.markers || []).filter((marker) => marker.id !== markerId));
+  };
+
+  const updatePhaseMarker = (markerId, patch) => {
+    setMarkers((form.markers || []).map((marker) => (
+      marker.id === markerId ? { ...marker, ...patch } : marker
+    )));
+  };
+
   const selectPhaseWeeks = (phaseId, weeks) => {
     updatePhase(phaseId, { scheduleMode: 'weeks', durationWeeks: weeks });
   };
@@ -1499,10 +1790,16 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
     setForm((f) => applyProjectDatePatch(f, patch));
   };
 
-  const applyImportedPhases = (imported, warnings = []) => {
-    setForm((f) => applyMilestoneScheduleToForm(f, {
-      milestones: sortPhasesByCatalog(imported),
-    }));
+  const applyImportedSchedule = (importedPhases, importedMarkers, warnings = []) => {
+    setForm((f) => {
+      const next = applyMilestoneScheduleToForm(f, {
+        milestones: sortPhasesByCatalog(importedPhases),
+      });
+      return {
+        ...next,
+        markers: normalizeProjectMarkers(importedMarkers),
+      };
+    });
     setImportError('');
     setImportNotice(warnings.length ? warnings.slice(0, 4).join(' ') : '');
   };
@@ -1515,14 +1812,18 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const { phases: imported, warnings } = importTimelineCsv(String(reader.result || ''));
-        if (phases.length > 0) {
+        const {
+          phases: importedPhases,
+          markers: importedMarkers = [],
+          warnings,
+        } = importTimelineCsv(String(reader.result || ''));
+        if (phases.length > 0 || (form.markers || []).length > 0) {
           const replace = window.confirm(
-            'Replace existing phases with the imported Streamtime schedule?',
+            'Replace existing phases and milestones with the imported Streamtime schedule?',
           );
           if (!replace) return;
         }
-        applyImportedPhases(imported, warnings);
+        applyImportedSchedule(importedPhases, importedMarkers, warnings);
       } catch (err) {
         setImportNotice('');
         setImportError(err.message || 'Could not parse CSV.');
@@ -1606,9 +1907,14 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
         <MilestonePhaseBlock
           key={phase.id}
           phase={phase}
+          markers={form.markers || []}
           onRemovePhase={() => removePhase(phase.id)}
           onAddTask={(taskKey) => addTask(phase.id, taskKey)}
           onRemoveTask={(taskId) => removeTask(phase.id, taskId)}
+          onUpdateTask={(taskId, patch) => updateTask(phase.id, taskId, patch)}
+          onAddMarker={addPhaseMarker}
+          onRemoveMarker={removePhaseMarker}
+          onUpdateMarker={updatePhaseMarker}
           onAdjustWeeks={(delta) => adjustPhaseWeeks(phase.id, delta)}
           onSelectCustom={() => selectPhaseCustom(phase.id)}
           onCustomDatesChange={(patch) => updatePhaseCustomDates(phase.id, patch)}
@@ -2047,11 +2353,13 @@ function ProjectModal({
   onDelete,
   onOpenTimeline,
 }) {
-  const [modalTab, setModalTab] = useState(initialTab);
+  const [modalTab, setModalTab] = useState(
+    initialTab === 'markers' || initialTab === 'milestones' ? 'phases' : initialTab,
+  );
   const [showOverview, setShowOverview] = useState(false);
 
   useEffect(() => {
-    setModalTab(initialTab);
+    setModalTab(initialTab === 'markers' || initialTab === 'milestones' ? 'phases' : initialTab);
   }, [project?.id, initialTab]);
   const isEditing = Boolean(project);
   const [form, setForm] = useState(() => {
@@ -2071,6 +2379,7 @@ function ProjectModal({
       status: 'Scheduled', startDate: '', endDate: '',
       notes: '', priority: 'secondary',
       milestones: [],
+      markers: [],
     };
   });
 
@@ -2135,11 +2444,11 @@ function ProjectModal({
               <button
                 type="button"
                 role="tab"
-                className={`modal-project-tab${modalTab === 'milestones' ? ' modal-project-tab--active' : ''}`}
-                aria-selected={modalTab === 'milestones'}
-                onClick={() => setModalTab('milestones')}
+                className={`modal-project-tab${modalTab === 'phases' ? ' modal-project-tab--active' : ''}`}
+                aria-selected={modalTab === 'phases'}
+                onClick={() => setModalTab('phases')}
               >
-                Milestones
+                Phases
               </button>
               {showTimelineLink ? (
                 <button
@@ -2744,6 +3053,9 @@ function getProjectTimelineDays(project) {
       if (task.startDate) days.push(daysFromEpoch(task.startDate));
       if (task.endDate) days.push(daysFromEpoch(task.endDate));
     });
+  });
+  (project?.markers || []).forEach((marker) => {
+    if (marker.date) days.push(daysFromEpoch(marker.date));
   });
   return days;
 }
@@ -3506,6 +3818,38 @@ function GanttChartInner({
     );
   };
 
+  const renderPhaseMarkers = (markers, phaseKey, colors) => {
+    const list = (markers || []).filter((marker) => (
+      marker?.date && marker.phaseKey === phaseKey
+    ));
+    if (!list.length) return null;
+    const barColor = colors?.bar || '#8B978C';
+    return list.map((marker) => {
+      const left = pct(daysFromEpoch(marker.date));
+      const dateLabel = formatMarkerDateLabel(marker.date);
+      const title = marker.title.trim() || 'Milestone';
+      const tip = [dateLabel, title, marker.linkedTo ? `Linked: ${marker.linkedTo}` : '']
+        .filter(Boolean)
+        .join(' · ');
+      return (
+        <div
+          key={marker.id}
+          className="gantt-marker"
+          style={{ left: `${left}%`, color: barColor }}
+          title={tip}
+          aria-label={tip}
+          tabIndex={0}
+        >
+          <span className="gantt-marker-dot" aria-hidden />
+          <span className="gantt-marker-hover">
+            <span className="gantt-marker-date">{dateLabel}</span>
+            <span className="gantt-marker-title">{title}</span>
+          </span>
+        </div>
+      );
+    });
+  };
+
   const renderJobLaneLabel = (startDate, client, projectName) => {
     if (!startDate) return null;
     const clientText = client?.trim() || '';
@@ -4086,6 +4430,7 @@ function GanttChartInner({
                                         ? (e) => beginPhaseResize(e, project, phase)
                                         : undefined,
                                     })}
+                                    {renderPhaseMarkers(project.markers, phase.phaseKey, colors)}
                                   </div>
                                 </div>
                                 {mobileLayout
@@ -4177,6 +4522,7 @@ function GanttChartInner({
                                 barClass: 'gantt-bar--phase',
                                 showLabels: false,
                               })}
+                              {renderPhaseMarkers(project.markers, phase.phaseKey, colors)}
                             </div>
                           </div>
                           {mobileLayout
@@ -4844,7 +5190,7 @@ export default function App() {
                   className="page-title-focus-meta"
                   onClick={() => {
                     const project = projects.find((p) => p.id === ganttFocusMeta.id);
-                    if (project) openProjectEdit(project, 'milestones');
+                    if (project) openProjectEdit(project, 'phases');
                   }}
                   aria-label={`Open project details for ${ganttFocusMeta.name}`}
                 >
@@ -5015,7 +5361,7 @@ export default function App() {
             <GanttChart
               projects={ganttProjects}
               designers={designers}
-              onSelectProject={(p) => openProjectEdit(p, 'milestones')}
+              onSelectProject={(p) => openProjectEdit(p, 'phases')}
               onUpdateProject={saveProject}
               onRegisterNav={registerGanttNav}
               onFocusMetaChange={handleGanttFocusMetaChange}
