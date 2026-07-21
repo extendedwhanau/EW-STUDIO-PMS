@@ -33,6 +33,11 @@ import {
   taskKeyFromTitle,
 } from './milestoneCatalog';
 import { importTimelineCsv } from './streamtimeCsvImport';
+import {
+  cascadeAfterPhaseEndChange,
+  cascadeAfterTaskChange,
+  latestScheduleEnd,
+} from './scheduleEngine';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -568,16 +573,36 @@ function applyProjectMilestoneUpdate(project, milestones, patch = {}) {
 function updateProjectPhaseDurationWeeks(project, phaseId, durationWeeks) {
   if (!project?.milestones?.length) return project;
   const weeks = normalizeDurationWeeks(durationWeeks, MIN_MILESTONE_WEEKS);
+  const oldPhase = project.milestones.find((ph) => ph.id === phaseId);
+  const oldEnd = oldPhase?.endDate || '';
   const milestones = project.milestones.map((ph) => (
     ph.id === phaseId
       ? { ...ph, scheduleMode: 'weeks', durationWeeks: weeks }
       : ph
   ));
-  return applyProjectMilestoneUpdate(project, milestones);
+  const next = applyProjectMilestoneUpdate(project, milestones);
+  if (!project.linkedSchedule) return next;
+  const newEnd = next.milestones.find((ph) => ph.id === phaseId)?.endDate || '';
+  const cascaded = cascadeAfterPhaseEndChange(
+    next.milestones,
+    next.markers || project.markers,
+    phaseId,
+    oldEnd,
+    newEnd,
+  );
+  const resolvedEnd = latestScheduleEnd(cascaded.phases) || next.endDate;
+  return {
+    ...next,
+    milestones: cascaded.phases,
+    markers: cascaded.markers,
+    endDate: pickProjectEndDate('', next.endDate, resolvedEnd),
+  };
 }
 
 function updateProjectPhaseEndDate(project, phaseId, endDate) {
   if (!project?.milestones?.length) return project;
+  const oldPhase = project.milestones.find((ph) => ph.id === phaseId);
+  const oldEnd = oldPhase?.endDate || '';
   const milestones = project.milestones.map((ph) => {
     if (ph.id !== phaseId) return ph;
     const start = ph.startDate || project.startDate || today();
@@ -590,7 +615,23 @@ function updateProjectPhaseEndDate(project, phaseId, endDate) {
       endDate: end,
     };
   });
-  return applyProjectMilestoneUpdate(project, milestones);
+  const next = applyProjectMilestoneUpdate(project, milestones);
+  if (!project.linkedSchedule) return next;
+  const newEnd = next.milestones.find((ph) => ph.id === phaseId)?.endDate || '';
+  const cascaded = cascadeAfterPhaseEndChange(
+    next.milestones,
+    next.markers || project.markers,
+    phaseId,
+    oldEnd,
+    newEnd,
+  );
+  const resolvedEnd = latestScheduleEnd(cascaded.phases) || next.endDate;
+  return {
+    ...next,
+    milestones: cascaded.phases,
+    markers: cascaded.markers,
+    endDate: pickProjectEndDate('', next.endDate, resolvedEnd),
+  };
 }
 
 function shiftTaskDates(tasks, deltaDays) {
@@ -780,15 +821,16 @@ function normalizeProjectMilestones(p) {
     raw.map((phase) => normalizeMilestonePhase(phase)).filter(Boolean),
   );
   const markers = normalizeProjectMarkers(p.markers);
+  const linkedSchedule = Boolean(p.linkedSchedule);
   const { milestonesEnabled, ...rest } = p;
   if (!milestones.length) {
-    return { ...rest, milestones, markers };
+    return { ...rest, milestones, markers, linkedSchedule };
   }
   const kickoff = rest.startDate || today();
   const savedEnd = rest.endDate || '';
   const { phases, startDate, endDate: resolvedEnd } = resolveMilestoneSchedule(kickoff, milestones);
   const endDate = pickProjectEndDate('', savedEnd, resolvedEnd);
-  return { ...rest, milestones: phases, markers, startDate, endDate };
+  return { ...rest, milestones: phases, markers, linkedSchedule, startDate, endDate };
 }
 
 function projectHasMilestones(project) {
@@ -1717,17 +1759,43 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
   };
 
   const updateTask = (phaseId, taskId, patch) => {
-    setPhases(phases.map((ph) => {
-      if (ph.id !== phaseId) return ph;
-      return {
-        ...ph,
-        tasks: ph.tasks.map((task) => (
-          task.id === taskId
-            ? { ...task, ...normalizeTaskDates({ ...task, ...patch }) }
-            : task
-        )),
+    if (!form.linkedSchedule) {
+      setPhases(phases.map((ph) => {
+        if (ph.id !== phaseId) return ph;
+        return {
+          ...ph,
+          tasks: ph.tasks.map((task) => (
+            task.id === taskId
+              ? { ...task, ...normalizeTaskDates({ ...task, ...patch }) }
+              : task
+          )),
+        };
+      }));
+      return;
+    }
+
+    setForm((f) => {
+      const phase = (f.milestones || []).find((ph) => ph.id === phaseId);
+      const previous = (phase?.tasks || []).find((task) => task.id === taskId);
+      if (!phase || !previous) return f;
+      const updatedTask = {
+        ...previous,
+        ...normalizeTaskDates({ ...previous, ...patch }),
       };
-    }));
+      const cascaded = cascadeAfterTaskChange(
+        f.milestones,
+        f.markers,
+        phaseId,
+        taskId,
+        updatedTask,
+        previous.endDate || previous.startDate || '',
+      );
+      return applyMilestoneScheduleToForm({
+        ...f,
+        milestones: sortPhasesByCatalog(cascaded.phases),
+        markers: cascaded.markers,
+      }, {});
+    });
   };
 
   const setMarkers = (next) => {
@@ -1770,7 +1838,36 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
       : normalizeDurationWeeks(phase?.durationWeeks, 2);
     const next = normalizeDurationWeeks(current + delta, current);
     if (next === current && phase?.scheduleMode !== 'custom') return;
-    selectPhaseWeeks(phaseId, next);
+
+    if (!form.linkedSchedule) {
+      selectPhaseWeeks(phaseId, next);
+      return;
+    }
+
+    const oldEnd = phase?.endDate || '';
+    setForm((f) => {
+      const patched = (f.milestones || []).map((ph) => (
+        ph.id === phaseId
+          ? { ...ph, scheduleMode: 'weeks', durationWeeks: next }
+          : ph
+      ));
+      const resolved = applyMilestoneScheduleToForm(f, {
+        milestones: sortPhasesByCatalog(patched),
+      });
+      const newEnd = (resolved.milestones || []).find((ph) => ph.id === phaseId)?.endDate || '';
+      const cascaded = cascadeAfterPhaseEndChange(
+        resolved.milestones,
+        resolved.markers || f.markers,
+        phaseId,
+        oldEnd,
+        newEnd,
+      );
+      return applyMilestoneScheduleToForm({
+        ...resolved,
+        milestones: cascaded.phases,
+        markers: cascaded.markers,
+      }, {});
+    });
   };
 
   const selectPhaseCustom = (phaseId) => {
@@ -1783,7 +1880,35 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
   };
 
   const updatePhaseCustomDates = (phaseId, patch) => {
-    updatePhase(phaseId, { ...patch, scheduleMode: 'custom', durationWeeks: null });
+    if (!form.linkedSchedule) {
+      updatePhase(phaseId, { ...patch, scheduleMode: 'custom', durationWeeks: null });
+      return;
+    }
+    const phase = phases.find((ph) => ph.id === phaseId);
+    const oldEnd = phase?.endDate || '';
+    setForm((f) => {
+      const patched = (f.milestones || []).map((ph) => (
+        ph.id === phaseId
+          ? { ...ph, ...patch, scheduleMode: 'custom', durationWeeks: null }
+          : ph
+      ));
+      const resolved = applyMilestoneScheduleToForm(f, {
+        milestones: sortPhasesByCatalog(patched),
+      });
+      const newEnd = (resolved.milestones || []).find((ph) => ph.id === phaseId)?.endDate || '';
+      const cascaded = cascadeAfterPhaseEndChange(
+        resolved.milestones,
+        resolved.markers || f.markers,
+        phaseId,
+        oldEnd,
+        newEnd,
+      );
+      return applyMilestoneScheduleToForm({
+        ...resolved,
+        milestones: cascaded.phases,
+        markers: cascaded.markers,
+      }, {});
+    });
   };
 
   const handleKickoffChange = (patch) => {
@@ -1870,6 +1995,18 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
       <div className="sheet-pair sheet-pair--priority-top">
         <span className="sheet-field-label">Phases</span>
         <div className="sheet-field-value sheet-milestone-phase-actions">
+          <button
+            type="button"
+            className={[
+              'sheet-milestone-add-task',
+              'sheet-milestone-add-task--label',
+              form.linkedSchedule ? 'sheet-linked-schedule--on' : '',
+            ].filter(Boolean).join(' ')}
+            aria-pressed={Boolean(form.linkedSchedule)}
+            onClick={() => setForm((f) => ({ ...f, linkedSchedule: !f.linkedSchedule }))}
+          >
+            Linked
+          </button>
           <button
             type="button"
             className="sheet-milestone-add-task sheet-milestone-add-task--label"
@@ -2380,6 +2517,7 @@ function ProjectModal({
       notes: '', priority: 'secondary',
       milestones: [],
       markers: [],
+      linkedSchedule: false,
     };
   });
 
