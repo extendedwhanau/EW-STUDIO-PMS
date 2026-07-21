@@ -621,6 +621,10 @@ button.gantt-focus-copy:focus-visible {
   cursor: default;
 }
 
+.gantt-chart--focused {
+  --gantt-lead-w: 0;
+}
+
 .gantt-chart--focused .gantt-track--phase-lane {
   min-height: 46px;
 }

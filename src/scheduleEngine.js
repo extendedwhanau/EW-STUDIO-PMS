@@ -5,8 +5,10 @@ function parseISODateLocal(str) {
   return new Date(y, m - 1, day, 12, 0, 0, 0);
 }
 
+/** Civil YYYY-MM-DD → stable UTC day index (timezone-independent). */
 export function daysFromEpoch(str) {
-  return Math.floor(new Date(str + 'T00:00:00').getTime() / 86400000);
+  const [y, m, day] = String(str).split('-').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, day) / 86400000);
 }
 
 export function addDays(str, n) {

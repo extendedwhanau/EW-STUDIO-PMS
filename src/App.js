@@ -36,8 +36,18 @@ import { importTimelineCsv } from './streamtimeCsvImport';
 import {
   cascadeAfterPhaseEndChange,
   cascadeAfterTaskChange,
+  daysFromEpoch,
   latestScheduleEnd,
 } from './scheduleEngine';
+import {
+  ganttChartWidths,
+  ganttDayCenterPct,
+  ganttDayLeftPct,
+  ganttInclusiveBarPct,
+  ganttScrollLeftForTrackPct,
+  ganttTotalDays,
+  pointerDayFromTrack as pointerDayFromTrackGeometry,
+} from './ganttGeometry';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -384,8 +394,12 @@ function formatDueDaysDisplay(endDateStr) {
 /** Day + month for marker labels, e.g. "29 July". */
 function formatMarkerDateLabel(str) {
   if (!str) return '';
-  const d = new Date(str + 'T00:00:00');
-  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long' });
+  const d = new Date(`${str}T12:00:00Z`);
+  return d.toLocaleDateString('en-NZ', {
+    timeZone: 'UTC',
+    day: 'numeric',
+    month: 'long',
+  });
 }
 
 /** Short date for compact UI, e.g. "7 Jul 26". */
@@ -557,10 +571,13 @@ function isoFromTimelineDay(dayNum, anchorIso) {
 
 function pointerDayFromTrack(clientX, track, minDay, totalDays) {
   const rect = track.getBoundingClientRect();
-  if (rect.width <= 0) return minDay;
-  const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-  const pct = (x / rect.width) * 100;
-  return Math.round(minDay + (pct / 100) * totalDays);
+  return pointerDayFromTrackGeometry(
+    clientX,
+    rect.width,
+    rect.left,
+    minDay,
+    totalDays,
+  );
 }
 
 function applyProjectMilestoneUpdate(project, milestones, patch = {}) {
@@ -933,9 +950,6 @@ function emptyProjectMarker() {
   };
 }
 
-function daysFromEpoch(str) {
-  return Math.floor(new Date(str + 'T00:00:00').getTime() / 86400000);
-}
 function addDays(str, n) {
   const d = parseISODateLocal(str);
   d.setDate(d.getDate() + n);
@@ -944,11 +958,17 @@ function addDays(str, n) {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
+/** Studio calendar “today” in NZ — keeps the today line correct regardless of browser TZ. */
 function today() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Pacific/Auckland',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === 'year')?.value;
+  const m = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
   return `${y}-${m}-${day}`;
 }
 
@@ -3053,42 +3073,27 @@ function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'de
   );
 }
 
-const GANTT_NZ_TZ = 'Pacific/Auckland';
-
-function ganttNzNoonMs(epochDay) {
-  return epochDay * 86400000 + 12 * 60 * 60 * 1000;
+/** UTC midnight for a civil day index from daysFromEpoch. */
+function ganttCivilUtcMs(epochDay) {
+  return epochDay * 86400000;
 }
 
-/** Calendar Monday in NZ (avoids DST midnight edge cases). */
+/** Calendar Monday for a civil YYYY-MM-DD day index. */
 function isMondayNZ(epochDay) {
-  const wk = new Intl.DateTimeFormat('en-NZ', {
-    timeZone: GANTT_NZ_TZ,
-    weekday: 'short',
-  }).format(new Date(ganttNzNoonMs(epochDay)));
-  return wk === 'Mon';
-}
-
-function ganttWeekdayNZ(epochDay) {
-  return new Intl.DateTimeFormat('en-NZ', {
-    timeZone: GANTT_NZ_TZ,
-    weekday: 'short',
-  }).format(new Date(ganttNzNoonMs(epochDay)));
+  return new Date(ganttCivilUtcMs(epochDay)).getUTCDay() === 1;
 }
 
 function isSaturdayNZ(epochDay) {
-  return ganttWeekdayNZ(epochDay) === 'Sat';
+  return new Date(ganttCivilUtcMs(epochDay)).getUTCDay() === 6;
 }
 
 function isSundayNZ(epochDay) {
-  return ganttWeekdayNZ(epochDay) === 'Sun';
+  return new Date(ganttCivilUtcMs(epochDay)).getUTCDay() === 0;
 }
 
-/** Day of month only (NZ). */
+/** Day of month only (civil date). */
 function ganttTickDayNumberNZ(epochDay) {
-  return new Intl.DateTimeFormat('en-NZ', {
-    timeZone: GANTT_NZ_TZ,
-    day: 'numeric',
-  }).format(new Date(ganttNzNoonMs(epochDay)));
+  return String(new Date(ganttCivilUtcMs(epochDay)).getUTCDate());
 }
 
 function ganttDayPx(day, minDay, pxPerDay) {
@@ -3130,8 +3135,9 @@ function ganttMinLabelGapPx(tier) {
 }
 
 /** Soft grey weekend separators — max 10px, shrink when zoomed out. */
-function buildWeekendBands(minDay, maxDay, pxPerDay, trackWidthPx) {
+function buildWeekendBands(minDay, maxDay, totalDays, pxPerDay) {
   const bands = [];
+  const trackWidthPx = Math.max(1, totalDays * pxPerDay);
 
   const addBand = (startDay, spanDays) => {
     const widthPx = Math.min(GANTT_WEEKEND_BAND_MAX_PX, spanDays * pxPerDay);
@@ -3141,7 +3147,7 @@ function buildWeekendBands(minDay, maxDay, pxPerDay, trackWidthPx) {
     const leftPx = centerPx - widthPx / 2;
     bands.push({
       key: `wknd-${startDay}`,
-      left: trackWidthPx > 0 ? (leftPx / trackWidthPx) * 100 : 0,
+      left: (leftPx / trackWidthPx) * 100,
       widthPx,
     });
   };
@@ -3161,8 +3167,8 @@ function buildWeekendBands(minDay, maxDay, pxPerDay, trackWidthPx) {
 /**
  * Monday week ticks — left edge of each white work week.
  */
-function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay, trackWidthPx) {
-  const toPct = (day) => ((day - minDay) / totalDays) * 100;
+function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay) {
+  const toPct = (day) => ganttDayLeftPct(day, minDay, totalDays);
   const labelTier = ganttRulerLabelTier(pxPerDay);
 
   let ticks = [];
@@ -3187,37 +3193,25 @@ function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay, trackWi
 
   return {
     ticks,
-    weekendBands: buildWeekendBands(minDay, maxDay, pxPerDay, trackWidthPx),
+    weekendBands: buildWeekendBands(minDay, maxDay, totalDays, pxPerDay),
   };
 }
 
 function isFirstOfMonthNZ(epochDay) {
-  const dom = new Intl.DateTimeFormat('en-NZ', {
-    timeZone: GANTT_NZ_TZ,
-    day: 'numeric',
-  }).format(new Date(ganttNzNoonMs(epochDay)));
-  return dom === '1';
+  return new Date(ganttCivilUtcMs(epochDay)).getUTCDate() === 1;
 }
 
 function monthFirstNZ(epochDay) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: GANTT_NZ_TZ,
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(new Date(ganttNzNoonMs(epochDay)));
-  const y = parts.find((p) => p.type === 'year')?.value;
-  const m = parts.find((p) => p.type === 'month')?.value;
+  const d = new Date(ganttCivilUtcMs(epochDay));
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   return daysFromEpoch(`${y}-${m}-01`);
 }
 
 function nextMonthFirstNZ(monthFirstDay) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: GANTT_NZ_TZ,
-    year: 'numeric',
-    month: 'numeric',
-  }).formatToParts(new Date(ganttNzNoonMs(monthFirstDay)));
-  let y = Number(parts.find((p) => p.type === 'year')?.value);
-  let m = Number(parts.find((p) => p.type === 'month')?.value) + 1;
+  const d = new Date(ganttCivilUtcMs(monthFirstDay));
+  let y = d.getUTCFullYear();
+  let m = d.getUTCMonth() + 2; // 1-based next month
   if (m > 12) {
     m = 1;
     y += 1;
@@ -3226,10 +3220,7 @@ function nextMonthFirstNZ(monthFirstDay) {
 }
 
 function ganttYearNZ(epochDay) {
-  return Number(new Intl.DateTimeFormat('en-NZ', {
-    timeZone: GANTT_NZ_TZ,
-    year: 'numeric',
-  }).format(new Date(ganttNzNoonMs(epochDay))));
+  return new Date(ganttCivilUtcMs(epochDay)).getUTCFullYear();
 }
 
 /** Drop year suffixes when consecutive month labels would collide. */
@@ -3257,7 +3248,7 @@ function ganttResolveMonthMarkerOverlaps(markers, minDay, pxPerDay) {
 
 /** Every month touching the range — labels sit on the 1st of each month. */
 function buildMonthMarkers(minDay, maxDay, totalDays, rangeSpansYears, pxPerDay) {
-  const toPct = (day) => ((day - minDay) / totalDays) * 100;
+  const toPct = (day) => ganttDayLeftPct(day, minDay, totalDays);
   const markers = [];
   let monthFirst = monthFirstNZ(minDay);
   let prevYear = null;
@@ -3267,7 +3258,7 @@ function buildMonthMarkers(minDay, maxDay, totalDays, rangeSpansYears, pxPerDay)
     const showYear = rangeSpansYears && (prevYear === null || year !== prevYear);
     markers.push({
       day: monthFirst,
-      left: toPct(monthFirst),
+      left: toPct(Math.max(monthFirst, minDay)),
       label: ganttMonthNameNZ(monthFirst, showYear),
     });
     prevYear = year;
@@ -3280,9 +3271,9 @@ function buildMonthMarkers(minDay, maxDay, totalDays, rangeSpansYears, pxPerDay)
 /** Ruler month row: "Jul", "Aug" (optional year when range spans years). */
 function ganttMonthNameNZ(epochDay, includeYear = false) {
   const opts = includeYear
-    ? { timeZone: GANTT_NZ_TZ, month: 'short', year: '2-digit' }
-    : { timeZone: GANTT_NZ_TZ, month: 'short' };
-  return new Intl.DateTimeFormat('en-NZ', opts).format(new Date(ganttNzNoonMs(epochDay)));
+    ? { timeZone: 'UTC', month: 'short', year: '2-digit' }
+    : { timeZone: 'UTC', month: 'short' };
+  return new Intl.DateTimeFormat('en-NZ', opts).format(new Date(ganttCivilUtcMs(epochDay)));
 }
 
 const GANTT_MOBILE_MQ = '(max-width: 768px)';
@@ -3582,7 +3573,7 @@ function GanttChartInner({
       : daysFromEpoch(timelineFocusProject.endDate);
     const minDay = minStart - GANTT_FOCUS_HEAD_DAYS;
     const maxDay = maxEnd + GANTT_FOCUS_TAIL_DAYS;
-    const totalDays = Math.max(7, maxDay - minDay);
+    const totalDays = ganttTotalDays(minDay, maxDay);
     return { minDay, maxDay, totalDays };
   }, [timelineFocusProject]);
 
@@ -3622,7 +3613,7 @@ function GanttChartInner({
       ganttLastDay,
     );
     if (maxDay <= minDay) minDay = maxDay - 365;
-    const totalDays = Math.max(7, maxDay - minDay);
+    const totalDays = ganttTotalDays(minDay, maxDay);
     return {
       minDay,
       maxDay,
@@ -3633,10 +3624,12 @@ function GanttChartInner({
   }, [focusedProject, focusRange, focusZoomStep, mainZoomStep, validProjects, todayDay]);
 
   const { minDay, maxDay, totalDays, pxPerDay, focusMode } = timelineView;
-  const chartMinWidthPx = Math.ceil(totalDays * pxPerDay);
-  const chartTrackWidthPx = Math.max(
-    1,
-    chartMinWidthPx - (mobileLayout ? 0 : GANTT_LEAD_W_DESKTOP),
+  /** Focus + mobile have no label column — tracks must match the full chart width. */
+  const ganttLeadW = (!mobileLayout && !focusMode) ? GANTT_LEAD_W_DESKTOP : 0;
+  const { chartMinWidthPx, trackWidthPx: chartTrackWidthPx } = ganttChartWidths(
+    totalDays,
+    pxPerDay,
+    ganttLeadW,
   );
   const sectionsToRender = useMemo(
     () => (focusMode && timelineFocusProject
@@ -3726,10 +3719,10 @@ function GanttChartInner({
     setExpandedProjectId(null);
   }, [timelineEditMode, finishTimelineEdit]);
 
-  const pct = (day) => ((day - minDay) / totalDays) * 100;
+  const pct = (day) => ganttDayLeftPct(day, minDay, totalDays);
 
-  const minYear = new Date(minDay * 86400000).getFullYear();
-  const maxYear = new Date(maxDay * 86400000).getFullYear();
+  const minYear = new Date(minDay * 86400000).getUTCFullYear();
+  const maxYear = new Date(maxDay * 86400000).getUTCFullYear();
   const monthLabelSpansYears = minYear !== maxYear;
 
   const monthMarkers = useMemo(
@@ -3743,9 +3736,8 @@ function GanttChartInner({
       maxDay,
       totalDays,
       pxPerDay,
-      chartTrackWidthPx,
     ),
-    [minDay, maxDay, totalDays, pxPerDay, chartTrackWidthPx],
+    [minDay, maxDay, totalDays, pxPerDay],
   );
   const gridLines = timelineSchedule.ticks;
   const weekendBands = timelineSchedule.weekendBands;
@@ -3796,17 +3788,16 @@ function GanttChartInner({
     };
   }, [focusMode, timelineFocusProject, timelineEditMode, mobileLayout]);
 
-  const todayPct = pct(todayDay);
+  const todayPct = ganttDayCenterPct(todayDay, minDay, totalDays);
 
   const scrollTimelineBy = useCallback((direction) => {
     const el = scrollRef.current;
     if (!el) return;
     /** One calendar week in chart pixels (same scale as day columns). */
-    const weekPx =
-      totalDays > 0 ? (chartMinWidthPx / totalDays) * 7 : 0;
+    const weekPx = pxPerDay * 7;
     const step = Math.max(1, Math.round(weekPx));
     el.scrollBy({ left: direction * step, behavior: 'smooth' });
-  }, [chartMinWidthPx, totalDays]);
+  }, [pxPerDay]);
 
   const scrollToToday = useCallback((behavior = 'smooth') => {
     const el = scrollRef.current;
@@ -3822,10 +3813,14 @@ function GanttChartInner({
       });
       return;
     }
-    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
-    const x = (todayPct / 100) * el.scrollWidth - el.clientWidth / 2;
-    el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior: scrollBehavior });
-  }, [todayPct]);
+    const x = ganttScrollLeftForTrackPct(todayPct, {
+      leadW: ganttLeadW,
+      trackWidthPx: chartTrackWidthPx,
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+    });
+    el.scrollTo({ left: x, behavior: scrollBehavior });
+  }, [todayPct, ganttLeadW, chartTrackWidthPx]);
 
   const updateJobLabelPins = useCallback(() => {
     const wrapper = scrollRef.current;
@@ -4124,9 +4119,14 @@ function GanttChartInner({
     isResizing = false,
   }) => {
     if (!startDate || !endDate) return null;
-    const startPct = pct(daysFromEpoch(startDate));
-    const endPct = pct(daysFromEpoch(endDate));
-    const widthPct = endPct - startPct;
+    const startDay = daysFromEpoch(startDate);
+    const endDay = daysFromEpoch(endDate);
+    const { left: startPct, width: widthPct } = ganttInclusiveBarPct(
+      startDay,
+      endDay,
+      minDay,
+      totalDays,
+    );
     const hasLabels = showLabels && (labelPrimary || labelSecondary);
     const isBandBar = /\bgantt-bar--(?:job|phase|task|overview)\b/.test(barClass);
     const isTaskBand = barClass.includes('gantt-bar--task');
@@ -4223,7 +4223,7 @@ function GanttChartInner({
     if (!list.length) return null;
     const barColor = colors?.bar || '#8B978C';
     return list.map((marker) => {
-      const left = pct(daysFromEpoch(marker.date));
+      const left = ganttDayCenterPct(daysFromEpoch(marker.date), minDay, totalDays);
       const dateLabel = formatMarkerDateLabel(marker.date);
       const title = marker.title.trim() || 'Milestone';
       const tip = [dateLabel, title, marker.linkedTo ? `Linked: ${marker.linkedTo}` : '']
@@ -4674,7 +4674,7 @@ function GanttChartInner({
             style={{ minWidth: chartMinWidthPx }}
           >
           <div className="gantt-chart-weekends" aria-hidden>
-            {!mobileLayout ? (
+            {ganttLeadW > 0 ? (
               <>
                 <div className="gantt-lines-spacer" />
                 <div className="gantt-weekend-track">
@@ -4689,7 +4689,7 @@ function GanttChartInner({
           </div>
           {todayPct >= 0 && todayPct <= 100 && (
             <div className="gantt-chart-today" aria-hidden>
-              {!mobileLayout ? (
+              {ganttLeadW > 0 ? (
                 <>
                   <div className="gantt-lines-spacer" />
                   <div className="gantt-today-track">
@@ -4710,7 +4710,7 @@ function GanttChartInner({
             </div>
           )}
           <div className={`gantt-chart-header${focusMode ? ' gantt-chart-header--focus' : ''}`}>
-          {!mobileLayout ? <div className="gantt-lines-spacer" aria-hidden /> : null}
+          {ganttLeadW > 0 ? <div className="gantt-lines-spacer" aria-hidden /> : null}
           <div className="gantt-ruler">
             <div className="gantt-ruler-months">
               {monthMarkers.map((m) => (
