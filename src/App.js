@@ -1477,6 +1477,7 @@ function MilestoneSingleDatePicker({
   className = '',
   emptyLabel = 'Add date',
   ariaLabel = 'Set date',
+  rangeFormat = 'phase',
 }) {
   const btnRef = useRef(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -1486,7 +1487,9 @@ function MilestoneSingleDatePicker({
     setCalendarOpen(false);
   };
 
-  const label = date ? formatPhaseDateMedium(date) : emptyLabel;
+  const label = date
+    ? (rangeFormat === 'task' ? formatTaskDateShort(date) : formatPhaseDateMedium(date))
+    : emptyLabel;
 
   return (
     <>
@@ -1515,7 +1518,7 @@ function MilestoneSingleDatePicker({
         onClose={() => setCalendarOpen(false)}
         label={ariaLabel}
         singleDate
-        rangeFormat="phase"
+        rangeFormat={rangeFormat === 'task' ? 'task' : 'phase'}
       />
     </>
   );
@@ -3314,7 +3317,6 @@ function sortTimelineProjectsByDesigner(projects, designers) {
 // ── Timeline edit rail (focus Edit mode only) ────────────────────────────────
 function TimelineEditRail({
   project,
-  onPhaseWeeks,
   onPhaseDates,
   onTaskDates,
   onMarkerDate,
@@ -3322,93 +3324,113 @@ function TimelineEditRail({
   const phases = project.milestones || [];
   const markers = project.markers || [];
 
+  const clampRange = (startDate, endDate) => {
+    const start = startDate || endDate || '';
+    const end = endDate || startDate || '';
+    if (start && end && end < start) return { startDate: start, endDate: start };
+    return { startDate: start, endDate: end };
+  };
+
   return (
     <aside className="gantt-edit-rail" aria-label="Schedule editor">
       <div className="gantt-edit-rail-head">
         <span className="gantt-edit-rail-title">{project.name.trim() || 'Project'}</span>
-        <span className="gantt-edit-rail-range">
-          {formatTaskDateRangeDisplay(project.startDate, project.endDate)}
-        </span>
       </div>
-      <div className="gantt-edit-rail-list">
+
+      <div className="gantt-edit-rail-table" role="table" aria-label="Phases and tasks">
+        <div className="gantt-edit-rail-row gantt-edit-rail-row--head" role="row">
+          <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="columnheader">Name</span>
+          <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="columnheader">Start</span>
+          <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="columnheader">End</span>
+        </div>
+
         {phases.map((phase) => {
           const phaseTitle = phase.title.trim() || 'Phase';
-          const weeks = normalizeDurationWeeks(
-            phase.scheduleMode === 'custom'
-              ? inferDurationWeeksFromDates(phase.startDate, phase.endDate)
-              : phase.durationWeeks,
-            2,
-          );
           const phaseMarkers = markers.filter((marker) => marker.phaseKey === phase.phaseKey);
           return (
-            <div key={phase.id} className="gantt-edit-rail-phase">
-              <div className="gantt-edit-rail-phase-row">
-                <span className="gantt-edit-rail-name">{phaseTitle}</span>
-                <div className="gantt-edit-rail-controls">
-                  <MilestoneDateRangePickerWithRef
-                    startDate={phase.startDate}
-                    endDate={phase.endDate}
-                    onChange={(patch) => onPhaseDates(phase.id, patch)}
-                    className="gantt-edit-rail-dates"
-                    emptyLabel="Dates"
-                    ariaLabel={`Dates for ${phaseTitle}`}
-                    rangeFormat="phase"
+            <div key={phase.id} className="gantt-edit-rail-group">
+              <div className="gantt-edit-rail-row gantt-edit-rail-row--phase" role="row">
+                <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
+                  {phaseTitle}
+                </span>
+                <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell">
+                  <MilestoneSingleDatePicker
+                    date={phase.startDate}
+                    onChange={(date) => onPhaseDates(phase.id, clampRange(date, phase.endDate))}
+                    className="gantt-edit-rail-date"
+                    emptyLabel="Start"
+                    ariaLabel={`Start for ${phaseTitle}`}
+                    rangeFormat="task"
                   />
-                  <div className="gantt-edit-rail-weeks" role="group" aria-label={`${phaseTitle} duration`}>
-                    <button
-                      type="button"
-                      className="gantt-edit-rail-week-btn"
-                      aria-label="Decrease weeks"
-                      disabled={weeks <= MIN_MILESTONE_WEEKS}
-                      onClick={() => onPhaseWeeks(phase.id, weeks - 1)}
-                    >
-                      −
-                    </button>
-                    <span className="gantt-edit-rail-week-label">{formatPhaseWeekLabel(weeks)}</span>
-                    <button
-                      type="button"
-                      className="gantt-edit-rail-week-btn"
-                      aria-label="Increase weeks"
-                      disabled={weeks >= MAX_MILESTONE_WEEKS}
-                      onClick={() => onPhaseWeeks(phase.id, weeks + 1)}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                </span>
+                <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell">
+                  <MilestoneSingleDatePicker
+                    date={phase.endDate}
+                    onChange={(date) => onPhaseDates(phase.id, clampRange(phase.startDate, date))}
+                    className="gantt-edit-rail-date"
+                    emptyLabel="End"
+                    ariaLabel={`End for ${phaseTitle}`}
+                    rangeFormat="task"
+                  />
+                </span>
               </div>
 
               {(phase.tasks || []).map((task) => {
                 const taskTitle = task.title.trim() || 'Task';
                 return (
-                  <div key={task.id} className="gantt-edit-rail-task-row">
-                    <span className="gantt-edit-rail-task-name">{taskTitle}</span>
-                    <MilestoneDateRangePickerWithRef
-                      startDate={task.startDate}
-                      endDate={task.endDate}
-                      onChange={(patch) => onTaskDates(phase.id, task.id, patch)}
-                      className="gantt-edit-rail-dates gantt-edit-rail-dates--task"
-                      emptyLabel="Dates"
-                      ariaLabel={`Dates for ${taskTitle}`}
-                      rangeFormat="task"
-                    />
+                  <div key={task.id} className="gantt-edit-rail-row gantt-edit-rail-row--task" role="row">
+                    <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
+                      {taskTitle}
+                    </span>
+                    <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell">
+                      <MilestoneSingleDatePicker
+                        date={task.startDate}
+                        onChange={(date) => onTaskDates(
+                          phase.id,
+                          task.id,
+                          clampRange(date, task.endDate),
+                        )}
+                        className="gantt-edit-rail-date"
+                        emptyLabel="Start"
+                        ariaLabel={`Start for ${taskTitle}`}
+                        rangeFormat="task"
+                      />
+                    </span>
+                    <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell">
+                      <MilestoneSingleDatePicker
+                        date={task.endDate}
+                        onChange={(date) => onTaskDates(
+                          phase.id,
+                          task.id,
+                          clampRange(task.startDate, date),
+                        )}
+                        className="gantt-edit-rail-date"
+                        emptyLabel="End"
+                        ariaLabel={`End for ${taskTitle}`}
+                        rangeFormat="task"
+                      />
+                    </span>
                   </div>
                 );
               })}
 
               {phaseMarkers.map((marker) => (
-                <div key={marker.id} className="gantt-edit-rail-marker-row">
-                  <span className="gantt-edit-rail-marker-dot" aria-hidden />
-                  <span className="gantt-edit-rail-marker-title">
+                <div key={marker.id} className="gantt-edit-rail-row gantt-edit-rail-row--marker" role="row">
+                  <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
+                    <span className="gantt-edit-rail-marker-dot" aria-hidden />
                     {marker.title.trim() || 'Milestone'}
                   </span>
-                  <MilestoneSingleDatePicker
-                    date={marker.date}
-                    onChange={(date) => onMarkerDate(marker.id, date)}
-                    className="gantt-edit-rail-marker-date"
-                    emptyLabel="Date"
-                    ariaLabel={`Date for ${marker.title.trim() || 'milestone'}`}
-                  />
+                  <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell">
+                    <MilestoneSingleDatePicker
+                      date={marker.date}
+                      onChange={(date) => onMarkerDate(marker.id, date)}
+                      className="gantt-edit-rail-date"
+                      emptyLabel="Date"
+                      ariaLabel={`Date for ${marker.title.trim() || 'milestone'}`}
+                      rangeFormat="task"
+                    />
+                  </span>
+                  <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell" />
                 </div>
               ))}
             </div>
@@ -3664,13 +3686,6 @@ function GanttChartInner({
     if (!onUpdateProject || !nextProject) return;
     onUpdateProject(nextProject);
   }, [onUpdateProject]);
-
-  const handleEditRailPhaseWeeks = useCallback((phaseId, weeks) => {
-    if (!timelineFocusProject) return;
-    applyLinkedProjectUpdate(
-      updateProjectPhaseDurationWeeks(withLinkedSchedule(timelineFocusProject), phaseId, weeks),
-    );
-  }, [applyLinkedProjectUpdate, timelineFocusProject]);
 
   const handleEditRailPhaseDates = useCallback((phaseId, patch) => {
     if (!timelineFocusProject) return;
@@ -4630,7 +4645,6 @@ function GanttChartInner({
         {focusMode && timelineEditMode && !mobileLayout && timelineFocusProject ? (
           <TimelineEditRail
             project={timelineFocusProject}
-            onPhaseWeeks={handleEditRailPhaseWeeks}
             onPhaseDates={handleEditRailPhaseDates}
             onTaskDates={handleEditRailTaskDates}
             onMarkerDate={handleEditRailMarkerDate}
