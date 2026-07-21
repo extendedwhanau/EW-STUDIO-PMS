@@ -634,6 +634,92 @@ function updateProjectPhaseEndDate(project, phaseId, endDate) {
   };
 }
 
+function updateProjectTaskDates(project, phaseId, taskId, patch) {
+  if (!project?.milestones?.length) return project;
+  const phase = project.milestones.find((ph) => ph.id === phaseId);
+  const previous = (phase?.tasks || []).find((task) => task.id === taskId);
+  if (!phase || !previous) return project;
+  const updatedTask = {
+    ...previous,
+    ...normalizeTaskDates({ ...previous, ...patch }),
+  };
+
+  if (!project.linkedSchedule) {
+    const milestones = project.milestones.map((ph) => {
+      if (ph.id !== phaseId) return ph;
+      return {
+        ...ph,
+        tasks: (ph.tasks || []).map((task) => (
+          task.id === taskId ? updatedTask : task
+        )),
+      };
+    });
+    return applyProjectMilestoneUpdate(project, milestones);
+  }
+
+  const cascaded = cascadeAfterTaskChange(
+    project.milestones,
+    project.markers,
+    phaseId,
+    taskId,
+    updatedTask,
+    previous.endDate || previous.startDate || '',
+  );
+  const resolvedEnd = latestScheduleEnd(cascaded.phases) || project.endDate;
+  return {
+    ...project,
+    milestones: cascaded.phases,
+    markers: cascaded.markers,
+    endDate: pickProjectEndDate('', project.endDate, resolvedEnd),
+  };
+}
+
+function updateProjectMarkerDate(project, markerId, date) {
+  const markers = (project.markers || []).map((marker) => (
+    marker.id === markerId ? { ...marker, date: date || '' } : marker
+  ));
+  return {
+    ...project,
+    markers: normalizeProjectMarkers(markers, { requireTitle: false }),
+  };
+}
+
+function updateProjectPhaseCustomDates(project, phaseId, patch) {
+  if (!project?.milestones?.length) return project;
+  const oldPhase = project.milestones.find((ph) => ph.id === phaseId);
+  const oldEnd = oldPhase?.endDate || '';
+  const milestones = project.milestones.map((ph) => {
+    if (ph.id !== phaseId) return ph;
+    return {
+      ...ph,
+      ...patch,
+      scheduleMode: 'custom',
+      durationWeeks: null,
+    };
+  });
+  const next = applyProjectMilestoneUpdate(project, milestones);
+  if (!project.linkedSchedule) return next;
+  const newEnd = next.milestones.find((ph) => ph.id === phaseId)?.endDate || '';
+  const cascaded = cascadeAfterPhaseEndChange(
+    next.milestones,
+    next.markers || project.markers,
+    phaseId,
+    oldEnd,
+    newEnd,
+  );
+  const resolvedEnd = latestScheduleEnd(cascaded.phases) || next.endDate;
+  return {
+    ...next,
+    milestones: cascaded.phases,
+    markers: cascaded.markers,
+    endDate: pickProjectEndDate('', next.endDate, resolvedEnd),
+  };
+}
+
+function withLinkedSchedule(project) {
+  return { ...project, linkedSchedule: true };
+}
+
 function shiftTaskDates(tasks, deltaDays) {
   if (!deltaDays) return tasks || [];
   return (tasks || []).map((task) => {
@@ -3225,6 +3311,114 @@ function sortTimelineProjectsByDesigner(projects, designers) {
   });
 }
 
+// ── Timeline edit rail (focus Edit mode only) ────────────────────────────────
+function TimelineEditRail({
+  project,
+  onPhaseWeeks,
+  onPhaseDates,
+  onTaskDates,
+  onMarkerDate,
+}) {
+  const phases = project.milestones || [];
+  const markers = project.markers || [];
+
+  return (
+    <aside className="gantt-edit-rail" aria-label="Schedule editor">
+      <div className="gantt-edit-rail-head">
+        <span className="gantt-edit-rail-title">{project.name.trim() || 'Project'}</span>
+        <span className="gantt-edit-rail-range">
+          {formatTaskDateRangeDisplay(project.startDate, project.endDate)}
+        </span>
+      </div>
+      <div className="gantt-edit-rail-list">
+        {phases.map((phase) => {
+          const phaseTitle = phase.title.trim() || 'Phase';
+          const weeks = normalizeDurationWeeks(
+            phase.scheduleMode === 'custom'
+              ? inferDurationWeeksFromDates(phase.startDate, phase.endDate)
+              : phase.durationWeeks,
+            2,
+          );
+          const phaseMarkers = markers.filter((marker) => marker.phaseKey === phase.phaseKey);
+          return (
+            <div key={phase.id} className="gantt-edit-rail-phase">
+              <div className="gantt-edit-rail-phase-row">
+                <span className="gantt-edit-rail-name">{phaseTitle}</span>
+                <div className="gantt-edit-rail-controls">
+                  <MilestoneDateRangePickerWithRef
+                    startDate={phase.startDate}
+                    endDate={phase.endDate}
+                    onChange={(patch) => onPhaseDates(phase.id, patch)}
+                    className="gantt-edit-rail-dates"
+                    emptyLabel="Dates"
+                    ariaLabel={`Dates for ${phaseTitle}`}
+                    rangeFormat="phase"
+                  />
+                  <div className="gantt-edit-rail-weeks" role="group" aria-label={`${phaseTitle} duration`}>
+                    <button
+                      type="button"
+                      className="gantt-edit-rail-week-btn"
+                      aria-label="Decrease weeks"
+                      disabled={weeks <= MIN_MILESTONE_WEEKS}
+                      onClick={() => onPhaseWeeks(phase.id, weeks - 1)}
+                    >
+                      −
+                    </button>
+                    <span className="gantt-edit-rail-week-label">{formatPhaseWeekLabel(weeks)}</span>
+                    <button
+                      type="button"
+                      className="gantt-edit-rail-week-btn"
+                      aria-label="Increase weeks"
+                      disabled={weeks >= MAX_MILESTONE_WEEKS}
+                      onClick={() => onPhaseWeeks(phase.id, weeks + 1)}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {(phase.tasks || []).map((task) => {
+                const taskTitle = task.title.trim() || 'Task';
+                return (
+                  <div key={task.id} className="gantt-edit-rail-task-row">
+                    <span className="gantt-edit-rail-task-name">{taskTitle}</span>
+                    <MilestoneDateRangePickerWithRef
+                      startDate={task.startDate}
+                      endDate={task.endDate}
+                      onChange={(patch) => onTaskDates(phase.id, task.id, patch)}
+                      className="gantt-edit-rail-dates gantt-edit-rail-dates--task"
+                      emptyLabel="Dates"
+                      ariaLabel={`Dates for ${taskTitle}`}
+                      rangeFormat="task"
+                    />
+                  </div>
+                );
+              })}
+
+              {phaseMarkers.map((marker) => (
+                <div key={marker.id} className="gantt-edit-rail-marker-row">
+                  <span className="gantt-edit-rail-marker-dot" aria-hidden />
+                  <span className="gantt-edit-rail-marker-title">
+                    {marker.title.trim() || 'Milestone'}
+                  </span>
+                  <MilestoneSingleDatePicker
+                    date={marker.date}
+                    onChange={(date) => onMarkerDate(marker.id, date)}
+                    className="gantt-edit-rail-marker-date"
+                    emptyLabel="Date"
+                    ariaLabel={`Date for ${marker.title.trim() || 'milestone'}`}
+                  />
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
 // ── Gantt Chart ───────────────────────────────────────────────────────────────
 function GanttChart({
   projects,
@@ -3428,6 +3622,8 @@ function GanttChartInner({
       startDate: focusedProject.startDate,
       endDate: focusedProject.endDate,
       milestones: JSON.parse(JSON.stringify(focusedProject.milestones || [])),
+      markers: JSON.parse(JSON.stringify(focusedProject.markers || [])),
+      linkedSchedule: Boolean(focusedProject.linkedSchedule),
     };
     setTimelineEditMode(true);
   }, [focusedProject, onUpdateProject]);
@@ -3455,12 +3651,47 @@ function GanttChartInner({
           startDate: snap.startDate,
           endDate: snap.endDate,
           milestones: snap.milestones,
+          markers: snap.markers,
+          linkedSchedule: snap.linkedSchedule,
         });
       }
     }
     timelineEditSnapshotRef.current = null;
     setTimelineEditMode(false);
   }, [onUpdateProject, validProjects]);
+
+  const applyLinkedProjectUpdate = useCallback((nextProject) => {
+    if (!onUpdateProject || !nextProject) return;
+    onUpdateProject(nextProject);
+  }, [onUpdateProject]);
+
+  const handleEditRailPhaseWeeks = useCallback((phaseId, weeks) => {
+    if (!timelineFocusProject) return;
+    applyLinkedProjectUpdate(
+      updateProjectPhaseDurationWeeks(withLinkedSchedule(timelineFocusProject), phaseId, weeks),
+    );
+  }, [applyLinkedProjectUpdate, timelineFocusProject]);
+
+  const handleEditRailPhaseDates = useCallback((phaseId, patch) => {
+    if (!timelineFocusProject) return;
+    applyLinkedProjectUpdate(
+      updateProjectPhaseCustomDates(withLinkedSchedule(timelineFocusProject), phaseId, patch),
+    );
+  }, [applyLinkedProjectUpdate, timelineFocusProject]);
+
+  const handleEditRailTaskDates = useCallback((phaseId, taskId, patch) => {
+    if (!timelineFocusProject) return;
+    applyLinkedProjectUpdate(
+      updateProjectTaskDates(withLinkedSchedule(timelineFocusProject), phaseId, taskId, patch),
+    );
+  }, [applyLinkedProjectUpdate, timelineFocusProject]);
+
+  const handleEditRailMarkerDate = useCallback((markerId, date) => {
+    if (!timelineFocusProject) return;
+    applyLinkedProjectUpdate(
+      updateProjectMarkerDate(timelineFocusProject, markerId, date),
+    );
+  }, [applyLinkedProjectUpdate, timelineFocusProject]);
 
   const exitFocusView = useCallback(() => {
     if (timelineEditMode) finishTimelineEdit();
@@ -3725,14 +3956,15 @@ function GanttChartInner({
     const applyFromPointer = (clientX) => {
       const dayNum = pointerDayFromTrack(clientX, track, minDay, totalDays);
       const phaseStartDay = daysFromEpoch(phase.startDate);
+      const linkedProject = withLinkedSchedule(project);
       let next;
       if (isCustom) {
         const endIso = isoFromTimelineDay(Math.max(dayNum, phaseStartDay), phase.startDate);
-        next = updateProjectPhaseEndDate(project, phase.id, endIso);
+        next = updateProjectPhaseEndDate(linkedProject, phase.id, endIso);
       } else {
         const rawDays = Math.max(1, dayNum - phaseStartDay + 1);
         const weeks = normalizeDurationWeeks(Math.max(1, Math.round(rawDays / 7)), MIN_MILESTONE_WEEKS);
-        next = updateProjectPhaseDurationWeeks(project, phase.id, weeks);
+        next = updateProjectPhaseDurationWeeks(linkedProject, phase.id, weeks);
       }
       resizePreviewRef.current = next;
       setResizePreviewProject(next);
@@ -4356,7 +4588,7 @@ function GanttChartInner({
                       disabled={!projectHasMilestones(timelineFocusProject)}
                       title={
                         projectHasMilestones(timelineFocusProject)
-                          ? 'Edit phase dates on the timeline'
+                          ? 'Edit schedule beside the timeline'
                           : 'Add milestones to edit schedule'
                       }
                     >
@@ -4385,19 +4617,35 @@ function GanttChartInner({
       </div>
       {focusMode && timelineEditMode ? (
         <p className="gantt-focus-edit-hint" role="status">
-          Cancel restores the previous dates
+          Changes update the timeline. Cancel restores the previous dates.
         </p>
       ) : null}
-      <div className="gantt-wrapper" ref={scrollRef}>
-        <div
-          className={[
-            'gantt-chart',
-            mobileLayout ? 'gantt-chart--mobile' : '',
-            focusMode ? 'gantt-chart--focused' : '',
-            focusMode && timelineEditMode ? 'gantt-chart--editing' : '',
-          ].filter(Boolean).join(' ')}
-          style={{ minWidth: chartMinWidthPx }}
-        >
+      <div
+        className={
+          focusMode && timelineEditMode && !mobileLayout && timelineFocusProject
+            ? 'gantt-edit-layout'
+            : 'gantt-edit-layout--passthrough'
+        }
+      >
+        {focusMode && timelineEditMode && !mobileLayout && timelineFocusProject ? (
+          <TimelineEditRail
+            project={timelineFocusProject}
+            onPhaseWeeks={handleEditRailPhaseWeeks}
+            onPhaseDates={handleEditRailPhaseDates}
+            onTaskDates={handleEditRailTaskDates}
+            onMarkerDate={handleEditRailMarkerDate}
+          />
+        ) : null}
+        <div className="gantt-wrapper" ref={scrollRef}>
+          <div
+            className={[
+              'gantt-chart',
+              mobileLayout ? 'gantt-chart--mobile' : '',
+              focusMode ? 'gantt-chart--focused' : '',
+              focusMode && timelineEditMode ? 'gantt-chart--editing' : '',
+            ].filter(Boolean).join(' ')}
+            style={{ minWidth: chartMinWidthPx }}
+          >
           <div className="gantt-chart-weekends" aria-hidden>
             {!mobileLayout ? (
               <>
@@ -4685,6 +4933,7 @@ function GanttChartInner({
           </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
     {showOverview && timelineFocusProject ? (
