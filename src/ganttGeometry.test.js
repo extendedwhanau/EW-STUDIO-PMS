@@ -119,4 +119,36 @@ describe('ganttGeometry date positioning', () => {
     });
     expect(withLead - withoutLead).toBe(124);
   });
+
+  /**
+   * Regression: focused timeline used a 124px ruler spacer while phase tracks
+   * were full-width. Same left% put "29 July" near the "20 Mon" tick.
+   */
+  test('focus mode (lead 0) keeps 29 July after 20 July on the shared track', () => {
+    // Typical focused project window (~head/tail padding around Jul–Aug work).
+    const minDay = daysFromEpoch('2026-06-23');
+    const maxDay = daysFromEpoch('2026-09-30');
+    const totalDays = ganttTotalDays(minDay, maxDay);
+    const july20 = daysFromEpoch('2026-07-20');
+    const july29 = daysFromEpoch('2026-07-29');
+
+    [12, 16, 20, 24].forEach((pxPerDay) => {
+      // Focus / mobile: no lead — marker track and ruler are the same width.
+      const { trackWidthPx, chartMinWidthPx } = ganttChartWidths(totalDays, pxPerDay, 0);
+      expect(chartMinWidthPx).toBe(trackWidthPx);
+
+      const tick20Px = (ganttDayLeftPct(july20, minDay, totalDays) / 100) * trackWidthPx;
+      const marker29Px = (ganttDayCenterPct(july29, minDay, totalDays) / 100) * trackWidthPx;
+
+      expect(marker29Px).toBeGreaterThan(tick20Px);
+      // ~9 days after Mon 20 (centre of Wed 29 ≈ 20 + 9.5)
+      expect(marker29Px - tick20Px).toBeCloseTo(9.5 * pxPerDay, 6);
+
+      // Ruler tick for 29 Jul Mon-week neighbour (27 Mon) must sit left of the marker.
+      const july27 = daysFromEpoch('2026-07-27');
+      const tick27Px = (ganttDayLeftPct(july27, minDay, totalDays) / 100) * trackWidthPx;
+      expect(marker29Px).toBeGreaterThan(tick27Px);
+      expect(marker29Px - tick27Px).toBeCloseTo(2.5 * pxPerDay, 6);
+    });
+  });
 });
