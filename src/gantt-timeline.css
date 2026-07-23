@@ -658,8 +658,6 @@ button.gantt-focus-copy:focus-visible {
   flex-direction: column;
   --gantt-sticky-bg: var(--surface);
   --gantt-track-bg: var(--surface);
-  /* Lead = left pad + label column + gap before track */
-  --gantt-lead-w: calc(10px + 110px + 4px);
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   border: none;
@@ -675,10 +673,17 @@ button.gantt-focus-copy:focus-visible {
      so absolute weekend/today overlays stretch with the full list height. */
   flex: 1 0 auto;
   min-height: 100%;
+  /* Lead lives on the chart (not wrapper) so focus mode can zero it reliably. */
+  --gantt-lead-w: calc(10px + 110px + 4px);
   --gantt-ruler-h: 54px;
   --gantt-month-row-h: 22px;
   --gantt-weekend-bg: rgba(0, 0, 0, 0.04);
   --gantt-week-align-nudge: 4px;
+}
+
+.gantt-chart--focused,
+.gantt-chart--mobile {
+  --gantt-lead-w: 0;
 }
 
 .gantt-chart-header {
@@ -1623,7 +1628,8 @@ body.gantt-phase-move-active * {
   flex-direction: column;
   gap: 0;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
-  margin-left: 10px;
+  /* Keep phase tracks aligned with the ruler (no extra inset). */
+  margin-left: 0;
 }
 
 .gantt-label--ghost {
