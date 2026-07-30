@@ -691,14 +691,18 @@ function updateProjectTaskDates(project, phaseId, taskId, patch) {
   };
 }
 
-function updateProjectMarkerDate(project, markerId, date) {
+function updateProjectMarker(project, markerId, patch = {}) {
   const markers = (project.markers || []).map((marker) => (
-    marker.id === markerId ? { ...marker, date: date || '' } : marker
+    marker.id === markerId ? { ...marker, ...patch } : marker
   ));
   return {
     ...project,
     markers: normalizeProjectMarkers(markers, { requireTitle: false }),
   };
+}
+
+function updateProjectMarkerDate(project, markerId, date) {
+  return updateProjectMarker(project, markerId, { date: date || '' });
 }
 
 function updateProjectPhaseCustomDates(project, phaseId, patch) {
@@ -1564,6 +1568,10 @@ function ScheduleStartEndRow({
   startLabel = 'Start',
   endLabel = 'End',
   nameExtra = null,
+  dropActive = false,
+  onMarkerDragOver,
+  onMarkerDragLeave,
+  onMarkerDrop,
 }) {
   const endPickerRef = useRef(null);
 
@@ -1575,7 +1583,17 @@ function ScheduleStartEndRow({
   };
 
   return (
-    <div className={['gantt-edit-rail-row', rowClass].filter(Boolean).join(' ')} role="row">
+    <div
+      className={[
+        'gantt-edit-rail-row',
+        rowClass,
+        dropActive ? 'gantt-edit-rail-row--drop-active' : '',
+      ].filter(Boolean).join(' ')}
+      role="row"
+      onDragOver={onMarkerDragOver}
+      onDragLeave={onMarkerDragLeave}
+      onDrop={onMarkerDrop}
+    >
       <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
         {nameExtra}
         {name}
@@ -3369,19 +3387,98 @@ function sortTimelineProjectsByDesigner(projects, designers) {
 }
 
 // ── Timeline edit rail (focus Edit mode only) ────────────────────────────────
+const MARKER_DRAG_MIME = 'application/x-ew-marker-id';
+
 function TimelineEditRail({
   project,
   onPhaseDates,
   onTaskDates,
   onMarkerDate,
+  onMarkerPatch,
+  onMarkerRelink,
 }) {
   const phases = project.milestones || [];
   const markers = project.markers || [];
+  const [editingMarkerId, setEditingMarkerId] = useState(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draggingMarkerId, setDraggingMarkerId] = useState(null);
+  const [dropTargetKey, setDropTargetKey] = useState(null);
+
+  const beginTitleEdit = (marker) => {
+    setEditingMarkerId(marker.id);
+    setDraftTitle(marker.title || '');
+  };
+
+  const commitTitleEdit = (markerId) => {
+    const nextTitle = draftTitle.trim();
+    setEditingMarkerId(null);
+    setDraftTitle('');
+    if (!markerId || !onMarkerPatch) return;
+    const current = markers.find((marker) => marker.id === markerId);
+    if (!current) return;
+    if ((current.title || '') === nextTitle) return;
+    onMarkerPatch(markerId, { title: nextTitle });
+  };
+
+  const cancelTitleEdit = () => {
+    setEditingMarkerId(null);
+    setDraftTitle('');
+  };
+
+  const readDraggedMarkerId = (event) => (
+    event.dataTransfer.getData(MARKER_DRAG_MIME)
+      || event.dataTransfer.getData('text/plain')
+      || draggingMarkerId
+      || ''
+  );
+
+  const handleMarkerDragStart = (event, markerId) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(MARKER_DRAG_MIME, markerId);
+    event.dataTransfer.setData('text/plain', markerId);
+    setDraggingMarkerId(markerId);
+  };
+
+  const handleMarkerDragEnd = () => {
+    setDraggingMarkerId(null);
+    setDropTargetKey(null);
+  };
+
+  const handleDropTargetDragOver = (event, targetKey) => {
+    const types = [...event.dataTransfer.types];
+    if (
+      !draggingMarkerId
+      && !types.includes(MARKER_DRAG_MIME)
+      && !types.includes('text/plain')
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetKey(targetKey);
+  };
+
+  const handleDropTargetDragLeave = (event, targetKey) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    setDropTargetKey((cur) => (cur === targetKey ? null : cur));
+  };
+
+  const handleDropOnTarget = (event, target) => {
+    event.preventDefault();
+    const markerId = readDraggedMarkerId(event);
+    setDraggingMarkerId(null);
+    setDropTargetKey(null);
+    if (!markerId || !onMarkerRelink) return;
+    onMarkerRelink(markerId, target);
+  };
 
   return (
     <aside className="gantt-edit-rail" aria-label="Schedule editor">
       <div className="gantt-edit-rail-head">
         <span className="gantt-edit-rail-title">{project.name.trim() || 'Project'}</span>
+        <p className="gantt-edit-rail-hint">
+          Edit milestone names, or drag a milestone onto a phase or task to move it to that start date.
+        </p>
       </div>
 
       <div className="gantt-edit-rail-table" role="table" aria-label="Phases and tasks">
@@ -3394,6 +3491,7 @@ function TimelineEditRail({
         {phases.map((phase) => {
           const phaseTitle = phase.title.trim() || 'Phase';
           const phaseMarkers = markers.filter((marker) => marker.phaseKey === phase.phaseKey);
+          const phaseDropKey = `phase:${phase.id}`;
           return (
             <div key={phase.id} className="gantt-edit-rail-group">
               <ScheduleStartEndRow
@@ -3402,10 +3500,19 @@ function TimelineEditRail({
                 startDate={phase.startDate}
                 endDate={phase.endDate}
                 onChange={(patch) => onPhaseDates(phase.id, patch)}
+                dropActive={dropTargetKey === phaseDropKey}
+                onMarkerDragOver={(event) => handleDropTargetDragOver(event, phaseDropKey)}
+                onMarkerDragLeave={(event) => handleDropTargetDragLeave(event, phaseDropKey)}
+                onMarkerDrop={(event) => handleDropOnTarget(event, {
+                  phaseKey: phase.phaseKey,
+                  date: phase.startDate || '',
+                  linkedTo: '',
+                })}
               />
 
               {(phase.tasks || []).map((task) => {
                 const taskTitle = task.title.trim() || 'Task';
+                const taskDropKey = `task:${task.id}`;
                 return (
                   <ScheduleStartEndRow
                     key={task.id}
@@ -3414,29 +3521,87 @@ function TimelineEditRail({
                     startDate={task.startDate}
                     endDate={task.endDate}
                     onChange={(patch) => onTaskDates(phase.id, task.id, patch)}
+                    dropActive={dropTargetKey === taskDropKey}
+                    onMarkerDragOver={(event) => handleDropTargetDragOver(event, taskDropKey)}
+                    onMarkerDragLeave={(event) => handleDropTargetDragLeave(event, taskDropKey)}
+                    onMarkerDrop={(event) => handleDropOnTarget(event, {
+                      phaseKey: phase.phaseKey,
+                      date: task.startDate || phase.startDate || '',
+                      linkedTo: taskTitle,
+                    })}
                   />
                 );
               })}
 
-              {phaseMarkers.map((marker) => (
-                <div key={marker.id} className="gantt-edit-rail-row gantt-edit-rail-row--marker" role="row">
-                  <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
-                    <span className="gantt-edit-rail-marker-dot" aria-hidden />
-                    {marker.title.trim() || 'Milestone'}
-                  </span>
-                  <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell">
-                    <MilestoneSingleDatePicker
-                      date={marker.date}
-                      onChange={(date) => onMarkerDate(marker.id, date)}
-                      className="gantt-edit-rail-date"
-                      emptyLabel="Date"
-                      ariaLabel={`Date for ${marker.title.trim() || 'milestone'}`}
-                      rangeFormat="task"
-                    />
-                  </span>
-                  <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell" />
-                </div>
-              ))}
+              {phaseMarkers.map((marker) => {
+                const displayTitle = marker.title.trim() || 'Milestone';
+                const isEditing = editingMarkerId === marker.id;
+                return (
+                  <div
+                    key={marker.id}
+                    className={[
+                      'gantt-edit-rail-row',
+                      'gantt-edit-rail-row--marker',
+                      draggingMarkerId === marker.id ? 'gantt-edit-rail-row--dragging' : '',
+                    ].filter(Boolean).join(' ')}
+                    role="row"
+                    draggable={!isEditing}
+                    onDragStart={(event) => handleMarkerDragStart(event, marker.id)}
+                    onDragEnd={handleMarkerDragEnd}
+                    title="Drag onto a phase or task to move this milestone"
+                  >
+                    <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
+                      <span className="gantt-edit-rail-marker-dot" aria-hidden />
+                      {isEditing ? (
+                        <input
+                          className="gantt-edit-rail-marker-title-input"
+                          value={draftTitle}
+                          autoFocus
+                          aria-label="Milestone name"
+                          onChange={(event) => setDraftTitle(event.target.value)}
+                          onBlur={() => commitTitleEdit(marker.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              event.currentTarget.blur();
+                            } else if (event.key === 'Escape') {
+                              event.preventDefault();
+                              cancelTitleEdit();
+                            }
+                          }}
+                          onClick={(event) => event.stopPropagation()}
+                          onMouseDown={(event) => event.stopPropagation()}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="gantt-edit-rail-marker-title-btn"
+                          onClick={() => beginTitleEdit(marker)}
+                          aria-label={`Edit milestone name: ${displayTitle}`}
+                        >
+                          {displayTitle}
+                        </button>
+                      )}
+                    </span>
+                    <span
+                      className="gantt-edit-rail-col gantt-edit-rail-col--date"
+                      role="cell"
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onDragStart={(event) => event.preventDefault()}
+                    >
+                      <MilestoneSingleDatePicker
+                        date={marker.date}
+                        onChange={(date) => onMarkerDate(marker.id, date)}
+                        className="gantt-edit-rail-date"
+                        emptyLabel="Date"
+                        ariaLabel={`Date for ${displayTitle}`}
+                        rangeFormat="task"
+                      />
+                    </span>
+                    <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell" />
+                  </div>
+                );
+              })}
             </div>
           );
         })}
@@ -3711,6 +3876,26 @@ function GanttChartInner({
     if (!timelineFocusProject) return;
     applyLinkedProjectUpdate(
       updateProjectMarkerDate(timelineFocusProject, markerId, date),
+    );
+  }, [applyLinkedProjectUpdate, timelineFocusProject]);
+
+  const handleEditRailMarkerPatch = useCallback((markerId, patch) => {
+    if (!timelineFocusProject) return;
+    applyLinkedProjectUpdate(
+      updateProjectMarker(timelineFocusProject, markerId, patch),
+    );
+  }, [applyLinkedProjectUpdate, timelineFocusProject]);
+
+  const handleEditRailMarkerRelink = useCallback((markerId, target) => {
+    if (!timelineFocusProject || !target?.phaseKey) return;
+    const current = (timelineFocusProject.markers || []).find((marker) => marker.id === markerId);
+    if (!current) return;
+    applyLinkedProjectUpdate(
+      updateProjectMarker(timelineFocusProject, markerId, {
+        phaseKey: target.phaseKey,
+        date: target.date || current.date || '',
+        linkedTo: target.linkedTo || '',
+      }),
     );
   }, [applyLinkedProjectUpdate, timelineFocusProject]);
 
@@ -4661,6 +4846,8 @@ function GanttChartInner({
             onPhaseDates={handleEditRailPhaseDates}
             onTaskDates={handleEditRailTaskDates}
             onMarkerDate={handleEditRailMarkerDate}
+            onMarkerPatch={handleEditRailMarkerPatch}
+            onMarkerRelink={handleEditRailMarkerRelink}
           />
         ) : null}
         <div className="gantt-wrapper" ref={scrollRef}>

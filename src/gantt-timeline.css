@@ -250,6 +250,14 @@
   line-height: 1.25;
 }
 
+.gantt-edit-rail-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: rgba(60, 60, 67, 0.58);
+}
+
 .gantt-edit-rail-table {
   display: flex;
   flex-direction: column;
@@ -271,6 +279,7 @@
   min-height: 30px;
   padding: 4px 4px;
   border-radius: 6px;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
 }
 
 .gantt-edit-rail-row--head {
@@ -289,6 +298,20 @@
 
 .gantt-edit-rail-row--marker {
   background: transparent;
+  cursor: grab;
+}
+
+.gantt-edit-rail-row--marker:active {
+  cursor: grabbing;
+}
+
+.gantt-edit-rail-row--dragging {
+  opacity: 0.45;
+}
+
+.gantt-edit-rail-row--drop-active {
+  background: rgba(79, 127, 217, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(79, 127, 217, 0.35);
 }
 
 .gantt-edit-rail-col--name {
@@ -326,6 +349,55 @@
   font-weight: 500;
   color: rgba(60, 60, 67, 0.72);
   padding-left: 10px;
+}
+
+.gantt-edit-rail-marker-title-btn {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: inherit;
+  text-align: left;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.gantt-edit-rail-marker-title-btn:hover,
+.gantt-edit-rail-marker-title-btn:focus-visible {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  outline: none;
+}
+
+.gantt-edit-rail-marker-title-input {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 2px 4px;
+  border: 1px solid rgba(60, 60, 67, 0.22);
+  border-radius: 4px;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.gantt-edit-rail-marker-title-input:focus {
+  outline: none;
+  border-color: rgba(60, 60, 67, 0.45);
+  box-shadow: 0 0 0 2px rgba(60, 60, 67, 0.08);
 }
 
 .gantt-edit-rail-col--date {
