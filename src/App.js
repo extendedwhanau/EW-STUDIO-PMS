@@ -692,13 +692,11 @@ function updateProjectTaskDates(project, phaseId, taskId, patch) {
 }
 
 function updateProjectMarker(project, markerId, patch = {}) {
+  // Keep list order stable while editing (esp. titles). Full normalize runs on save.
   const markers = (project.markers || []).map((marker) => (
     marker.id === markerId ? { ...marker, ...patch } : marker
   ));
-  return {
-    ...project,
-    markers: normalizeProjectMarkers(markers, { requireTitle: false }),
-  };
+  return { ...project, markers };
 }
 
 function updateProjectMarkerDate(project, markerId, date) {
@@ -1902,8 +1900,9 @@ function MilestonePhaseBlock({
             type="button"
             className="sheet-phase-marker-add"
             onClick={() => onAddMarker(phase.phaseKey)}
+            aria-label={`Add milestone to ${phase.title}`}
           >
-            + Milestone
+            +
           </button>
         </div>
       </div>
@@ -1999,33 +1998,36 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
     });
   };
 
-  const setMarkers = (next) => {
+  const addPhaseMarker = (phaseKey) => {
     setForm((f) => ({
       ...f,
-      markers: normalizeProjectMarkers(next, { requireTitle: false }),
+      markers: normalizeProjectMarkers([
+        ...(f.markers || []),
+        {
+          ...emptyProjectMarker(),
+          phaseKey: phaseKey || '',
+          title: 'Milestone',
+          date: today(),
+        },
+      ], { requireTitle: false }),
     }));
   };
 
-  const addPhaseMarker = (phaseKey) => {
-    setMarkers([
-      ...(form.markers || []),
-      {
-        ...emptyProjectMarker(),
-        phaseKey: phaseKey || '',
-        title: 'Milestone',
-        date: today(),
-      },
-    ]);
-  };
-
   const removePhaseMarker = (markerId) => {
-    setMarkers((form.markers || []).filter((marker) => marker.id !== markerId));
+    setForm((f) => ({
+      ...f,
+      markers: (f.markers || []).filter((marker) => marker.id !== markerId),
+    }));
   };
 
   const updatePhaseMarker = (markerId, patch) => {
-    setMarkers((form.markers || []).map((marker) => (
-      marker.id === markerId ? { ...marker, ...patch } : marker
-    )));
+    // Avoid re-sorting/trimming on every keystroke so the title input stays focused.
+    setForm((f) => ({
+      ...f,
+      markers: (f.markers || []).map((marker) => (
+        marker.id === markerId ? { ...marker, ...patch } : marker
+      )),
+    }));
   };
 
   const selectPhaseWeeks = (phaseId, weeks) => {
@@ -3410,30 +3412,44 @@ function TimelineEditRail({
 }) {
   const phases = project.milestones || [];
   const markers = project.markers || [];
-  const [editingMarkerId, setEditingMarkerId] = useState(null);
-  const [draftTitle, setDraftTitle] = useState('');
   const [draggingMarkerId, setDraggingMarkerId] = useState(null);
   const [dropTargetKey, setDropTargetKey] = useState(null);
+  const [titleDrafts, setTitleDrafts] = useState({});
+  const titleDraftsRef = useRef({});
+  const skipTitleCommitRef = useRef(null);
+  titleDraftsRef.current = titleDrafts;
 
-  const beginTitleEdit = (marker) => {
-    setEditingMarkerId(marker.id);
-    setDraftTitle(marker.title || '');
+  const markerTitleValue = (marker) => (
+    Object.prototype.hasOwnProperty.call(titleDrafts, marker.id)
+      ? titleDrafts[marker.id]
+      : (marker.title || '')
+  );
+
+  const clearTitleDraft = (markerId) => {
+    setTitleDrafts((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, markerId)) return prev;
+      const { [markerId]: _removed, ...rest } = prev;
+      return rest;
+    });
   };
 
-  const commitTitleEdit = (markerId) => {
-    const nextTitle = draftTitle.trim();
-    setEditingMarkerId(null);
-    setDraftTitle('');
+  const commitMarkerTitle = (markerId) => {
     if (!markerId || !onMarkerPatch) return;
+    if (skipTitleCommitRef.current === markerId) {
+      skipTitleCommitRef.current = null;
+      clearTitleDraft(markerId);
+      return;
+    }
     const current = markers.find((marker) => marker.id === markerId);
     if (!current) return;
+    const drafts = titleDraftsRef.current;
+    const raw = Object.prototype.hasOwnProperty.call(drafts, markerId)
+      ? drafts[markerId]
+      : (current.title || '');
+    const nextTitle = String(raw).trim();
+    clearTitleDraft(markerId);
     if ((current.title || '') === nextTitle) return;
     onMarkerPatch(markerId, { title: nextTitle });
-  };
-
-  const cancelTitleEdit = () => {
-    setEditingMarkerId(null);
-    setDraftTitle('');
   };
 
   const readDraggedMarkerId = (event) => (
@@ -3488,7 +3504,7 @@ function TimelineEditRail({
       <div className="gantt-edit-rail-head">
         <span className="gantt-edit-rail-title">{project.name.trim() || 'Project'}</span>
         <p className="gantt-edit-rail-hint">
-          Edit milestone names, or drag a milestone onto a phase or task to move it to that start date.
+          Drag a milestone's dot onto a phase or task to retime it.
         </p>
       </div>
 
@@ -3545,8 +3561,7 @@ function TimelineEditRail({
               })}
 
               {phaseMarkers.map((marker) => {
-                const displayTitle = marker.title.trim() || 'Milestone';
-                const isEditing = editingMarkerId === marker.id;
+                const displayTitle = markerTitleValue(marker).trim() || 'Milestone';
                 return (
                   <div
                     key={marker.id}
@@ -3556,49 +3571,47 @@ function TimelineEditRail({
                       draggingMarkerId === marker.id ? 'gantt-edit-rail-row--dragging' : '',
                     ].filter(Boolean).join(' ')}
                     role="row"
-                    draggable={!isEditing}
-                    onDragStart={(event) => handleMarkerDragStart(event, marker.id)}
-                    onDragEnd={handleMarkerDragEnd}
-                    title="Drag onto a phase or task to move this milestone"
                   >
                     <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
-                      <span className="gantt-edit-rail-marker-dot" aria-hidden />
-                      {isEditing ? (
-                        <input
-                          className="gantt-edit-rail-marker-title-input"
-                          value={draftTitle}
-                          autoFocus
-                          aria-label="Milestone name"
-                          onChange={(event) => setDraftTitle(event.target.value)}
-                          onBlur={() => commitTitleEdit(marker.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              event.currentTarget.blur();
-                            } else if (event.key === 'Escape') {
-                              event.preventDefault();
-                              cancelTitleEdit();
-                            }
-                          }}
-                          onClick={(event) => event.stopPropagation()}
-                          onMouseDown={(event) => event.stopPropagation()}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          className="gantt-edit-rail-marker-title-btn"
-                          onClick={() => beginTitleEdit(marker)}
-                          aria-label={`Edit milestone name: ${displayTitle}`}
-                        >
-                          {displayTitle}
-                        </button>
-                      )}
+                      <span
+                        className="gantt-edit-rail-marker-handle"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Drag ${displayTitle} onto a phase or task`}
+                        title="Drag onto a phase or task"
+                        draggable
+                        onDragStart={(event) => handleMarkerDragStart(event, marker.id)}
+                        onDragEnd={handleMarkerDragEnd}
+                      >
+                        <span className="gantt-edit-rail-marker-dot" aria-hidden />
+                      </span>
+                      <input
+                        type="text"
+                        className="gantt-edit-rail-marker-title-input"
+                        value={markerTitleValue(marker)}
+                        placeholder="Milestone"
+                        aria-label="Milestone name"
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          setTitleDrafts((prev) => ({ ...prev, [marker.id]: next }));
+                        }}
+                        onBlur={() => commitMarkerTitle(marker.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            event.currentTarget.blur();
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            skipTitleCommitRef.current = marker.id;
+                            clearTitleDraft(marker.id);
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
                     </span>
                     <span
                       className="gantt-edit-rail-col gantt-edit-rail-col--date"
                       role="cell"
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onDragStart={(event) => event.preventDefault()}
                     >
                       <MilestoneSingleDatePicker
                         date={marker.date}
