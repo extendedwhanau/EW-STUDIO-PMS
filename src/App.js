@@ -1873,9 +1873,20 @@ function MilestonePhaseBlock({
                   emptyLabel="No date"
                   ariaLabel={`Date for ${marker.title.trim() || 'milestone'}`}
                 />
-                <span className="sheet-phase-marker-title">
-                  {marker.title.trim() || 'Milestone'}
-                </span>
+                <input
+                  type="text"
+                  className="sheet-phase-marker-title"
+                  value={marker.title}
+                  placeholder="Milestone"
+                  aria-label="Milestone name"
+                  onChange={(event) => onUpdateMarker(marker.id, { title: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
               </div>
               <button
                 type="button"
