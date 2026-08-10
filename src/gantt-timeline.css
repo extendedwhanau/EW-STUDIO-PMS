@@ -250,6 +250,14 @@
   line-height: 1.25;
 }
 
+.gantt-edit-rail-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: rgba(60, 60, 67, 0.58);
+}
+
 .gantt-edit-rail-table {
   display: flex;
   flex-direction: column;
@@ -271,6 +279,7 @@
   min-height: 30px;
   padding: 4px 4px;
   border-radius: 6px;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
 }
 
 .gantt-edit-rail-row--head {
@@ -289,6 +298,16 @@
 
 .gantt-edit-rail-row--marker {
   background: transparent;
+  cursor: default;
+}
+
+.gantt-edit-rail-row--dragging {
+  opacity: 0.45;
+}
+
+.gantt-edit-rail-row--drop-active {
+  background: rgba(79, 127, 217, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(79, 127, 217, 0.35);
 }
 
 .gantt-edit-rail-col--name {
@@ -321,11 +340,75 @@
 .gantt-edit-rail-row--marker .gantt-edit-rail-col--name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 11px;
   font-weight: 500;
   color: rgba(60, 60, 67, 0.72);
   padding-left: 10px;
+  overflow: visible;
+}
+
+.gantt-edit-rail-marker-handle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: grab;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.gantt-edit-rail-marker-handle:hover {
+  opacity: 1;
+}
+
+.gantt-edit-rail-marker-handle:active {
+  cursor: grabbing;
+}
+
+.gantt-edit-rail-marker-handle:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(60, 60, 67, 0.16);
+  border-radius: 4px;
+}
+
+.gantt-edit-rail-marker-title-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 1px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: rgba(60, 60, 67, 0.78);
+  line-height: 1.2;
+  box-shadow: 0 1px 0 0 transparent;
+}
+
+.gantt-edit-rail-marker-title-input::placeholder {
+  color: rgba(60, 60, 67, 0.38);
+}
+
+.gantt-edit-rail-marker-title-input:hover {
+  color: var(--text-primary);
+}
+
+.gantt-edit-rail-marker-title-input:focus {
+  outline: none;
+  color: var(--text-primary);
+  box-shadow: 0 1px 0 0 rgba(60, 60, 67, 0.4);
 }
 
 .gantt-edit-rail-col--date {
