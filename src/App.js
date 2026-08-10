@@ -5186,6 +5186,65 @@ function GanttChartInner({
 
 const STUDIO_ACCESS_STORAGE = 'ew_studio_access';
 const STUDIO_ACCESS_CODE = '3131';
+const STUDIO_VIEW_STORAGE = 'studio_view';
+const STUDIO_GANTT_FOCUS_STORAGE = 'studio_gantt_focus';
+const APP_VIEWS = new Set(['projects', 'gantt', 'scheduled', 'archive']);
+
+function readStoredAppLocation() {
+  let view = 'projects';
+  let focus = null;
+  try {
+    if (typeof window === 'undefined') return { view, focus };
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('view');
+    if (APP_VIEWS.has(fromUrl)) {
+      view = fromUrl;
+    } else {
+      const fromStore = localStorage.getItem(STUDIO_VIEW_STORAGE);
+      if (APP_VIEWS.has(fromStore)) view = fromStore;
+    }
+    if (view === 'gantt') {
+      const focusParam = params.get('focus');
+      if (focusParam) {
+        focus = focusParam;
+      } else {
+        focus = localStorage.getItem(STUDIO_GANTT_FOCUS_STORAGE) || null;
+      }
+    }
+  } catch {
+    /* ignore storage / URL errors */
+  }
+  return { view, focus };
+}
+
+function writeStoredAppLocation({ view, focus = null }) {
+  if (typeof window === 'undefined' || !APP_VIEWS.has(view)) return;
+  try {
+    localStorage.setItem(STUDIO_VIEW_STORAGE, view);
+    if (view === 'gantt' && focus) {
+      localStorage.setItem(STUDIO_GANTT_FOCUS_STORAGE, focus);
+    } else {
+      localStorage.removeItem(STUDIO_GANTT_FOCUS_STORAGE);
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    // Keep auth-related params out of the restored location.
+    params.delete('lock');
+    params.delete('logout');
+    params.set('view', view);
+    if (view === 'gantt' && focus) params.set('focus', focus);
+    else params.delete('focus');
+
+    const qs = params.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) {
+      window.history.replaceState(null, '', next);
+    }
+  } catch {
+    /* ignore storage / URL errors */
+  }
+}
 
 function normalizeRemoteProject(p) {
   return normalizeProjectMilestones(
@@ -5281,7 +5340,7 @@ export default function App() {
     }
   });
 
-  const [view, setView] = useState('projects');
+  const [view, setView] = useState(() => readStoredAppLocation().view);
   const [designers, setDesigners] = useState(loadDesignersFromStorage);
   const [projects, setProjects] = useState(() => {
     let raw;
@@ -5313,7 +5372,9 @@ export default function App() {
   const [filterDesigner, setFilterDesigner] = useState('all');
   const [teamOpen, setTeamOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [ganttFocusProjectId, setGanttFocusProjectId] = useState(null);
+  const [ganttFocusProjectId, setGanttFocusProjectId] = useState(
+    () => readStoredAppLocation().focus,
+  );
   const [ganttFocusMeta, setGanttFocusMeta] = useState(null);
   const [overviewPreviewProject, setOverviewPreviewProject] = useState(() => (
     shouldShowDevOverviewPreview() ? getDevOverviewPreviewProject() : null
@@ -5527,6 +5588,14 @@ export default function App() {
   useEffect(() => {
     if (view !== 'gantt') setGanttFocusMeta(null);
   }, [view]);
+
+  // Persist nav (+ focused timeline project) so refresh stays on the same screen.
+  useEffect(() => {
+    const focus = view === 'gantt'
+      ? (ganttFocusMeta?.id || ganttFocusProjectId || null)
+      : null;
+    writeStoredAppLocation({ view, focus });
+  }, [view, ganttFocusMeta, ganttFocusProjectId]);
 
   const saveProject = (p) => {
     const withDesigners = normalizeProjectDesignersOnProject(p);
