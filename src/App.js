@@ -121,6 +121,7 @@ function designerWithNormalizedColor(d) {
 }
 
 const STATUS_OPTIONS = [
+  'Potential',
   'Scheduled',
   'Ready to Start',
   'In Progress',
@@ -130,6 +131,7 @@ const STATUS_OPTIONS = [
 
 /** Row dot colours — blue / purple / green / amber / grey. */
 const STATUS_ACCENT = {
+  Potential: '#B7B2A9',
   Scheduled: '#4F7FD9',
   'Ready to Start': '#8B6FD6',
   'In Progress': '#22A45A',
@@ -155,30 +157,88 @@ function normalizeProjectStatus(status) {
 
 const PIPELINE_STATUSES = new Set(['Scheduled', 'Ready to Start']);
 
-const CATEGORY_OPTIONS = ['priority', 'secondary'];
+const CATEGORY_OPTIONS = ['thisWeek', 'studio'];
 
 const CATEGORY_LABELS = {
-  priority: 'Priority',
-  secondary: 'Secondary',
+  thisWeek: 'This Week',
+  studio: 'Studio',
 };
 
+const OVERVIEW_COLUMN_TITLE_STORAGE = 'studio_overview_column_titles';
+const OVERVIEW_COLUMN_VISIBILITY_STORAGE = 'studio_overview_column_visibility';
+const OVERVIEW_COLUMN_IDS = ['thisWeek', 'studio', 'schedule', 'potential'];
+const OVERVIEW_COLUMN_FALLBACK_TITLES = {
+  thisWeek: 'This Week',
+  studio: 'Studio',
+  schedule: 'Scheduled',
+  potential: 'Potential',
+};
+
+function loadOverviewColumnTitles() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(OVERVIEW_COLUMN_TITLE_STORAGE));
+    if (!raw || typeof raw !== 'object') return { ...CATEGORY_LABELS };
+    return {
+      thisWeek: String(raw.thisWeek || '').trim() || CATEGORY_LABELS.thisWeek,
+      studio: String(raw.studio || '').trim() || CATEGORY_LABELS.studio,
+    };
+  } catch {
+    return { ...CATEGORY_LABELS };
+  }
+}
+
+function defaultOverviewColumnVisibility() {
+  return {
+    thisWeek: true,
+    studio: true,
+    schedule: true,
+    potential: true,
+  };
+}
+
+function loadOverviewColumnVisibility() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(OVERVIEW_COLUMN_VISIBILITY_STORAGE));
+    if (!raw || typeof raw !== 'object') return defaultOverviewColumnVisibility();
+    const next = defaultOverviewColumnVisibility();
+    OVERVIEW_COLUMN_IDS.forEach((id) => {
+      if (typeof raw[id] === 'boolean') next[id] = raw[id];
+    });
+    if (!OVERVIEW_COLUMN_IDS.some((id) => next[id])) return defaultOverviewColumnVisibility();
+    return next;
+  } catch {
+    return defaultOverviewColumnVisibility();
+  }
+}
+
 function normalizeProjectCategory(category) {
-  if (category === 'background' || category === 'pro-bono') return 'secondary';
+  if (category === 'thisWeek' || category === 'priority') return 'thisWeek';
+  if (
+    category === 'studio'
+    || category === 'secondary'
+    || category === 'onTheGo'
+    || category === 'background'
+    || category === 'pro-bono'
+  ) return 'studio';
   if (CATEGORY_OPTIONS.includes(category)) return category;
-  return 'secondary';
+  return 'studio';
 }
 
 function formatCategoryForDisplay(category) {
-  return CATEGORY_LABELS[normalizeProjectCategory(category)] || CATEGORY_LABELS.priority;
+  return CATEGORY_LABELS[normalizeProjectCategory(category)] || CATEGORY_LABELS.studio;
 }
 
 function getProjectCategory(project) {
   return normalizeProjectCategory(project?.priority);
 }
 
-/** Upcoming / pre–in-progress — listed under Schedule, hidden from main Projects. */
+/** Upcoming booked work — listed under Scheduled, hidden from main Projects. */
 function isPipelineStatus(status) {
   return PIPELINE_STATUSES.has(normalizeProjectStatus(status));
+}
+
+function isPotentialStatus(status) {
+  return normalizeProjectStatus(status) === 'Potential';
 }
 
 /** Sentence case labels for sheet-style status display */
@@ -433,18 +493,24 @@ function formatScheduleStartDate(str) {
   return `${day}.${month}.${year}`;
 }
 
-/** Project-level date visuals, e.g. "7 July 2026 — 13 February 2027". */
-function formatMilestoneDateRangeDisplay(start, end) {
+/** Project/phase date visuals, e.g. "20 Sep – 10 Nov". */
+function formatDayMonthRangeDisplay(start, end) {
   if (!start && !end) return '';
-  if (start && end) return `${formatDueDateLong(start)} — ${formatDueDateLong(end)}`;
-  return formatDueDateLong(start || end);
+  const from = formatTaskDateShort(start || end);
+  const to = formatTaskDateShort(end || start);
+  if (!from) return '';
+  if (!start || !end || from === to) return from;
+  return `${from} – ${to}`;
 }
 
-/** Phase date ranges in the project card, e.g. "7 Jul 2026 – 11 Aug 2026". */
+/** Project-level date visuals, e.g. "20 Sep – 10 Nov". */
+function formatMilestoneDateRangeDisplay(start, end) {
+  return formatDayMonthRangeDisplay(start, end);
+}
+
+/** Phase date ranges in the project card, e.g. "20 Sep – 10 Nov". */
 function formatPhaseDateRangeDisplay(start, end) {
-  if (!start && !end) return '';
-  if (start && end) return `${formatPhaseDateMedium(start)} – ${formatPhaseDateMedium(end)}`;
-  return formatPhaseDateMedium(start || end);
+  return formatDayMonthRangeDisplay(start, end);
 }
 
 /** Task date ranges in the project card, e.g. "7 Jul – 11 Aug". */
@@ -1089,6 +1155,86 @@ function isoDateParts(y, monthIndex, day) {
   return `${y}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+/** Compact typed dates in the calendar popup, e.g. "18/08/26". */
+function formatCalendarInputDate(iso) {
+  if (!iso) return '';
+  const d = parseISODateLocal(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}/${mm}/${yy}`;
+}
+
+function parseCalendarInputDate(raw) {
+  const text = String(raw || '').trim();
+  const match = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/);
+  if (!match) return '';
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  let year = Number(match[3]);
+  if (match[3].length === 2) year = year >= 70 ? 1900 + year : 2000 + year;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return '';
+  return isoDateParts(year, month - 1, day);
+}
+
+function CalendarDateField({ label, valueIso, onApply, onClear }) {
+  const [text, setText] = useState(() => formatCalendarInputDate(valueIso));
+
+  useEffect(() => {
+    setText(formatCalendarInputDate(valueIso));
+  }, [valueIso]);
+
+  const commit = () => {
+    const parsed = parseCalendarInputDate(text);
+    if (parsed) {
+      onApply(parsed);
+      setText(formatCalendarInputDate(parsed));
+      return;
+    }
+    setText(formatCalendarInputDate(valueIso));
+  };
+
+  return (
+    <label className="sheet-date-calendar__field">
+      <span className="sr-only">{label}</span>
+      <input
+        className="sheet-date-calendar__field-input"
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="dd/mm/yy"
+        aria-label={label}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          e.stopPropagation();
+          commit();
+        }}
+      />
+      {text ? (
+        <button
+          type="button"
+          className="sheet-date-calendar__field-clear"
+          aria-label={`Clear ${label}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setText('');
+            onClear();
+          }}
+        >
+          ×
+        </button>
+      ) : null}
+    </label>
+  );
+}
+
 function buildCalendarCells(viewYear, viewMonth) {
   const first = new Date(viewYear, viewMonth, 1);
   const startOffset = (first.getDay() + 6) % 7;
@@ -1252,6 +1398,59 @@ function DateRangeBubbleCalendar({
     setDraftEnd('');
   };
 
+  const showMonthForIso = (iso) => {
+    if (!iso) return;
+    const d = parseISODateLocal(iso);
+    if (Number.isNaN(d.getTime())) return;
+    setViewYear(d.getFullYear());
+    setViewMonth(d.getMonth());
+  };
+
+  const applyTypedStart = (iso) => {
+    setDatesCleared(true);
+    setDraftStart(iso);
+    if (singleDate) {
+      setDraftEnd(iso);
+    } else if (draftEnd && iso > draftEnd) {
+      setDraftEnd('');
+    }
+    showMonthForIso(iso);
+  };
+
+  const applyTypedEnd = (iso) => {
+    if (singleDate) {
+      setDraftStart(iso);
+      setDraftEnd(iso);
+      showMonthForIso(iso);
+      return;
+    }
+    if (!draftStart || iso < draftStart) {
+      setDatesCleared(true);
+      setDraftStart(iso);
+      setDraftEnd('');
+      showMonthForIso(iso);
+      return;
+    }
+    setDraftEnd(iso);
+    showMonthForIso(iso);
+  };
+
+  const clearTypedStart = () => {
+    setDatesCleared(true);
+    setDraftStart('');
+    if (singleDate) setDraftEnd('');
+  };
+
+  const clearTypedEnd = () => {
+    if (singleDate) {
+      setDatesCleared(true);
+      setDraftStart('');
+      setDraftEnd('');
+      return;
+    }
+    setDraftEnd('');
+  };
+
   const handleSave = () => {
     if (singleDate) {
       if (!draftStart) return;
@@ -1273,11 +1472,7 @@ function DateRangeBubbleCalendar({
     : rangeFormat === 'phase'
       ? formatPhaseDateRangeDisplay
       : formatMilestoneDateRangeDisplay;
-  const formatSingleLabel = rangeFormat === 'task'
-    ? formatTaskDateShort
-    : rangeFormat === 'phase'
-      ? formatPhaseDateMedium
-      : formatDueDateLong;
+  const formatSingleLabel = formatTaskDateShort;
 
   const todayIso = today();
   const canSave = singleDate ? Boolean(draftStart) : Boolean(draftStart && draftEnd);
@@ -1304,6 +1499,20 @@ function DateRangeBubbleCalendar({
       aria-label={label}
       onPointerDown={(e) => e.stopPropagation()}
     >
+      <div className="sheet-date-calendar__inputs">
+        <CalendarDateField
+          label="Start date"
+          valueIso={draftStart}
+          onApply={applyTypedStart}
+          onClear={clearTypedStart}
+        />
+        <CalendarDateField
+          label="End date"
+          valueIso={draftEnd}
+          onApply={applyTypedEnd}
+          onClear={clearTypedEnd}
+        />
+      </div>
       <div className="sheet-date-calendar__head">
         <button
           type="button"
@@ -1445,17 +1654,7 @@ function MilestoneDateRangePicker({
     : rangeFormat === 'phase'
       ? formatPhaseDateRangeDisplay
       : formatMilestoneDateRangeDisplay;
-  const formatSingleLabel = rangeFormat === 'task'
-    ? formatTaskDateShort
-    : rangeFormat === 'phase'
-      ? formatPhaseDateMedium
-      : formatDueDateLong;
-
-  const rangeLabel = endDateOnly
-    ? (startDate
-      ? `${formatSingleLabel(startDate)} — ${formatSingleLabel(endDate || startDate)}`
-      : emptyLabel)
-    : (formatRangeLabel(startDate, endDate) || emptyLabel);
+  const rangeLabel = formatRangeLabel(startDate, endDate) || emptyLabel;
   const hasDates = endDateOnly ? Boolean(startDate) : Boolean(startDate && endDate);
 
   return (
@@ -1520,7 +1719,7 @@ const MilestoneSingleDatePicker = forwardRef(function MilestoneSingleDatePicker(
   };
 
   const label = date
-    ? (rangeFormat === 'task' ? formatTaskDateShort(date) : formatPhaseDateMedium(date))
+    ? formatTaskDateShort(date)
     : emptyLabel;
   const calendarDate = date || fallbackDate || '';
 
@@ -1910,7 +2109,7 @@ function MilestonePhaseBlock({
   );
 }
 
-function MilestonesPanel({ form, setForm, isEditing = false }) {
+function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader = false }) {
   const phases = form.milestones || [];
   const [importError, setImportError] = useState('');
   const [importNotice, setImportNotice] = useState('');
@@ -2166,34 +2365,38 @@ function MilestonesPanel({ form, setForm, isEditing = false }) {
 
   return (
     <>
-      <div className="sheet-modal-section sheet-modal-section--project-name">
-        <div className="sheet-project-name-row">
-          <input
-            className="sheet-name-dates-name sheet-project-name-input"
-            type="text"
-            placeholder="Project name"
-            aria-label="Project name"
-            value={form.name}
-            size={projectNameSize}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-        </div>
-      </div>
+      {hideProjectHeader ? null : (
+        <>
+          <div className="sheet-modal-section sheet-modal-section--project-name">
+            <div className="sheet-project-name-row">
+              <input
+                className="sheet-name-dates-name sheet-project-name-input"
+                type="text"
+                placeholder="Project name"
+                aria-label="Project name"
+                value={form.name}
+                size={projectNameSize}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+          </div>
 
-      <div className="sheet-modal-section sheet-modal-section--project-dates">
-        <div className="sheet-project-dates-row">
-          <div className="sheet-modal-section-label sheet-project-dates-label">Dates</div>
-          <MilestoneDateRangePickerWithRef
-            startDate={form.startDate}
-            endDate={form.endDate}
-            onChange={handleKickoffChange}
-            className="sheet-name-dates-range sheet-project-dates-btn"
-            emptyLabel="Add dates"
-            ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
-            endDateOnly={isEditing}
-          />
-        </div>
-      </div>
+          <div className="sheet-modal-section sheet-modal-section--project-dates">
+            <div className="sheet-project-dates-row">
+              <div className="sheet-modal-section-label sheet-project-dates-label">Dates</div>
+              <MilestoneDateRangePickerWithRef
+                startDate={form.startDate}
+                endDate={form.endDate}
+                onChange={handleKickoffChange}
+                className="sheet-name-dates-range sheet-project-dates-btn"
+                emptyLabel="Add dates"
+                ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
+                endDateOnly={isEditing}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="sheet-pair sheet-pair--priority-top">
         <span className="sheet-field-label">Phases</span>
@@ -2409,7 +2612,7 @@ function ProjectDetailsPanel({
         <div className="sheet-project-meta">
           <div className="sheet-project-meta-group">
             <label htmlFor="project-modal-category" className="sheet-modal-section-sublabel">
-              Category
+              Focus
             </label>
             <div className="sheet-select-hit sheet-select-hit--meta">
               <span className="sheet-select-visual" aria-hidden>
@@ -2434,7 +2637,14 @@ function ProjectDetailsPanel({
               Status
             </label>
             <div className="sheet-select-hit sheet-select-hit--meta">
-              <span className="sheet-select-visual" aria-hidden>
+              <span className="sheet-select-visual sheet-select-visual--status" aria-hidden>
+                <span
+                  className="sheet-status-dot"
+                  style={{
+                    backgroundColor: statusAccent(form.status),
+                    boxShadow: `0 0 0 2px ${statusAccent(form.status)}22`,
+                  }}
+                />
                 <span className="sheet-value sheet-value--nowrap">
                   {formatStatusForDisplay(form.status)}
                 </span>
@@ -2693,15 +2903,19 @@ function ProjectModal({
   onDelete,
   onOpenTimeline,
 }) {
-  const [modalTab, setModalTab] = useState(
-    initialTab === 'markers' || initialTab === 'milestones' ? 'phases' : initialTab,
-  );
   const [showOverview, setShowOverview] = useState(false);
+  const phasesAnchorRef = useRef(null);
+  const isEditing = Boolean(project);
 
   useEffect(() => {
-    setModalTab(initialTab === 'markers' || initialTab === 'milestones' ? 'phases' : initialTab);
+    const tab = initialTab === 'markers' || initialTab === 'milestones' ? 'phases' : initialTab;
+    if (tab !== 'phases') return undefined;
+    const id = window.requestAnimationFrame(() => {
+      phasesAnchorRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(id);
   }, [project?.id, initialTab]);
-  const isEditing = Boolean(project);
+
   const [form, setForm] = useState(() => {
     if (project) {
       const merged = normalizeProjectMilestones(normalizeProjectDesignersOnProject({
@@ -2717,7 +2931,7 @@ function ProjectModal({
       designerIds: firstId ? [firstId] : [],
       designerId: firstId,
       status: 'Scheduled', startDate: '', endDate: '',
-      notes: '', priority: 'secondary',
+      notes: '', priority: 'studio',
       milestones: [],
       markers: [],
       linkedSchedule: false,
@@ -2749,6 +2963,29 @@ function ProjectModal({
     onClose();
   };
 
+  useEffect(() => {
+    const onKey = (e) => {
+      if (showOverview) return;
+      if (document.querySelector('.sheet-date-calendar')) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Enter' || e.repeat || e.isComposing) return;
+      const target = e.target;
+      const tag = target?.tagName;
+      if (tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.isContentEditable) return;
+      if (!form.name.trim()) return;
+      e.preventDefault();
+      onSave(normalizeProjectMilestones(form));
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [form, onClose, onSave, showOverview]);
+
   const showTimelineLink = Boolean(
     onOpenTimeline
     && projectHasMilestones(form)
@@ -2768,61 +3005,54 @@ function ProjectModal({
 
   return (
     <>
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal--project">
+    <div className="modal-overlay modal-overlay--drawer" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div
+        className="modal modal--project modal--drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isEditing ? (form.name.trim() || 'Project') : 'New project'}
+      >
         <div className="modal-header modal-header--project">
-          <div className="modal-project-tabs" role="tablist" aria-label="Project sections">
-            <button
-              type="button"
-              role="tab"
-              className={`modal-project-tab${modalTab === 'details' ? ' modal-project-tab--active' : ''}`}
-              aria-selected={modalTab === 'details'}
-              onClick={() => setModalTab('details')}
-            >
-              Details
-            </button>
-            <div className="modal-project-tab-group">
+          {isEditing ? (
+            showTimelineLink ? (
               <button
                 type="button"
-                role="tab"
-                className={`modal-project-tab${modalTab === 'phases' ? ' modal-project-tab--active' : ''}`}
-                aria-selected={modalTab === 'phases'}
-                onClick={() => setModalTab('phases')}
+                className="modal-project-timeline-link"
+                onClick={openTimelineView}
+                aria-label={`Open ${form.name.trim() || 'project'} on timeline`}
               >
-                Phases
+                Timeline
               </button>
-              {showTimelineLink ? (
-                <button
-                  type="button"
-                  className="modal-project-timeline-link"
-                  onClick={openTimelineView}
-                  aria-label={`Open ${form.name.trim() || 'project'} on timeline`}
-                >
-                  Timeline
-                </button>
-              ) : null}
-            </div>
-          </div>
+            ) : (
+              <span className="modal-project-sheet-heading">Project</span>
+            )
+          ) : (
+            <h2 className="modal-project-sheet-heading">New project</h2>
+          )}
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <form className="modal-project-sheet-form" onSubmit={submitProject} noValidate>
         <div className="modal-body modal-body--project">
-          {modalTab === 'details' ? (
-            <ProjectDetailsPanel
+          <ProjectDetailsPanel
+            form={form}
+            set={set}
+            setForm={setForm}
+            designers={designers}
+            designersAvailableToAdd={designersAvailableToAdd}
+            addDesignerId={addDesignerId}
+            removeDesignerId={removeDesignerId}
+            existingClients={existingClients}
+            isEditing={isEditing}
+          />
+          <div ref={phasesAnchorRef} className="sheet-project-phases-anchor">
+            <MilestonesPanel
               form={form}
-              set={set}
               setForm={setForm}
-              designers={designers}
-              designersAvailableToAdd={designersAvailableToAdd}
-              addDesignerId={addDesignerId}
-              removeDesignerId={removeDesignerId}
-              existingClients={existingClients}
               isEditing={isEditing}
+              hideProjectHeader
             />
-          ) : (
-            <MilestonesPanel form={form} setForm={setForm} isEditing={isEditing} />
-          )}
+          </div>
         </div>
 
         <div className="modal-footer modal-footer--project modal-footer--project-form">
@@ -2963,8 +3193,19 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
 }
 
 // ── Project Row ───────────────────────────────────────────────────────────────
-function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'default' }) {
-  const isFeedCard = variant === 'schedule' || variant === 'projects';
+function ProjectRow({
+  project,
+  designers,
+  onClick,
+  onStatusChange,
+  variant = 'default',
+  boardDate = 'due',
+  draggable = false,
+  dragging = false,
+  onDragStart,
+}) {
+  const isBoardCard = variant === 'board';
+  const isFeedCard = variant === 'schedule' || variant === 'projects' || isBoardCard;
   const isProjectsCard = variant === 'projects';
   const assignedDesigners = getProjectDesigners(project, designers);
   const accent = statusAccent(project.status);
@@ -2980,46 +3221,102 @@ function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'de
     ? (dateStr ? `Completed ${formatDueDateLong(dateStr)}` : 'No completion date')
     : (dateStr ? `${dueSeg}, ${formatDueDateLong(dateStr)}. Working weekdays.` : '');
   const hasMilestones = projectHasMilestones(project);
-  const feedDateLabel = isProjectsCard
+  const showDueDate = isProjectsCard || (isBoardCard && boardDate === 'due');
+  const feedDateLabel = showDueDate
     ? formatDueDateLong(project.endDate)
     : formatDueDateLong(project.startDate);
-  const feedDateTitle = isProjectsCard ? 'Due date' : 'Start date';
-  const feedDateAria = isProjectsCard && project.endDate
+  const feedDateTitle = showDueDate ? 'Due date' : 'Start date';
+  const feedDateAria = showDueDate && project.endDate
     ? `Due ${formatDueDateLong(project.endDate)}`
-    : (!isProjectsCard && project.startDate
+    : (!showDueDate && project.startDate
       ? `Starts ${formatDueDateLong(project.startDate)}`
       : undefined);
+  const boardStartLabel = formatTaskDateShort(project.startDate);
+  const boardEndLabel = formatTaskDateShort(project.endDate);
+  const boardDateLabel = boardDate === 'due'
+    ? boardEndLabel
+    : (boardStartLabel && boardEndLabel && boardStartLabel !== boardEndLabel
+      ? `${boardStartLabel} - ${boardEndLabel}`
+      : (boardStartLabel || boardEndLabel));
+  const boardDateTitle = boardDate === 'due' ? 'Due date' : 'Schedule';
+  const boardDateAria = boardDate === 'due'
+    ? (boardEndLabel ? `Due ${boardEndLabel}` : undefined)
+    : (boardDateLabel ? `Scheduled ${boardDateLabel}` : undefined);
+
+  const statusHit = (
+    <div
+      className={[
+        'project-status-hit',
+        isFeedCard ? 'project-status-hit--dot-only' : '',
+      ].filter(Boolean).join(' ')}
+      onPointerDown={e => e.stopPropagation()}
+      onClick={e => e.stopPropagation()}
+    >
+      <span
+        className="project-status-dot"
+        style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
+        title={project.status}
+        aria-hidden
+      />
+      <select
+        className="row-status-select"
+        value={project.status}
+        onChange={e => onStatusChange(project.id, e.target.value)}
+        onPointerDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+        aria-label="Project status"
+      >
+        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+    </div>
+  );
 
   const trailCol = (
     <div className="project-row-col project-row-col--trail">
-      <div
-        className={[
-          'project-status-hit',
-          isFeedCard ? 'project-status-hit--dot-only' : '',
-        ].filter(Boolean).join(' ')}
-        onPointerDown={e => e.stopPropagation()}
-        onClick={e => e.stopPropagation()}
-      >
-        <span
-          className="project-status-dot"
-          style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
-          title={project.status}
-          aria-hidden
-        />
-        <select
-          className="row-status-select"
-          value={project.status}
-          onChange={e => onStatusChange(project.id, e.target.value)}
-          onPointerDown={e => e.stopPropagation()}
-          onClick={e => e.stopPropagation()}
-          aria-label="Project status"
-        >
-          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-      <DesignerAvatarStack designers={assignedDesigners} size={28} maxVisible={4} />
+      {isBoardCard ? (
+        <div className="project-row-board-meta">
+          {statusHit}
+          {boardDateLabel ? (
+            <span
+              className="project-row-board-date"
+              title={boardDateTitle}
+              aria-label={boardDateAria}
+            >
+              {boardDateLabel}
+            </span>
+          ) : null}
+        </div>
+      ) : statusHit}
+      <DesignerAvatarStack designers={assignedDesigners} size={isBoardCard ? 22 : 28} maxVisible={isBoardCard ? 3 : 4} />
     </div>
   );
+
+  if (isBoardCard) {
+    return (
+      <div
+        className={`project-row project-row--board${dragging ? ' project-row--board-dragging' : ''}`}
+        onPointerDown={(e) => {
+          if (!draggable) return;
+          if (e.button !== 0) return;
+          const target = e.target instanceof Element ? e.target : e.target?.parentElement;
+          if (target?.closest('select, button, .project-status-hit')) return;
+          e.preventDefault();
+          onDragStart?.(e, project.id);
+        }}
+        onClick={() => onClick(project)}
+      >
+        <div className="project-row-inner project-row-inner--board">
+          {project.client ? (
+            <span className="project-client">{project.client}</span>
+          ) : null}
+          {project.name ? (
+            <span className="project-name">{project.name}</span>
+          ) : null}
+          {trailCol}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -3101,6 +3398,237 @@ function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'de
         )}
       </div>
     </div>
+  );
+}
+
+function applyOverviewColumnMove(project, column) {
+  if (!project || !column) return project;
+
+  const clearComplete = (next) => {
+    if (next.status === 'Complete') return next;
+    const { completedAt, ...rest } = next;
+    return rest;
+  };
+
+  if (column === 'thisWeek' || column === 'studio') {
+    const next = { ...project, priority: column };
+    if (isPipelineStatus(next.status) || isPotentialStatus(next.status)) {
+      next.status = 'In Progress';
+      return clearComplete(next);
+    }
+    return next;
+  }
+  if (column === 'schedule') {
+    if (isPipelineStatus(project.status)) return project;
+    return clearComplete({ ...project, status: 'Scheduled' });
+  }
+  if (column === 'potential') {
+    if (isPotentialStatus(project.status)) return project;
+    return clearComplete({ ...project, status: 'Potential' });
+  }
+  return project;
+}
+
+function overviewColumnFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const hit = el?.closest?.('[data-overview-col]')?.getAttribute('data-overview-col');
+  if (hit) return hit;
+
+  let best = null;
+  let bestDist = Infinity;
+  document.querySelectorAll('[data-overview-col]').forEach((col) => {
+    const r = col.getBoundingClientRect();
+    const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+    const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+    const dist = dx + dy;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = col.getAttribute('data-overview-col');
+    }
+  });
+  return best;
+}
+
+function overviewColumnForProject(project) {
+  if (!project) return null;
+  if (isPotentialStatus(project.status)) return 'potential';
+  if (isPipelineStatus(project.status)) return 'schedule';
+  return getProjectCategory(project);
+}
+
+function OverviewFilterMenu({ titles, visibility, onToggle }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const filtered = OVERVIEW_COLUMN_IDS.some((id) => !visibility[id]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (e) => {
+      if (wrapRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="overview-filter" ref={wrapRef}>
+      <button
+        type="button"
+        className={`overview-filter-tab${open ? ' overview-filter-tab--open' : ''}${filtered ? ' overview-filter-tab--active' : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Filter columns"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path
+            d="M2.5 3.5h11L9.5 8.4V12.5L6.5 11V8.4L2.5 3.5Z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {open ? (
+        <div className="overview-filter-menu" role="menu" aria-label="Visible columns">
+          {OVERVIEW_COLUMN_IDS.map((id) => {
+            const checked = Boolean(visibility[id]);
+            const label = titles[id] || OVERVIEW_COLUMN_FALLBACK_TITLES[id];
+            return (
+              <button
+                key={id}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={checked}
+                className={`overview-filter-option${checked ? ' overview-filter-option--on' : ''}`}
+                onClick={() => onToggle(id)}
+              >
+                <span className="overview-filter-option-label">{label}</span>
+                <span className={`overview-filter-tick${checked ? '' : ' overview-filter-tick--off'}`} aria-hidden>
+                  ✓
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function OverviewColumnTitle({ value, fallback, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  useEffect(() => {
+    if (!editing) return undefined;
+    const node = inputRef.current;
+    if (!node) return undefined;
+    node.focus();
+    node.select();
+    return undefined;
+  }, [editing]);
+
+  const commit = () => {
+    const next = draft.trim() || fallback;
+    onChange(next);
+    setDraft(next);
+    setEditing(false);
+  };
+
+  if (!onChange) {
+    return <h2 className="project-feed-heading">{value}</h2>;
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="overview-col-title-input"
+        value={draft}
+        maxLength={28}
+        aria-label="Column name"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            commit();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="project-feed-heading overview-col-title"
+      onClick={() => setEditing(true)}
+      aria-label={`Rename ${value}`}
+      title="Click to rename"
+    >
+      {value}
+    </button>
+  );
+}
+
+function OverviewColumn({
+  title,
+  count,
+  empty,
+  columnId,
+  showDropPreview = false,
+  dropPreviewHeight = 88,
+  onRename,
+  renameFallback,
+  children,
+}) {
+  return (
+    <section
+      className="overview-col"
+      data-overview-col={columnId}
+      aria-label={title}
+    >
+      <header className="overview-col-header">
+        <OverviewColumnTitle
+          value={title}
+          fallback={renameFallback || title}
+          onChange={onRename}
+        />
+        <span className="overview-col-count">{count}</span>
+      </header>
+      <div className="overview-col-list">
+        {showDropPreview ? (
+          <div
+            className="overview-drop-preview"
+            style={{ height: dropPreviewHeight }}
+            aria-hidden
+          />
+        ) : null}
+        {count === 0 && !showDropPreview ? (
+          <p className="overview-col-empty">{empty}</p>
+        ) : children}
+      </div>
+    </section>
   );
 }
 
@@ -3717,7 +4245,9 @@ function GanttChartInner({
   const [phaseMovePendingId, setPhaseMovePendingId] = useState(null);
 
   const timelineSections = useMemo(() => {
-    const active = validProjects.filter((p) => !isPipelineStatus(p.status));
+    const active = validProjects.filter((p) => (
+      !isPipelineStatus(p.status) && !isPotentialStatus(p.status)
+    ));
     const scheduled = validProjects.filter((p) => isPipelineStatus(p.status));
     return [
       {
@@ -5281,7 +5811,7 @@ export default function App() {
     }
   });
 
-  const [view, setView] = useState('projects');
+  const [view, setView] = useState('overview');
   const [designers, setDesigners] = useState(loadDesignersFromStorage);
   const [projects, setProjects] = useState(() => {
     let raw;
@@ -5313,6 +5843,16 @@ export default function App() {
   const [filterDesigner, setFilterDesigner] = useState('all');
   const [teamOpen, setTeamOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [overviewDragId, setOverviewDragId] = useState(null);
+  const [overviewDropColumn, setOverviewDropColumn] = useState(null);
+  const [overviewDragSize, setOverviewDragSize] = useState(null);
+  const [overviewColumnTitles, setOverviewColumnTitles] = useState(loadOverviewColumnTitles);
+  const [overviewColumnVisibility, setOverviewColumnVisibility] = useState(loadOverviewColumnVisibility);
+  const skipOverviewClickRef = useRef(false);
+  const overviewDragIdRef = useRef(null);
+  const overviewDragGhostRef = useRef(null);
+  const overviewDragOffsetRef = useRef({ ox: 0, oy: 0 });
+  const overviewPointerRef = useRef({ x: 0, y: 0 });
   const [ganttFocusProjectId, setGanttFocusProjectId] = useState(null);
   const [ganttFocusMeta, setGanttFocusMeta] = useState(null);
   const [overviewPreviewProject, setOverviewPreviewProject] = useState(() => (
@@ -5460,6 +6000,25 @@ export default function App() {
   }, [designers, projects, cloudReady]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(OVERVIEW_COLUMN_TITLE_STORAGE, JSON.stringify(overviewColumnTitles));
+    } catch {
+      /* ignore */
+    }
+  }, [overviewColumnTitles]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        OVERVIEW_COLUMN_VISIBILITY_STORAGE,
+        JSON.stringify(overviewColumnVisibility),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [overviewColumnVisibility]);
+
+  useEffect(() => {
     if (!isSupabaseConfigured() || !cloudReady) return undefined;
     return subscribeWorkspaceChanges((updatedAt) => {
       applyRemoteRef.current(updatedAt);
@@ -5593,17 +6152,128 @@ export default function App() {
     }));
   };
 
+  const moveProjectToOverviewColumn = useCallback((id, column) => {
+    const projectId = id || overviewDragIdRef.current;
+    if (!projectId || !column) return;
+    setProjects((prev) => prev.map((p) => (
+      p.id === projectId ? applyOverviewColumnMove(p, column) : p
+    )));
+    overviewDragIdRef.current = null;
+    setOverviewDragId(null);
+    setOverviewDropColumn(null);
+    setOverviewDragSize(null);
+  }, []);
+
+  const placeOverviewDragGhost = useCallback((x, y) => {
+    const node = overviewDragGhostRef.current;
+    if (!node) return;
+    const { ox, oy } = overviewDragOffsetRef.current;
+    node.style.transform = `translate3d(${x - ox}px, ${y - oy}px, 0) scale(1.02)`;
+  }, []);
+
+  const startOverviewPointerDrag = useCallback((event, projectId) => {
+    const originX = event.clientX;
+    const originY = event.clientY;
+    const pointerId = event.pointerId;
+    const target = event.currentTarget;
+    const rect = target.getBoundingClientRect();
+    let active = false;
+    let raf = 0;
+    overviewDragIdRef.current = projectId;
+    overviewDragOffsetRef.current = { ox: originX - rect.left, oy: originY - rect.top };
+    overviewPointerRef.current = { x: originX, y: originY };
+
+    try {
+      target.setPointerCapture?.(pointerId);
+    } catch {
+      /* capture is optional — window listeners still track the drag */
+    }
+
+    const onMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const dx = moveEvent.clientX - originX;
+      const dy = moveEvent.clientY - originY;
+      if (!active && (dx * dx + dy * dy) < 25) return;
+      if (!active) {
+        active = true;
+        skipOverviewClickRef.current = true;
+        setOverviewDragSize({ w: rect.width, h: rect.height });
+        setOverviewDragId(projectId);
+        document.body.classList.add('overview-dragging');
+      }
+      if (moveEvent.cancelable) moveEvent.preventDefault();
+      overviewPointerRef.current = { x: moveEvent.clientX, y: moveEvent.clientY };
+      if (!raf) {
+        raf = window.requestAnimationFrame(() => {
+          raf = 0;
+          const { x, y } = overviewPointerRef.current;
+          placeOverviewDragGhost(x, y);
+        });
+      }
+      const column = overviewColumnFromPoint(moveEvent.clientX, moveEvent.clientY);
+      setOverviewDropColumn((prev) => (prev === column ? prev : column));
+    };
+
+    const finish = (upEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', finish, true);
+      window.removeEventListener('pointercancel', finish, true);
+      if (raf) window.cancelAnimationFrame(raf);
+      try {
+        if (target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
+      } catch {
+        /* ignore */
+      }
+      document.body.classList.remove('overview-dragging');
+      if (active) {
+        const column = overviewColumnFromPoint(upEvent.clientX, upEvent.clientY);
+        if (column) moveProjectToOverviewColumn(projectId, column);
+      }
+      overviewDragIdRef.current = null;
+      setOverviewDragId(null);
+      setOverviewDropColumn(null);
+      setOverviewDragSize(null);
+      window.setTimeout(() => {
+        skipOverviewClickRef.current = false;
+      }, 200);
+    };
+
+    window.addEventListener('pointermove', onMove, { capture: true, passive: false });
+    window.addEventListener('pointerup', finish, true);
+    window.addEventListener('pointercancel', finish, true);
+  }, [moveProjectToOverviewColumn, placeOverviewDragGhost]);
+
+  const openOverviewProject = useCallback((project) => {
+    if (skipOverviewClickRef.current) {
+      skipOverviewClickRef.current = false;
+      return;
+    }
+    openProjectEdit(project);
+  }, [openProjectEdit]);
+
+  useLayoutEffect(() => {
+    if (!overviewDragId) return undefined;
+    const { x, y } = overviewPointerRef.current;
+    placeOverviewDragGhost(x, y);
+    return undefined;
+  }, [overviewDragId, placeOverviewDragGhost]);
+
   const designerFiltered = filterDesigner === 'all'
     ? projects
     : projects.filter((p) => getProjectDesignerIds(p).includes(filterDesigner));
 
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
-  const devTimelinePreview = shouldUseDevTimelinePreview(activeProjects);
+  const inStudioProjects = activeProjects.filter((p) => (
+    !isPipelineStatus(p.status) && !isPotentialStatus(p.status)
+  ));
+  const devTimelinePreview = shouldUseDevTimelinePreview(inStudioProjects);
   const ganttProjects = devTimelinePreview
     ? getDevTimelinePreviewProjects(designers)
-    : activeProjects;
-  const mainProjects = activeProjects.filter(p => !isPipelineStatus(p.status));
+    : activeProjects.filter((p) => !isPotentialStatus(p.status));
+  const mainProjects = inStudioProjects;
   const pipelineProjects = activeProjects.filter(p => isPipelineStatus(p.status));
+  const potentialProjects = activeProjects.filter((p) => isPotentialStatus(p.status));
   const archivedProjects = designerFiltered
     .filter(p => p.status === 'Complete')
     .slice()
@@ -5625,13 +6295,19 @@ export default function App() {
       return (a.endDate || '').localeCompare(b.endDate || '');
     });
 
-  const priorityFeed = sortFeed(mainProjects.filter((p) => getProjectCategory(p) === 'priority'));
-  const secondaryFeed = sortSecondaryFeed(mainProjects.filter((p) => getProjectCategory(p) === 'secondary'));
-  const pipelinePriorityFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'priority'));
-  const pipelineSecondaryFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'secondary'));
+  const thisWeekFeed = sortFeed(mainProjects.filter((p) => getProjectCategory(p) === 'thisWeek'));
+  const studioFeed = sortSecondaryFeed(mainProjects.filter((p) => getProjectCategory(p) === 'studio'));
+  const pipelineThisWeekFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'thisWeek'));
+  const pipelineStudioFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'studio'));
+  const overviewScheduleFeed = pipelineProjects.slice().sort((a, b) =>
+    (a.startDate || a.endDate || '').localeCompare(b.startDate || b.endDate || ''),
+  );
+  const overviewPotentialFeed = potentialProjects.slice().sort((a, b) =>
+    (a.startDate || a.endDate || '').localeCompare(b.startDate || b.endDate || ''),
+  );
 
   const mainProjectCount = projects.filter(
-    p => p.status !== 'Complete' && !isPipelineStatus(p.status),
+    p => p.status !== 'Complete' && !isPipelineStatus(p.status) && !isPotentialStatus(p.status),
   ).length;
   const scheduledCount = projects.filter(p => isPipelineStatus(p.status)).length;
   const archivedCount = projects.filter(p => p.status === 'Complete').length;
@@ -5650,6 +6326,43 @@ export default function App() {
     out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     return out;
   }, [projects]);
+
+  const overviewDragProject = overviewDragId
+    ? projects.find((p) => p.id === overviewDragId)
+    : null;
+  const overviewDragFromColumn = overviewColumnForProject(overviewDragProject);
+  const overviewDropPreviewHeight = overviewDragSize?.h || 88;
+  const overviewColDragProps = (columnId) => ({
+    showDropPreview: Boolean(
+      overviewDragId && overviewDropColumn === columnId && overviewDragFromColumn !== columnId
+    ),
+    dropPreviewHeight: overviewDropPreviewHeight,
+  });
+
+  const toggleOverviewColumn = useCallback((columnId) => {
+    setOverviewColumnVisibility((prev) => {
+      const turningOff = prev[columnId];
+      if (turningOff && OVERVIEW_COLUMN_IDS.filter((id) => prev[id]).length <= 1) {
+        return prev;
+      }
+      return { ...prev, [columnId]: !prev[columnId] };
+    });
+  }, []);
+
+  const overviewBoardCard = (p, boardDate) => (
+    <ProjectRow
+      key={p.id}
+      project={p}
+      designers={designers}
+      variant="board"
+      boardDate={boardDate}
+      draggable
+      dragging={overviewDragId === p.id}
+      onDragStart={startOverviewPointerDrag}
+      onClick={openOverviewProject}
+      onStatusChange={updateProjectStatus}
+    />
+  );
 
   if (!accessUnlocked) {
     return <AccessScreen onUnlock={() => setAccessUnlocked(true)} />;
@@ -5678,8 +6391,8 @@ export default function App() {
         <nav className="sidebar-nav">
           <button
             type="button"
-            className={`nav-item ${view === 'projects' ? 'active' : ''}`}
-            onClick={() => { setView('projects'); closeSidebar(); }}
+            className={`nav-item ${view === 'overview' ? 'active' : ''}`}
+            onClick={() => { setView('overview'); closeSidebar(); }}
           >
             Projects
           </button>
@@ -5689,13 +6402,6 @@ export default function App() {
             onClick={() => { setView('gantt'); closeSidebar(); }}
           >
             Timeline
-          </button>
-          <button
-            type="button"
-            className={`nav-item ${view === 'scheduled' ? 'active' : ''}`}
-            onClick={() => { setView('scheduled'); closeSidebar(); }}
-          >
-            Schedule
           </button>
           <button
             type="button"
@@ -5801,13 +6507,11 @@ export default function App() {
             </button>
             <div className="page-title-cluster">
               <h1 className="page-title">
-                {view === 'projects'
+                {view === 'overview'
                   ? 'Projects'
-                  : view === 'scheduled'
-                    ? 'Schedule'
-                    : view === 'archive'
-                      ? 'Archive'
-                      : 'Timeline'}
+                  : view === 'archive'
+                    ? 'Archive'
+                    : 'Timeline'}
               </h1>
               {view === 'gantt' && ganttFocusMeta ? (
                 <button
@@ -5830,11 +6534,29 @@ export default function App() {
             </div>
           </div>
           <div className="main-header-actions">
-            {((view === 'projects' && mainProjectCount > 0)
+            {((view === 'overview' && activeProjects.length > 0)
+              || (view === 'projects' && mainProjectCount > 0)
               || (view === 'scheduled' && scheduledCount > 0)
               || (view === 'archive' && archivedCount > 0)
               || view !== 'archive') && (
               <div className="main-header-trailing">
+                {view === 'overview' && (
+                  <OverviewFilterMenu
+                    titles={{
+                      thisWeek: overviewColumnTitles.thisWeek,
+                      studio: overviewColumnTitles.studio,
+                      schedule: OVERVIEW_COLUMN_FALLBACK_TITLES.schedule,
+                      potential: OVERVIEW_COLUMN_FALLBACK_TITLES.potential,
+                    }}
+                    visibility={overviewColumnVisibility}
+                    onToggle={toggleOverviewColumn}
+                  />
+                )}
+                {view === 'overview' && activeProjects.length > 0 && (
+                  <span className="page-title-badge" aria-label={`${activeProjects.length} active jobs`}>
+                    {activeProjects.length}
+                  </span>
+                )}
                 {view === 'projects' && mainProjectCount > 0 && (
                   <span className="page-title-badge" aria-label={`${mainProjectCount} active projects`}>
                     {mainProjectCount}
@@ -5871,7 +6593,60 @@ export default function App() {
           </div>
         </header>
 
-        <div className="main-content">
+        <div className={`main-content${view === 'overview' ? ' main-content--overview' : ''}`}>
+          {view === 'overview' && (
+            <div className={`overview-board${overviewDragId ? ' overview-board--dragging' : ''}`}>
+              {overviewColumnVisibility.thisWeek ? (
+              <OverviewColumn
+                title={overviewColumnTitles.thisWeek}
+                columnId="thisWeek"
+                count={thisWeekFeed.length}
+                empty="Nothing pinned for this week."
+                renameFallback={CATEGORY_LABELS.thisWeek}
+                onRename={(next) => setOverviewColumnTitles((t) => ({ ...t, thisWeek: next }))}
+                {...overviewColDragProps('thisWeek')}
+              >
+                {thisWeekFeed.map((p) => overviewBoardCard(p, 'due'))}
+              </OverviewColumn>
+              ) : null}
+              {overviewColumnVisibility.studio ? (
+              <OverviewColumn
+                title={overviewColumnTitles.studio}
+                columnId="studio"
+                count={studioFeed.length}
+                empty="No other jobs in the studio."
+                renameFallback={CATEGORY_LABELS.studio}
+                onRename={(next) => setOverviewColumnTitles((t) => ({ ...t, studio: next }))}
+                {...overviewColDragProps('studio')}
+              >
+                {studioFeed.map((p) => overviewBoardCard(p, 'due'))}
+              </OverviewColumn>
+              ) : null}
+              {overviewColumnVisibility.schedule ? (
+              <OverviewColumn
+                title="Scheduled"
+                columnId="schedule"
+                count={overviewScheduleFeed.length}
+                empty="Nothing booked yet."
+                {...overviewColDragProps('schedule')}
+              >
+                {overviewScheduleFeed.map((p) => overviewBoardCard(p, 'start'))}
+              </OverviewColumn>
+              ) : null}
+              {overviewColumnVisibility.potential ? (
+              <OverviewColumn
+                title="Potential"
+                columnId="potential"
+                count={overviewPotentialFeed.length}
+                empty="No potential jobs yet."
+                {...overviewColDragProps('potential')}
+              >
+                {overviewPotentialFeed.map((p) => overviewBoardCard(p, 'start'))}
+              </OverviewColumn>
+              ) : null}
+            </div>
+          )}
+
           {view === 'projects' && (
             <div className="project-list">
               {mainProjects.length === 0 ? (
@@ -5882,10 +6657,10 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  {priorityFeed.length > 0 && (
+                  {thisWeekFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-feed-heading">Priority</h2>
-                      {priorityFeed.map(p => (
+                      <h2 className="project-feed-heading">This Week</h2>
+                      {thisWeekFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
@@ -5897,10 +6672,10 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  {secondaryFeed.length > 0 && (
+                  {studioFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-feed-heading">Secondary</h2>
-                      {secondaryFeed.map(p => (
+                      <h2 className="project-feed-heading">Studio</h2>
+                      {studioFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
@@ -5925,10 +6700,10 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  {pipelinePriorityFeed.length > 0 && (
+                  {pipelineThisWeekFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-feed-heading">Priority</h2>
-                      {pipelinePriorityFeed.map(p => (
+                      <h2 className="project-feed-heading">This Week</h2>
+                      {pipelineThisWeekFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
@@ -5940,10 +6715,10 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  {pipelineSecondaryFeed.length > 0 && (
+                  {pipelineStudioFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-feed-heading">Secondary</h2>
-                      {pipelineSecondaryFeed.map(p => (
+                      <h2 className="project-feed-heading">Studio</h2>
+                      {pipelineStudioFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
@@ -5998,6 +6773,23 @@ export default function App() {
         </div>
       </main>
 
+      {overviewDragProject && createPortal(
+        <div
+          ref={overviewDragGhostRef}
+          className="overview-drag-ghost"
+          style={{ width: overviewDragSize?.w || 300 }}
+        >
+          <ProjectRow
+            project={overviewDragProject}
+            designers={designers}
+            variant="board"
+            boardDate={overviewDragFromColumn === 'schedule' || overviewDragFromColumn === 'potential' ? 'start' : 'due'}
+            onClick={() => {}}
+            onStatusChange={() => {}}
+          />
+        </div>,
+        document.body,
+      )}
       {/* Modals */}
       {showNewProject && (
         <ProjectModal
