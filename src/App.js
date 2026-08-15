@@ -1665,7 +1665,7 @@ function MilestoneDateRangePicker({
           className,
           calendarOpen ? 'sheet-date-range-btn--active' : '',
           hasDates ? '' : 'sheet-date-range-btn--empty',
-          !hasDates && emptyAsPlus ? 'icon-bubble sheet-date-range-btn--plus' : '',
+          !hasDates && emptyAsPlus ? 'icon-bubble icon-bubble--sm sheet-date-range-btn--plus' : '',
           calendarOpen && !hasDates && emptyAsPlus ? 'icon-bubble--open' : '',
         ].filter(Boolean).join(' ')}
         onClick={toggleCalendar}
@@ -2560,7 +2560,7 @@ function ProjectDetailsPanel({
             <div className="sheet-designer-add-wrap sheet-client-add-wrap">
               <button
                 type="button"
-                className="sheet-milestone-add-task icon-bubble"
+                className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
                 aria-label="Add client"
                 tabIndex={-1}
               >
@@ -2643,7 +2643,7 @@ function ProjectDetailsPanel({
               <div className="sheet-designer-add-wrap">
                 <button
                   type="button"
-                  className="sheet-milestone-add-task icon-bubble"
+                  className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
                   aria-label="Add designer"
                   tabIndex={-1}
                 >
@@ -4052,7 +4052,7 @@ function GanttZoomMenu({ zoomStep, onSelect, scales }) {
     <div className="gantt-zoom-menu" ref={wrapRef}>
       <button
         type="button"
-        className={`gantt-zoom-menu-tab${open ? ' gantt-zoom-menu-tab--open' : ''}`}
+        className={`icon-bubble gantt-zoom-menu-tab${open ? ' icon-bubble--open gantt-zoom-menu-tab--open' : ''}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Timeline scale, ${current.label}`}
@@ -4754,7 +4754,7 @@ function GanttChartInner({
       window.cancelAnimationFrame(raf);
       window.removeEventListener('resize', alignFocusControls);
     };
-  }, [focusMode, timelineFocusProject, timelineEditMode, mobileLayout]);
+  }, [focusMode, timelineFocusProject, mobileLayout]);
 
   const todayPct = ganttDayCenterPct(todayDay, minDay, totalDays);
 
@@ -5611,65 +5611,68 @@ function GanttChartInner({
             </button>
             {timelineNavCluster}
             <div
-              className="gantt-focus-controls"
+              className={`gantt-focus-controls${timelineEditMode ? ' gantt-focus-controls--editing' : ''}`}
               style={!mobileLayout && focusControlsAlignPx > 0 ? { marginLeft: focusControlsAlignPx } : undefined}
             >
-              {timelineEditMode ? (
-                <>
-                  <span className="icon-bubble icon-bubble--on gantt-focus-edit-bubble" aria-live="polite">
-                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
-                      <path
-                        d="M10.6 2.9l2.5 2.5-7.8 7.8H2.8v-2.5l7.8-7.8z"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    <span className="icon-bubble-text">Editing</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="icon-bubble gantt-focus-cancel-bubble"
-                    onClick={cancelTimelineEdit}
-                    aria-label="Cancel"
-                  >
-                    <span className="icon-bubble-text">Cancel</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-bubble gantt-focus-done-bubble"
-                    onClick={finishTimelineEdit}
-                    aria-label="Done"
-                  >
-                    <span className="icon-bubble-text">Done</span>
-                  </button>
-                </>
-              ) : (
-                onUpdateProject ? (
-                  <button
-                    type="button"
-                    className="icon-bubble gantt-focus-edit-bubble"
-                    onClick={beginTimelineEdit}
-                    disabled={!projectHasMilestones(timelineFocusProject)}
-                    aria-label="Edit"
-                    title={
-                      projectHasMilestones(timelineFocusProject)
-                        ? 'Edit schedule beside the timeline'
-                        : 'Add milestones to edit schedule'
-                    }
-                  >
-                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
-                      <path
-                        d="M10.6 2.9l2.5 2.5-7.8 7.8H2.8v-2.5l7.8-7.8z"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    <span className="icon-bubble-text">Edit</span>
-                  </button>
-                ) : null
-              )}
+              {onUpdateProject ? (
+                <div className="gantt-focus-edit-slot">
+                  {timelineEditMode ? (
+                    <span className="icon-bubble icon-bubble--on gantt-focus-edit-bubble" aria-live="polite">
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+                        <path
+                          d="M10.6 2.9l2.5 2.5-7.8 7.8H2.8v-2.5l7.8-7.8z"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <span className="sr-only">Editing</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="icon-bubble gantt-focus-edit-bubble"
+                      onClick={beginTimelineEdit}
+                      disabled={!projectHasMilestones(timelineFocusProject)}
+                      aria-label="Edit"
+                      title={
+                        projectHasMilestones(timelineFocusProject)
+                          ? 'Edit schedule beside the timeline'
+                          : 'Add milestones to edit schedule'
+                      }
+                    >
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+                        <path
+                          d="M10.6 2.9l2.5 2.5-7.8 7.8H2.8v-2.5l7.8-7.8z"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                  {timelineEditMode ? (
+                    <div className="gantt-focus-edit-actions">
+                      <button
+                        type="button"
+                        className="icon-bubble gantt-focus-cancel-bubble"
+                        onClick={cancelTimelineEdit}
+                        aria-label="Cancel"
+                      >
+                        <span className="icon-bubble-text">Cancel</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-bubble gantt-focus-done-bubble"
+                        onClick={finishTimelineEdit}
+                        aria-label="Done"
+                      >
+                        <span className="icon-bubble-text">Done</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             {timelineZoomCluster}
           </>
@@ -5680,7 +5683,7 @@ function GanttChartInner({
           </div>
         )}
       </div>
-      <div>
+      <div
         className={
           focusMode && timelineEditMode && !mobileLayout && timelineFocusProject
             ? 'gantt-edit-layout'

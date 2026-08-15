@@ -36,6 +36,18 @@
   --project-card-fill: rgba(204, 204, 204, 0.2);
   --project-card-hover-fill: rgba(204, 204, 204, 0.32);
   --project-card-leading: 15px;
+  --bubble-size: 28px;
+  --bubble-size-sm: 22px;
+  --bubble-gap: 8px;
+  --bubble-pad-x: 7px;
+  --bubble-pad-x-sm: 6px;
+  --bubble-bg: rgba(120, 120, 128, 0.08);
+  --bubble-bg-hover: rgba(120, 120, 128, 0.14);
+  --bubble-icon: 18px;
+  --bubble-icon-sm: 15px;
+  --bubble-icon-strong: #5c5c5c;
+  --bubble-svg: 15px;
+  --bubble-text: 12px;
   /* Shared chevron for native selects (stroke, rounded caps). */
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%236B6B6B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
@@ -54,6 +66,8 @@ html, body, #root {
 .app {
   display: flex;
   height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   overflow: hidden;
 }
 
@@ -322,6 +336,8 @@ html, body, #root {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -350,7 +366,7 @@ html, body, #root {
 .main-header-trailing {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--bubble-gap);
   flex-shrink: 0;
 }
 
@@ -365,16 +381,20 @@ html, body, #root {
   justify-content: center;
   flex-shrink: 0;
   gap: 0;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 7px;
+  box-sizing: border-box;
+  min-width: var(--bubble-size);
+  height: var(--bubble-size);
+  padding: 0 var(--bubble-pad-x);
   border: none;
   border-radius: 999px;
-  background: rgba(120, 120, 128, 0.08);
+  background: var(--bubble-bg);
   box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
+  font-size: var(--bubble-text);
+  font-weight: 500;
+  letter-spacing: -0.02em;
   line-height: 1;
   overflow: hidden;
   white-space: nowrap;
@@ -385,11 +405,18 @@ html, body, #root {
     box-shadow 0.4s ease;
 }
 
+.icon-bubble svg {
+  display: block;
+  flex-shrink: 0;
+  width: var(--bubble-svg);
+  height: var(--bubble-svg);
+}
+
 .icon-bubble-glyph {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: var(--bubble-icon);
   font-weight: 400;
   line-height: 1;
 }
@@ -400,7 +427,7 @@ html, body, #root {
   margin: 0;
   opacity: 0;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--bubble-text);
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--text-primary);
@@ -430,7 +457,7 @@ html, body, #root {
 .icon-bubble--open,
 .icon-bubble--on {
   color: var(--text-primary);
-  background: rgba(120, 120, 128, 0.14);
+  background: var(--bubble-bg-hover);
 }
 
 .icon-bubble:focus-visible {
@@ -438,8 +465,27 @@ html, body, #root {
   box-shadow: 0 0 0 2px var(--text-primary);
 }
 
-.overview-filter-tab {
-  color: var(--text-tertiary);
+.icon-bubble--sm,
+.sheet-milestone-add-task.icon-bubble--sm {
+  min-width: var(--bubble-size-sm);
+  width: var(--bubble-size-sm);
+  height: var(--bubble-size-sm);
+  padding: 0 var(--bubble-pad-x-sm);
+  color: var(--bubble-icon-strong);
+}
+
+.icon-bubble--sm.icon-bubble {
+  width: auto;
+  min-width: var(--bubble-size-sm);
+}
+
+.icon-bubble--sm .icon-bubble-glyph {
+  font-size: var(--bubble-icon-sm);
+  color: var(--bubble-icon-strong);
+}
+
+.icon-bubble--sm .icon-bubble-text {
+  font-size: 11px;
 }
 
 .overview-filter-tab--active {
@@ -2237,45 +2283,36 @@ body.overview-dragging * {
   justify-content: center;
   flex-shrink: 0;
   font-family: inherit;
-  font-size: 16px;
+  font-size: var(--bubble-icon);
   font-weight: 400;
   letter-spacing: -0.04em;
-  color: var(--text-primary);
-  background: rgba(120, 120, 128, 0.08);
+  color: var(--text-secondary);
+  background: var(--bubble-bg);
   border: none;
   border-radius: 999px;
-  width: 28px;
-  height: 28px;
+  width: var(--bubble-size);
+  height: var(--bubble-size);
+  min-width: var(--bubble-size);
   padding: 0;
   margin: 0;
   cursor: pointer;
-  line-height: 1.15;
+  line-height: 1;
   white-space: nowrap;
   box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.4s ease, color 0.4s ease, box-shadow 0.4s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .sheet-milestone-add-task:hover {
-  background: rgba(120, 120, 128, 0.11);
+  color: var(--text-primary);
+  background: var(--bubble-bg-hover);
 }
 
 .sheet-milestone-add-task.icon-bubble {
   width: auto;
-  min-width: 24px;
-  height: 24px;
-  padding: 4px 8px;
-  box-sizing: border-box;
-  transition:
-    background 0.4s ease,
-    color 0.4s ease,
-    box-shadow 0.4s ease;
-}
-
-.sheet-milestone-catalog-add-wrap .sheet-milestone-add-task.icon-bubble {
-  min-width: 28px;
-  height: 28px;
-  padding: 0 8px;
+  min-width: var(--bubble-size);
+  height: var(--bubble-size);
+  padding: 0 var(--bubble-pad-x);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2287,7 +2324,7 @@ body.overview-dragging * {
 
   .sheet-milestone-catalog-add-wrap:hover .sheet-milestone-add-task.icon-bubble {
     color: var(--text-primary);
-    background: rgba(120, 120, 128, 0.14);
+    background: var(--bubble-bg-hover);
   }
 
   .sheet-modal-section--project-designers .sheet-designer-add-wrap:hover .icon-bubble-text,
@@ -2300,7 +2337,7 @@ body.overview-dragging * {
   .sheet-modal-section--project-designers .sheet-designer-add-wrap:hover .sheet-milestone-add-task.icon-bubble,
   .sheet-modal-section--project-client .sheet-client-add-wrap:hover .sheet-milestone-add-task.icon-bubble {
     color: var(--text-primary);
-    background: rgba(120, 120, 128, 0.14);
+    background: var(--bubble-bg-hover);
   }
 }
 
@@ -2318,11 +2355,11 @@ body.overview-dragging * {
 
 .sheet-milestone-add-task--label {
   width: auto;
-  min-width: 28px;
-  min-height: 24px;
-  height: 24px;
+  min-width: var(--bubble-size);
+  min-height: var(--bubble-size);
+  height: var(--bubble-size);
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--bubble-text);
   font-weight: 500;
   letter-spacing: -0.02em;
 }
@@ -2727,16 +2764,19 @@ body.overview-dragging * {
   line-height: 1.25;
 }
 
-.modal--project .sheet-modal-section--project-client .sheet-milestone-add-task {
-  width: calc(var(--sheet-pt) * 1.25);
-  height: calc(var(--sheet-pt) * 1.25);
-  min-width: calc(var(--sheet-pt) * 1.25);
-  font-size: calc(var(--sheet-pt) * 0.9);
+.modal--project .sheet-modal-section--project-client .sheet-milestone-add-task,
+.modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task {
+  width: var(--bubble-size-sm);
+  height: var(--bubble-size-sm);
+  min-width: var(--bubble-size-sm);
+  font-size: var(--bubble-icon-sm);
+  color: var(--bubble-icon-strong);
 }
 
-.modal--project .sheet-modal-section--project-client .sheet-milestone-add-task.icon-bubble {
+.modal--project .sheet-modal-section--project-client .sheet-milestone-add-task.icon-bubble,
+.modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task.icon-bubble {
   width: auto;
-  padding: 0 8px;
+  padding: 0 var(--bubble-pad-x-sm);
 }
 
 .modal--project .sheet-modal-section--project-dates,
@@ -2793,18 +2833,6 @@ body.overview-dragging * {
   height: calc(var(--sheet-pt) * 1.1);
   min-width: calc(var(--sheet-pt) * 1.1);
   font-size: calc(var(--sheet-pt) * 0.85);
-}
-
-.modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task {
-  width: calc(var(--sheet-pt) * 1.25);
-  height: calc(var(--sheet-pt) * 1.25);
-  min-width: calc(var(--sheet-pt) * 1.25);
-  font-size: calc(var(--sheet-pt) * 0.9);
-}
-
-.modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task.icon-bubble {
-  width: auto;
-  padding: 0 8px;
 }
 
 .sheet-project-split-row {
@@ -2876,14 +2904,14 @@ body.overview-dragging * {
 .modal--project .sheet-modal-section--project-dates .sheet-project-dates-btn.sheet-date-range-btn--plus {
   flex: 0 0 auto;
   width: auto;
-  min-width: calc(var(--sheet-pt) * 1.25);
-  height: calc(var(--sheet-pt) * 1.25);
-  padding: 0 8px;
-  font-size: calc(var(--sheet-pt) * 0.9);
+  min-width: var(--bubble-size-sm);
+  height: var(--bubble-size-sm);
+  padding: 0 var(--bubble-pad-x-sm);
+  font-size: var(--bubble-icon-sm);
   font-weight: 400;
   letter-spacing: -0.04em;
-  color: var(--text-primary);
-  background: rgba(120, 120, 128, 0.08);
+  color: var(--bubble-icon-strong);
+  background: var(--bubble-bg);
   border-radius: 999px;
   box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
   text-align: center;
@@ -3815,6 +3843,7 @@ body.overview-dragging * {
   .main {
     width: 100%;
     min-width: 0;
+    min-height: 0;
   }
 
   .main-header {
@@ -3884,16 +3913,14 @@ body.overview-dragging * {
   }
 
   .main-header-trailing {
-    gap: 6px;
+    gap: var(--bubble-gap);
   }
 
   .main-header-trailing .icon-bubble {
-    width: 28px;
-    min-width: 28px;
-    height: 28px;
-    min-height: 28px;
-    padding: 0 7px;
-    box-sizing: border-box;
+    min-width: var(--bubble-size);
+    height: var(--bubble-size);
+    min-height: var(--bubble-size);
+    padding: 0 var(--bubble-pad-x);
   }
 
   .btn-primary {
@@ -4245,37 +4272,35 @@ body.overview-dragging * {
     gap: 10px;
   }
 
-  /* Import / add-phase pills: larger touch targets */
+  /* Import / add-phase pills: same bubble size as Create */
   .modal--project .sheet-milestone-add-task {
-    width: 34px;
-    height: 34px;
-    font-size: 18px;
+    width: var(--bubble-size);
+    height: var(--bubble-size);
+    min-width: var(--bubble-size);
+    font-size: var(--bubble-icon);
   }
 
-  .modal--project .sheet-modal-section--project-client .sheet-milestone-add-task {
-    width: calc(var(--sheet-pt) * 1.25);
-    height: calc(var(--sheet-pt) * 1.25);
-    min-width: calc(var(--sheet-pt) * 1.25);
-    font-size: calc(var(--sheet-pt) * 0.9);
-  }
-
-  .modal--project .sheet-modal-section--project-client .sheet-milestone-add-task.icon-bubble {
-    width: auto;
-    padding: 0 8px;
-  }
-
+  .modal--project .sheet-modal-section--project-client .sheet-milestone-add-task,
   .modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task {
-    width: calc(var(--sheet-pt) * 1.25);
-    height: calc(var(--sheet-pt) * 1.25);
-    min-width: calc(var(--sheet-pt) * 1.25);
-    font-size: calc(var(--sheet-pt) * 0.9);
+    width: var(--bubble-size-sm);
+    height: var(--bubble-size-sm);
+    min-width: var(--bubble-size-sm);
+    font-size: var(--bubble-icon-sm);
+    color: var(--bubble-icon-strong);
   }
+
+  .modal--project .sheet-modal-section--project-client .sheet-milestone-add-task.icon-bubble,
+  .modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task.icon-bubble {
+    width: auto;
+    padding: 0 var(--bubble-pad-x-sm);
+  }
+
   .modal--project .sheet-milestone-add-task--label {
     width: auto;
-    height: 24px;
-    min-height: 24px;
+    height: var(--bubble-size);
+    min-height: var(--bubble-size);
     padding: 0 10px;
-    font-size: 12px;
+    font-size: var(--bubble-text);
   }
 
   /* Task chips: roomier bubble for touch */
