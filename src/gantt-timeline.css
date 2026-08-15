@@ -1384,6 +1384,10 @@ button.gantt-focus-copy:focus-visible {
     --gantt-month-row-h: 26px;
   }
 
+  .gantt-month-line {
+    background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  }
+
   .gantt-ruler-month {
     font-size: 10px;
   }
