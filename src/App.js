@@ -1826,6 +1826,7 @@ function MilestoneCatalogAddButton({
   options,
   onSelect,
   ariaLabel,
+  hoverLabel = '',
   disabled = false,
 }) {
   if (disabled || !options.length) return null;
@@ -1834,11 +1835,16 @@ function MilestoneCatalogAddButton({
     <div className="sheet-designer-add-wrap sheet-milestone-catalog-add-wrap">
       <button
         type="button"
-        className="sheet-milestone-add-task"
+        className={`sheet-milestone-add-task${hoverLabel ? ' icon-bubble' : ''}`}
         aria-label={ariaLabel}
         tabIndex={-1}
       >
-        +
+        {hoverLabel ? (
+          <>
+            <span className="icon-bubble-glyph" aria-hidden>+</span>
+            <span className="icon-bubble-text">{hoverLabel}</span>
+          </>
+        ) : '+'}
       </button>
       <select
         className="sheet-designer-add-select"
@@ -1947,6 +1953,8 @@ function MilestonePhaseDurationPicker({
 
 function MilestonePhaseTitle({
   phase,
+  collapsed = false,
+  onToggleCollapse,
   onAdjustWeeks,
   onSelectCustom,
   onCustomDatesChange,
@@ -1955,7 +1963,18 @@ function MilestonePhaseTitle({
 
   return (
     <div className="sheet-phase-head-fields">
-      <span className="sheet-phase-name">{phase.title}</span>
+      <button
+        type="button"
+        className="sheet-phase-name"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggleCollapse();
+        }}
+        aria-expanded={!collapsed}
+      >
+        {phase.title}
+      </button>
       <MilestonePhaseDurationPicker
         phase={phase}
         onAdjustWeeks={onAdjustWeeks}
@@ -2005,6 +2024,7 @@ function MilestoneTaskChip({
 function MilestonePhaseBlock({
   phase,
   collapsed = false,
+  onToggleCollapse,
   markers = [],
   onRemovePhase,
   onAddTask,
@@ -2024,10 +2044,18 @@ function MilestonePhaseBlock({
   const phaseMarkers = (markers || []).filter((marker) => marker.phaseKey === phase.phaseKey);
 
   return (
-    <div className={`sheet-milestone-block${collapsed ? ' sheet-milestone-block--collapsed' : ''}`}>
+    <div
+      className={`sheet-milestone-block${collapsed ? ' sheet-milestone-block--collapsed' : ''}`}
+      onClick={collapsed ? (event) => {
+        if (event.target.closest('button, input, select, textarea, a')) return;
+        onToggleCollapse();
+      } : undefined}
+    >
       <div className="sheet-milestone-phase-head">
         <MilestonePhaseTitle
           phase={phase}
+          collapsed={collapsed}
+          onToggleCollapse={onToggleCollapse}
           onAdjustWeeks={onAdjustWeeks}
           onSelectCustom={onSelectCustom}
           onCustomDatesChange={onCustomDatesChange}
@@ -2114,7 +2142,8 @@ function MilestonePhaseBlock({
 
 function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader = false }) {
   const phases = form.milestones || [];
-  const [phasesCollapsed, setPhasesCollapsed] = useState(false);
+  const [expandedPhaseIds, setExpandedPhaseIds] = useState(() => new Set());
+  const anyPhaseExpanded = phases.some((ph) => expandedPhaseIds.has(ph.id));
   const [importError, setImportError] = useState('');
   const [importNotice, setImportNotice] = useState('');
   const csvInputRef = useRef(null);
@@ -2404,39 +2433,36 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
 
       <div className="sheet-pair sheet-pair--priority-top">
         <span className="sheet-field-label sheet-field-label--phases">
-          Phases
+          <MilestoneCatalogAddButton
+            options={phaseOptions}
+            onSelect={addPhase}
+            ariaLabel="Add phase"
+            hoverLabel="Phase"
+          />
           {phases.length > 0 ? (
             <button
               type="button"
-              className={`sheet-milestone-add-task icon-bubble${phasesCollapsed ? ' icon-bubble--on' : ''}`}
-              aria-pressed={phasesCollapsed}
-              aria-label={phasesCollapsed ? 'Expand' : 'Collapse'}
-              onClick={() => setPhasesCollapsed((v) => !v)}
+              className={`sheet-milestone-add-task icon-bubble${anyPhaseExpanded ? '' : ' icon-bubble--on'}`}
+              aria-pressed={!anyPhaseExpanded}
+              aria-label={anyPhaseExpanded ? 'Collapse' : 'Expand'}
+              onClick={() => {
+                setExpandedPhaseIds(anyPhaseExpanded
+                  ? new Set()
+                  : new Set(phases.map((ph) => ph.id)));
+              }}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-                {phasesCollapsed ? (
-                  <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                ) : (
+                {anyPhaseExpanded ? (
                   <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                ) : (
+                  <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 )}
               </svg>
-              <span className="icon-bubble-text">{phasesCollapsed ? 'Expand' : 'Collapse'}</span>
+              <span className="icon-bubble-text">{anyPhaseExpanded ? 'Collapse' : 'Expand'}</span>
             </button>
           ) : null}
         </span>
         <div className="sheet-field-value sheet-milestone-phase-actions">
-          <button
-            type="button"
-            className={[
-              'sheet-milestone-add-task',
-              'sheet-milestone-add-task--label',
-              form.linkedSchedule ? 'sheet-linked-schedule--on' : '',
-            ].filter(Boolean).join(' ')}
-            aria-pressed={Boolean(form.linkedSchedule)}
-            onClick={() => setForm((f) => ({ ...f, linkedSchedule: !f.linkedSchedule }))}
-          >
-            Linked
-          </button>
           <button
             type="button"
             className="sheet-milestone-add-task sheet-milestone-add-task--label"
@@ -2454,11 +2480,6 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
             aria-hidden
             tabIndex={-1}
           />
-          <MilestoneCatalogAddButton
-            options={phaseOptions}
-            onSelect={addPhase}
-            ariaLabel="Add phase"
-          />
         </div>
       </div>
 
@@ -2474,7 +2495,15 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
         <MilestonePhaseBlock
           key={phase.id}
           phase={phase}
-          collapsed={phasesCollapsed}
+          collapsed={!expandedPhaseIds.has(phase.id)}
+          onToggleCollapse={() => {
+            setExpandedPhaseIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(phase.id)) next.delete(phase.id);
+              else next.add(phase.id);
+              return next;
+            });
+          }}
           markers={form.markers || []}
           onRemovePhase={() => removePhase(phase.id)}
           onAddTask={(taskKey) => addTask(phase.id, taskKey)}
