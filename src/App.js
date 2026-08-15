@@ -3300,7 +3300,7 @@ function ProjectRow({
           if (e.button !== 0) return;
           const target = e.target instanceof Element ? e.target : e.target?.parentElement;
           if (target?.closest('select, button, .project-status-hit')) return;
-          e.preventDefault();
+          if (e.pointerType !== 'touch') e.preventDefault();
           onDragStart?.(e, project.id);
         }}
         onClick={() => onClick(project)}
@@ -6177,29 +6177,50 @@ export default function App() {
     const pointerId = event.pointerId;
     const target = event.currentTarget;
     const rect = target.getBoundingClientRect();
+    const isTouch = event.pointerType === 'touch';
+    const holdMs = 450;
+    const cancelMovePx = isTouch ? 12 : 5;
     let active = false;
+    let cancelled = false;
     let raf = 0;
+    let holdTimer = 0;
     overviewDragIdRef.current = projectId;
     overviewDragOffsetRef.current = { ox: originX - rect.left, oy: originY - rect.top };
     overviewPointerRef.current = { x: originX, y: originY };
 
-    try {
-      target.setPointerCapture?.(pointerId);
-    } catch {
-      /* capture is optional — window listeners still track the drag */
+    const beginDrag = () => {
+      if (active || cancelled) return;
+      active = true;
+      skipOverviewClickRef.current = true;
+      setOverviewDragSize({ w: rect.width, h: rect.height });
+      setOverviewDragId(projectId);
+      document.body.classList.add('overview-dragging');
+      try {
+        target.setPointerCapture?.(pointerId);
+      } catch {
+        /* capture is optional — window listeners still track the drag */
+      }
+    };
+
+    if (isTouch) {
+      holdTimer = window.setTimeout(beginDrag, holdMs);
     }
 
     const onMove = (moveEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
       const dx = moveEvent.clientX - originX;
       const dy = moveEvent.clientY - originY;
-      if (!active && (dx * dx + dy * dy) < 25) return;
       if (!active) {
-        active = true;
-        skipOverviewClickRef.current = true;
-        setOverviewDragSize({ w: rect.width, h: rect.height });
-        setOverviewDragId(projectId);
-        document.body.classList.add('overview-dragging');
+        if (isTouch) {
+          if ((dx * dx + dy * dy) >= cancelMovePx * cancelMovePx) {
+            if (holdTimer) window.clearTimeout(holdTimer);
+            holdTimer = 0;
+            cancelled = true;
+          }
+          return;
+        }
+        if ((dx * dx + dy * dy) < 25) return;
+        beginDrag();
       }
       if (moveEvent.cancelable) moveEvent.preventDefault();
       overviewPointerRef.current = { x: moveEvent.clientX, y: moveEvent.clientY };
@@ -6219,6 +6240,7 @@ export default function App() {
       window.removeEventListener('pointermove', onMove, true);
       window.removeEventListener('pointerup', finish, true);
       window.removeEventListener('pointercancel', finish, true);
+      if (holdTimer) window.clearTimeout(holdTimer);
       if (raf) window.cancelAnimationFrame(raf);
       try {
         if (target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
