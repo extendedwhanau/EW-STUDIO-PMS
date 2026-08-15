@@ -1955,7 +1955,7 @@ function MilestonePhaseTitle({
 
   return (
     <div className="sheet-phase-head-fields">
-      <span className="sheet-phase-name-label">{phase.title}</span>
+      <span className="sheet-phase-name">{phase.title}</span>
       <MilestonePhaseDurationPicker
         phase={phase}
         onAdjustWeeks={onAdjustWeeks}
@@ -2004,6 +2004,7 @@ function MilestoneTaskChip({
 
 function MilestonePhaseBlock({
   phase,
+  collapsed = false,
   markers = [],
   onRemovePhase,
   onAddTask,
@@ -2023,7 +2024,7 @@ function MilestonePhaseBlock({
   const phaseMarkers = (markers || []).filter((marker) => marker.phaseKey === phase.phaseKey);
 
   return (
-    <div className="sheet-milestone-block">
+    <div className={`sheet-milestone-block${collapsed ? ' sheet-milestone-block--collapsed' : ''}`}>
       <div className="sheet-milestone-phase-head">
         <MilestonePhaseTitle
           phase={phase}
@@ -2041,6 +2042,7 @@ function MilestonePhaseBlock({
         </button>
       </div>
 
+      {!collapsed ? (
       <div className="sheet-milestone-tasks">
         <div className="sheet-milestone-task-chips">
           {phase.tasks.map((task) => (
@@ -2105,12 +2107,14 @@ function MilestonePhaseBlock({
           </button>
         </div>
       </div>
+      ) : null}
     </div>
   );
 }
 
 function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader = false }) {
   const phases = form.milestones || [];
+  const [phasesCollapsed, setPhasesCollapsed] = useState(false);
   const [importError, setImportError] = useState('');
   const [importNotice, setImportNotice] = useState('');
   const csvInputRef = useRef(null);
@@ -2399,7 +2403,27 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
       )}
 
       <div className="sheet-pair sheet-pair--priority-top">
-        <span className="sheet-field-label">Phases</span>
+        <span className="sheet-field-label sheet-field-label--phases">
+          Phases
+          {phases.length > 0 ? (
+            <button
+              type="button"
+              className={`sheet-milestone-add-task icon-bubble${phasesCollapsed ? ' icon-bubble--on' : ''}`}
+              aria-pressed={phasesCollapsed}
+              aria-label={phasesCollapsed ? 'Expand' : 'Collapse'}
+              onClick={() => setPhasesCollapsed((v) => !v)}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+                {phasesCollapsed ? (
+                  <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                ) : (
+                  <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                )}
+              </svg>
+              <span className="icon-bubble-text">{phasesCollapsed ? 'Expand' : 'Collapse'}</span>
+            </button>
+          ) : null}
+        </span>
         <div className="sheet-field-value sheet-milestone-phase-actions">
           <button
             type="button"
@@ -2450,6 +2474,7 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
         <MilestonePhaseBlock
           key={phase.id}
           phase={phase}
+          collapsed={phasesCollapsed}
           markers={form.markers || []}
           onRemovePhase={() => removePhase(phase.id)}
           onAddTask={(taskKey) => addTask(phase.id, taskKey)}
@@ -3482,10 +3507,10 @@ function OverviewFilterMenu({ titles, visibility, onToggle }) {
     <div className="overview-filter" ref={wrapRef}>
       <button
         type="button"
-        className={`overview-filter-tab${open ? ' overview-filter-tab--open' : ''}${filtered ? ' overview-filter-tab--active' : ''}`}
+        className={`overview-filter-tab icon-bubble${open ? ' icon-bubble--open overview-filter-tab--open' : ''}${filtered ? ' overview-filter-tab--active' : ''}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Filter columns"
+        aria-label="Filter"
         onClick={() => setOpen((v) => !v)}
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -3496,6 +3521,7 @@ function OverviewFilterMenu({ titles, visibility, onToggle }) {
             strokeLinejoin="round"
           />
         </svg>
+        <span className="icon-bubble-text">Filter</span>
       </button>
       {open ? (
         <div className="overview-filter-menu" role="menu" aria-label="Visible columns">
@@ -3655,12 +3681,6 @@ function ganttTickDayNumberNZ(epochDay) {
   return String(new Date(ganttCivilUtcMs(epochDay)).getUTCDate());
 }
 
-/** Last civil day of the UTC year that contains `epochDay`. */
-function ganttYearEndDay(epochDay) {
-  const year = new Date(ganttCivilUtcMs(epochDay)).getUTCFullYear();
-  return daysFromEpoch(`${year}-12-31`);
-}
-
 function ganttDayPx(day, minDay, pxPerDay) {
   return (day - minDay) * pxPerDay;
 }
@@ -3681,38 +3701,51 @@ function ganttFilterTicksByGap(candidates, minDay, pxPerDay, minGapPx) {
 
 /** How much date detail to show in the week row. */
 function ganttRulerLabelTier(pxPerDay) {
-  if (pxPerDay >= 12) return 'full';
-  if (pxPerDay >= 5) return 'day';
+  if (pxPerDay >= 24) return 'full';
+  if (pxPerDay >= 12) return 'week';
   return 'hidden';
 }
 
 function ganttWeekTickLabel(epochDay, tier) {
-  const dom = ganttTickDayNumberNZ(epochDay);
-  if (tier === 'full') return `${dom} MON`;
-  if (tier === 'day') return dom;
-  return '';
+  if (tier === 'hidden') return '';
+  const monday = ganttTickDayNumberNZ(epochDay);
+  const friday = ganttTickDayNumberNZ(epochDay + 4);
+  return `${monday} - ${friday}`;
 }
 
 function ganttMinLabelGapPx(tier) {
   if (tier === 'full') return 48;
-  if (tier === 'day') return 34;
+  if (tier === 'week') return 56;
   return Infinity;
+}
+
+/** Left edge of the weekend grey box, as % of the track. */
+function ganttWeekendBandLeftPct(startDay, spanDays, minDay, totalDays, pxPerDay) {
+  const trackWidthPx = Math.max(1, totalDays * pxPerDay);
+  const widthPx = Math.min(GANTT_WEEKEND_BAND_MAX_PX, spanDays * pxPerDay);
+  const weekendStartPx = (startDay - minDay) * pxPerDay;
+  const centerPx = weekendStartPx + (spanDays * pxPerDay) / 2;
+  const leftPx = centerPx - widthPx / 2;
+  return (leftPx / trackWidthPx) * 100;
+}
+
+function ganttWeekendBandRightPct(startDay, spanDays, minDay, totalDays, pxPerDay) {
+  const trackWidthPx = Math.max(1, totalDays * pxPerDay);
+  const widthPx = Math.min(GANTT_WEEKEND_BAND_MAX_PX, spanDays * pxPerDay);
+  return ganttWeekendBandLeftPct(startDay, spanDays, minDay, totalDays, pxPerDay)
+    + (widthPx / trackWidthPx) * 100;
 }
 
 /** Soft grey weekend separators — max 10px, shrink when zoomed out. */
 function buildWeekendBands(minDay, maxDay, totalDays, pxPerDay) {
   const bands = [];
-  const trackWidthPx = Math.max(1, totalDays * pxPerDay);
 
   const addBand = (startDay, spanDays) => {
     const widthPx = Math.min(GANTT_WEEKEND_BAND_MAX_PX, spanDays * pxPerDay);
     if (widthPx < 1) return;
-    const weekendStartPx = (startDay - minDay) * pxPerDay;
-    const centerPx = weekendStartPx + (spanDays * pxPerDay) / 2;
-    const leftPx = centerPx - widthPx / 2;
     bands.push({
       key: `wknd-${startDay}`,
-      left: (leftPx / trackWidthPx) * 100,
+      left: ganttWeekendBandLeftPct(startDay, spanDays, minDay, totalDays, pxPerDay),
       widthPx,
     });
   };
@@ -3741,9 +3774,22 @@ function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay) {
     const candidates = [];
     for (let day = minDay; day <= maxDay; day += 1) {
       if (!isMondayNZ(day) || isFirstOfMonthNZ(day)) continue;
+      const prevSaturday = day - 2;
+      let left = toPct(day);
+      if (labelTier !== 'hidden' && prevSaturday >= minDay && isSaturdayNZ(prevSaturday)) {
+        let weekendSpan = 1;
+        if (isSundayNZ(day - 1)) weekendSpan = 2;
+        left = ganttWeekendBandRightPct(
+          prevSaturday,
+          weekendSpan,
+          minDay,
+          totalDays,
+          pxPerDay,
+        );
+      }
       candidates.push({
         day,
-        left: toPct(day),
+        left,
         label: ganttWeekTickLabel(day, labelTier),
         labelTier,
       });
@@ -3811,9 +3857,8 @@ function ganttResolveMonthMarkerOverlaps(markers, minDay, pxPerDay) {
   return resolved;
 }
 
-/** Every month touching the range — labels sit on the 1st of each month. */
+/** Every month touching the range — a band spanning the visible days of that month. */
 function buildMonthMarkers(minDay, maxDay, totalDays, rangeSpansYears, pxPerDay) {
-  const toPct = (day) => ganttDayLeftPct(day, minDay, totalDays);
   const markers = [];
   let monthFirst = monthFirstNZ(minDay);
   let prevYear = null;
@@ -3821,23 +3866,30 @@ function buildMonthMarkers(minDay, maxDay, totalDays, rangeSpansYears, pxPerDay)
   while (monthFirst <= maxDay) {
     const year = ganttYearNZ(monthFirst);
     const showYear = rangeSpansYears && (prevYear === null || year !== prevYear);
+    const nextFirst = nextMonthFirstNZ(monthFirst);
+    const visStart = Math.max(monthFirst, minDay);
+    const visEnd = Math.min(nextFirst - 1, maxDay);
+    const { left, width } = ganttInclusiveBarPct(visStart, visEnd, minDay, totalDays);
+    const widthPx = (width / 100) * totalDays * pxPerDay;
     markers.push({
       day: monthFirst,
-      left: toPct(Math.max(monthFirst, minDay)),
-      label: ganttMonthNameNZ(monthFirst, showYear),
+      left,
+      width,
+      label: ganttMonthNameNZ(monthFirst, showYear, widthPx >= 72),
     });
     prevYear = year;
-    monthFirst = nextMonthFirstNZ(monthFirst);
+    monthFirst = nextFirst;
   }
 
   return ganttResolveMonthMarkerOverlaps(markers, minDay, pxPerDay);
 }
 
-/** Ruler month row: "Jul", "Aug" (optional year when range spans years). */
-function ganttMonthNameNZ(epochDay, includeYear = false) {
+/** Ruler month row: "August" when there is room, otherwise "Aug". */
+function ganttMonthNameNZ(epochDay, includeYear = false, longName = false) {
+  const monthStyle = longName ? 'long' : 'short';
   const opts = includeYear
-    ? { timeZone: 'UTC', month: 'short', year: '2-digit' }
-    : { timeZone: 'UTC', month: 'short' };
+    ? { timeZone: 'UTC', month: monthStyle, year: '2-digit' }
+    : { timeZone: 'UTC', month: monthStyle };
   return new Intl.DateTimeFormat('en-NZ', opts).format(new Date(ganttCivilUtcMs(epochDay)));
 }
 
@@ -3859,19 +3911,20 @@ function useGanttMobileLayout() {
 }
 
 /** Pixels per day on the timeline (horizontal scroll width). */
-const GANTT_PX_PER_DAY = 3;
+const GANTT_PX_PER_DAY = 9;
 const GANTT_FOCUS_HEAD_DAYS = 14;
+const GANTT_FOCUS_TAIL_DAYS = 62;
 /** Press-and-hold before a phase can be dragged along the timeline. */
 const PHASE_TIMELINE_HOLD_MS = 400;
 /** Match --gantt-lead-w in gantt-timeline.css (10px pad + label + 4px gap). */
 const GANTT_LEAD_W_DESKTOP = 124;
 const GANTT_WEEKEND_BAND_MAX_PX = 10;
-const FOCUS_ZOOM_STEPS = [3, 9, 18, 30];
+const GANTT_TIMELINE_LAST_DAY = daysFromEpoch('2027-12-31');
+const FOCUS_ZOOM_STEPS = [9, 18, 30];
 
 function defaultMainZoomStep(mobile = false, viewportPx = 1120) {
   const todayDay = daysFromEpoch(today());
-  const yearEnd = ganttYearEndDay(todayDay);
-  const remainingDays = Math.max(1, ganttTotalDays(todayDay, yearEnd));
+  const remainingDays = Math.max(1, ganttTotalDays(todayDay, GANTT_TIMELINE_LAST_DAY));
   const usablePx = Math.max(320, viewportPx - (mobile ? 0 : GANTT_LEAD_W_DESKTOP));
   const idealPx = usablePx / remainingDays;
   let best = 0;
@@ -4301,7 +4354,7 @@ function GanttChartInner({
       ? Math.max(...projectDays)
       : daysFromEpoch(timelineFocusProject.endDate);
     const minDay = minStart - GANTT_FOCUS_HEAD_DAYS;
-    const maxDay = ganttYearEndDay(maxEnd);
+    const maxDay = maxEnd + GANTT_FOCUS_TAIL_DAYS;
     const totalDays = ganttTotalDays(minDay, maxDay);
     return { minDay, maxDay, totalDays };
   }, [timelineFocusProject]);
@@ -4324,15 +4377,21 @@ function GanttChartInner({
     }
 
     const allStarts = validProjects.map((p) => daysFromEpoch(p.startDate));
+    const allEnds = validProjects.map((p) => daysFromEpoch(p.endDate));
     validProjects.forEach((p) => {
       if (!Array.isArray(p.milestones)) return;
       p.milestones.forEach((ph) => {
         if (ph.startDate) allStarts.push(daysFromEpoch(ph.startDate));
+        if (ph.endDate) allEnds.push(daysFromEpoch(ph.endDate));
       });
     });
     const minStart = allStarts.length ? Math.min(...allStarts) : todayDay;
+    const maxEnd = allEnds.length ? Math.max(...allEnds) : todayDay;
     let minDay = minStart - 14;
-    let maxDay = ganttYearEndDay(todayDay);
+    let maxDay = Math.min(
+      Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
+      GANTT_TIMELINE_LAST_DAY,
+    );
     if (maxDay <= minDay) minDay = maxDay - 365;
     const totalDays = ganttTotalDays(minDay, maxDay);
     return {
@@ -5237,28 +5296,12 @@ function GanttChartInner({
     };
   }, [changeZoomStep, focusMode, chartMinWidthPx]);
 
-  const timelineToolCluster = (
-    <div className="gantt-toolbar gantt-toolbar--tools" role="toolbar" aria-label="Timeline tools">
+  const zoomMaxPx = FOCUS_ZOOM_STEPS[FOCUS_ZOOM_STEPS.length - 1];
+  const zoomPct = Math.round((pxPerDay / zoomMaxPx) * 100);
+
+  const timelineNavCluster = (
+    <div className="gantt-toolbar gantt-toolbar--tools gantt-toolbar--nav" role="toolbar" aria-label="Timeline date">
       <div className="gantt-toolbar-inner gantt-toolbar-inner--bubble">
-        <button
-          type="button"
-          className="gantt-nav-btn gantt-nav-btn--icon"
-          onClick={() => changeZoomStep(-1)}
-          disabled={zoomStep <= 0}
-          aria-label="Zoom out"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="gantt-nav-btn gantt-nav-btn--icon"
-          onClick={() => changeZoomStep(1)}
-          disabled={zoomStep >= FOCUS_ZOOM_STEPS.length - 1}
-          aria-label="Zoom in"
-        >
-          +
-        </button>
-        <span className="gantt-toolbar-divider" aria-hidden />
         <button
           type="button"
           className="gantt-nav-btn gantt-nav-btn--arrow"
@@ -5281,6 +5324,33 @@ function GanttChartInner({
           aria-label="Pan timeline right"
         >
           ›
+        </button>
+      </div>
+    </div>
+  );
+
+  const timelineZoomCluster = (
+    <div className="gantt-toolbar gantt-toolbar--tools gantt-toolbar--zoom" role="toolbar" aria-label="Timeline zoom">
+      {zoomPct === 30 ? <span className="gantt-zoom-scale">Months</span> : null}
+      <div className="gantt-toolbar-inner gantt-toolbar-inner--bubble">
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--icon"
+          onClick={() => changeZoomStep(-1)}
+          disabled={zoomStep <= 0}
+          aria-label="Zoom out"
+        >
+          −
+        </button>
+        <span className="gantt-zoom-pct" aria-live="polite">{zoomPct}%</span>
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--icon"
+          onClick={() => changeZoomStep(1)}
+          disabled={zoomStep >= FOCUS_ZOOM_STEPS.length - 1}
+          aria-label="Zoom in"
+        >
+          +
         </button>
       </div>
     </div>
@@ -5326,6 +5396,7 @@ function GanttChartInner({
             >
               <span className="gantt-focus-back-icon" aria-hidden>‹</span>
             </button>
+            {timelineNavCluster}
             <div
               className="gantt-focus-controls"
               style={focusControlsAlignPx > 0 ? { marginLeft: focusControlsAlignPx } : undefined}
@@ -5377,11 +5448,12 @@ function GanttChartInner({
                 </>
               )}
             </div>
-            {timelineToolCluster}
+            {timelineZoomCluster}
           </>
         ) : (
           <div className="gantt-timeline-chrome-main">
-            {timelineToolCluster}
+            {timelineNavCluster}
+            {timelineZoomCluster}
           </div>
         )}
       </div>
@@ -5414,6 +5486,7 @@ function GanttChartInner({
               mobileLayout ? 'gantt-chart--mobile' : '',
               focusMode ? 'gantt-chart--focused' : '',
               focusMode && timelineEditMode ? 'gantt-chart--editing' : '',
+              timelineSchedule.ticks.length === 0 ? 'gantt-chart--months-only' : '',
             ].filter(Boolean).join(' ')}
             style={{ minWidth: chartMinWidthPx }}
           >
@@ -5461,7 +5534,7 @@ function GanttChartInner({
                 <span
                   key={m.day}
                   className="gantt-ruler-month"
-                  style={{ left: `${m.left}%` }}
+                  style={{ left: `${m.left}%`, width: `${m.width}%` }}
                 >
                   {m.label}
                 </span>
@@ -5477,8 +5550,7 @@ function GanttChartInner({
                   <span
                     className={[
                       'gantt-tick-label',
-                      line.labelTier === 'full' ? 'gantt-tick-label--week-full' : '',
-                      line.labelTier === 'day' ? 'gantt-tick-label--week-day' : '',
+                      'gantt-tick-label--week-range',
                     ].filter(Boolean).join(' ')}
                   >
                     {line.label}
@@ -6577,11 +6649,6 @@ export default function App() {
                     onToggle={toggleOverviewColumn}
                   />
                 )}
-                {view === 'overview' && activeProjects.length > 0 && (
-                  <span className="page-title-badge" aria-label={`${activeProjects.length} active jobs`}>
-                    {activeProjects.length}
-                  </span>
-                )}
                 {view === 'projects' && mainProjectCount > 0 && (
                   <span className="page-title-badge" aria-label={`${mainProjectCount} active projects`}>
                     {mainProjectCount}
@@ -6606,11 +6673,12 @@ export default function App() {
                 {view !== 'archive' && (
                   <button
                     type="button"
-                    className="sidebar-add-btn header-new-project"
+                    className="icon-bubble header-new-project"
                     onClick={() => setShowNewProject(true)}
-                    aria-label="New Project"
+                    aria-label="Create"
                   >
-                    +
+                    <span className="icon-bubble-glyph" aria-hidden>+</span>
+                    <span className="icon-bubble-text">Create</span>
                   </button>
                 )}
               </div>
