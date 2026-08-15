@@ -359,30 +359,84 @@ html, body, #root {
   flex-shrink: 0;
 }
 
-.overview-filter-tab {
+.icon-bubble {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  flex-shrink: 0;
+  gap: 0;
+  min-width: 28px;
   height: 28px;
-  padding: 0;
+  padding: 0 7px;
   border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-tertiary);
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.08);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  color: var(--text-secondary);
   cursor: pointer;
+  font-family: inherit;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.overview-filter-tab:hover,
-.overview-filter-tab--open,
-.overview-filter-tab--active {
+.icon-bubble-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.icon-bubble-text {
+  display: inline-block;
+  max-width: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
-  background: var(--bg);
+  transition: max-width 0.18s ease, opacity 0.16s ease, margin 0.18s ease;
 }
 
-.overview-filter-tab:focus-visible {
+.icon-bubble:focus-visible .icon-bubble-text,
+.icon-bubble--open .icon-bubble-text {
+  max-width: 5.5em;
+  margin-left: 6px;
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .icon-bubble:hover .icon-bubble-text {
+    max-width: 5.5em;
+    margin-left: 6px;
+    opacity: 1;
+  }
+}
+
+.icon-bubble:hover,
+.icon-bubble:focus-visible,
+.icon-bubble--open,
+.icon-bubble--on {
+  color: var(--text-primary);
+  background: rgba(120, 120, 128, 0.14);
+}
+
+.icon-bubble:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--text-primary);
+}
+
+.overview-filter-tab {
+  color: var(--text-tertiary);
+}
+
+.overview-filter-tab--active {
+  color: var(--text-primary);
 }
 
 .overview-filter-menu {
@@ -1480,8 +1534,11 @@ body.overview-dragging * {
   min-width: 0;
 }
 
-.sheet-phase-name,
-.sheet-phase-name-label {
+.sheet-milestone-block--collapsed {
+  gap: 8px;
+}
+
+.sheet-phase-name {
   width: 100%;
   max-width: 100%;
   font-size: var(--sheet-pt);
@@ -2179,6 +2236,19 @@ body.overview-dragging * {
 
 .sheet-milestone-add-task:hover {
   background: rgba(120, 120, 128, 0.11);
+}
+
+.sheet-milestone-add-task.icon-bubble {
+  width: auto;
+  min-width: 24px;
+  height: 24px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+}
+
+.sheet-milestone-add-task.icon-bubble svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .sheet-milestone-add-task:focus-visible {
@@ -2960,6 +3030,13 @@ body.overview-dragging * {
   text-align: left;
 }
 
+.sheet-field-label--phases {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .sheet-field-value {
   flex: 1;
   min-width: 0;
@@ -3386,7 +3463,7 @@ body.overview-dragging * {
   box-shadow: 0 0 0 2px var(--text-primary);
 }
 
-.header-new-project.sidebar-add-btn {
+.header-new-project {
   flex-shrink: 0;
 }
 
@@ -3715,12 +3792,10 @@ body.overview-dragging * {
     gap: 6px;
   }
 
-  .header-new-project.sidebar-add-btn {
+  .header-new-project {
     min-height: 44px;
     min-width: 44px;
-    width: 44px;
     height: 44px;
-    font-size: 20px;
   }
 
   .btn-primary {

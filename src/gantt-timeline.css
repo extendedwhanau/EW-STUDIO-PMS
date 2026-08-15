@@ -519,18 +519,22 @@
 .gantt-timeline-chrome-main {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   width: 100%;
   min-height: 28px;
+  gap: 12px;
 }
 
 .gantt-toolbar--tools {
   flex-shrink: 0;
-  margin-left: auto;
   align-self: center;
   display: flex;
   align-items: center;
   min-height: 28px;
+}
+
+.gantt-toolbar--zoom {
+  margin-left: auto;
 }
 
 .gantt-toolbar-inner--bubble {
@@ -578,6 +582,28 @@
   padding: 0 10px;
   font-size: 13px;
   font-weight: 600;
+}
+
+.gantt-zoom-pct {
+  min-width: 3.2em;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  line-height: 1;
+}
+
+.gantt-zoom-scale {
+  flex-shrink: 0;
+  margin-right: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-secondary);
+  line-height: 1;
 }
 
 .gantt-toolbar--tools .gantt-nav-btn:hover:not(:disabled) {
@@ -758,8 +784,8 @@ button.gantt-focus-copy:focus-visible {
   min-height: 100%;
   /* Lead lives on the chart (not wrapper) so focus mode can zero it reliably. */
   --gantt-lead-w: calc(10px + 110px + 4px);
-  --gantt-ruler-h: 54px;
-  --gantt-month-row-h: 22px;
+  --gantt-ruler-h: 58px;
+  --gantt-month-row-h: 26px;
   --gantt-weekend-bg: rgba(0, 0, 0, 0.04);
   --gantt-week-align-nudge: 4px;
 }
@@ -862,22 +888,43 @@ button.gantt-focus-copy:focus-visible {
 .gantt-ruler-months {
   position: relative;
   height: var(--gantt-month-row-h);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  --gantt-month-line: color-mix(in srgb, var(--text-secondary) 28%, transparent);
+  border-bottom: 1px solid var(--gantt-month-line);
 }
 
 .gantt-ruler-month {
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
   left: 0;
-  transform: translate(calc(-1 * var(--gantt-week-align-nudge)), -50%);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 3px 6px 6px;
+  border-left: 1px solid var(--gantt-month-line);
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-secondary);
   text-transform: capitalize;
+  text-align: center;
   white-space: nowrap;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.gantt-ruler-month:first-child {
+  border-left: none;
+}
+
+.gantt-chart--months-only {
+  --gantt-ruler-h: var(--gantt-month-row-h);
+}
+
+.gantt-chart--months-only .gantt-ruler-ticks {
+  display: none;
 }
 
 .gantt-ruler-ticks {
@@ -908,6 +955,13 @@ button.gantt-focus-copy:focus-visible {
   color: var(--text-tertiary);
   white-space: nowrap;
   pointer-events: none;
+}
+
+.gantt-tick-label--week-range {
+  left: 0;
+  right: auto;
+  transform: none;
+  text-align: left;
 }
 
 .gantt-tick-label--week-full {
@@ -1235,8 +1289,8 @@ button.gantt-focus-copy:focus-visible {
 
   .gantt-chart {
     --gantt-lead-w: 0;
-    --gantt-ruler-h: 48px;
-    --gantt-month-row-h: 22px;
+    --gantt-ruler-h: 52px;
+    --gantt-month-row-h: 26px;
   }
 
   .gantt-chart .gantt-label,
@@ -1861,7 +1915,7 @@ body.gantt-phase-move-active * {
     font-size: 20px;
   }
 
-  .gantt-toolbar--tools {
+  .gantt-toolbar--zoom {
     margin-left: auto;
   }
 
