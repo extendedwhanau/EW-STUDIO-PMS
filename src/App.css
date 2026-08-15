@@ -2819,14 +2819,8 @@ body.overview-dragging * {
   flex: 1;
 }
 
-.sheet-project-split-row .sheet-project-dates-row,
-.sheet-project-split-row .sheet-project-designers-row {
-  min-width: 0;
-}
-
-.sheet-project-split-row .sheet-designer-chips-row {
-  flex: 1;
-  min-width: 0;
+.sheet-project-split-row .sheet-value {
+  line-height: 1.25;
 }
 
 .sheet-project-name-row {
@@ -3902,6 +3896,20 @@ body.overview-dragging * {
 
   .project-row.project-row--board {
     width: 100%;
+  }
+
+  .project-row .project-row-inner--board {
+    gap: 6px;
+    padding: 12px;
+  }
+
+  .overview-col-list {
+    gap: 6px;
+    padding-bottom: 12px;
+  }
+
+  .overview-col-header {
+    padding-bottom: 8px;
   }
 
   .project-row-inner {

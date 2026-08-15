@@ -2591,26 +2591,25 @@ function ProjectDetailsPanel({
         </div>
       </div>
 
-      <div className="sheet-project-split-row">
-        <div className="sheet-modal-section sheet-modal-section--project-dates">
-          <div className="sheet-project-dates-row">
-            <div className="sheet-modal-section-label sheet-project-dates-label">Date</div>
-            <MilestoneDateRangePickerWithRef
-              startDate={form.startDate}
-              endDate={form.endDate}
-              onChange={(patch) => setForm((f) => applyProjectDatePatch(f, patch))}
-              className="sheet-name-dates-range sheet-project-dates-btn"
-              emptyLabel="Add dates"
-              ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
-              endDateOnly={isEditing}
-            />
-          </div>
+      <div className="sheet-modal-section sheet-modal-section--project-dates">
+        <div className="sheet-project-dates-row">
+          <div className="sheet-modal-section-label sheet-project-dates-label">Date</div>
+          <MilestoneDateRangePickerWithRef
+            startDate={form.startDate}
+            endDate={form.endDate}
+            onChange={(patch) => setForm((f) => applyProjectDatePatch(f, patch))}
+            className="sheet-name-dates-range sheet-project-dates-btn"
+            emptyLabel="Add dates"
+            ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
+            endDateOnly={isEditing}
+          />
         </div>
+      </div>
 
-        <div className="sheet-modal-section sheet-modal-section--project-designers">
-          <div className="sheet-project-designers-row">
-            <div className="sheet-modal-section-label sheet-project-designers-label">Designers</div>
-            <div className="sheet-designer-chips-row">
+      <div className="sheet-modal-section sheet-modal-section--project-designers">
+        <div className="sheet-project-designers-row">
+          <div className="sheet-modal-section-label sheet-project-designers-label">Designers</div>
+          <div className="sheet-designer-chips-row">
             {form.designerIds.map((id) => {
               const d = designers.find((x) => x.id === id);
               if (!d) return null;
@@ -2657,7 +2656,6 @@ function ProjectDetailsPanel({
               </div>
             ) : null}
           </div>
-        </div>
         </div>
       </div>
 
@@ -3973,8 +3971,6 @@ function useGanttMobileLayout() {
   return mobile;
 }
 
-/** Pixels per day on the timeline (horizontal scroll width). */
-const GANTT_PX_PER_DAY = 9;
 const GANTT_FOCUS_HEAD_DAYS = 14;
 const GANTT_FOCUS_TAIL_DAYS = 62;
 /** Press-and-hold before a phase can be dragged along the timeline. */
@@ -3983,18 +3979,30 @@ const PHASE_TIMELINE_HOLD_MS = 400;
 const GANTT_LEAD_W_DESKTOP = 124;
 const GANTT_WEEKEND_BAND_MAX_PX = 10;
 const GANTT_TIMELINE_LAST_DAY = daysFromEpoch('2027-12-31');
-const FOCUS_ZOOM_STEPS = [9, 18, 30];
 const GANTT_ZOOM_SCALES = [
-  { step: 0, label: 'Months' },
-  { step: 1, label: 'Weeks' },
-  { step: 2, label: 'Days' },
+  { px: 1, label: 'Year', mobileOnly: true },
+  { px: 2, label: 'Half year', mobileOnly: true },
+  { px: 4, label: 'Quarter', mobileOnly: true },
+  { px: 9, label: 'Months' },
+  { px: 18, label: 'Weeks' },
+  { px: 30, label: 'Days' },
 ];
 
-function GanttZoomMenu({ zoomStep, onSelect }) {
+function ganttZoomScales(mobile) {
+  return mobile
+    ? GANTT_ZOOM_SCALES
+    : GANTT_ZOOM_SCALES.filter((scale) => !scale.mobileOnly);
+}
+
+function ganttPxForZoomStep(step, mobile) {
+  const scales = ganttZoomScales(mobile);
+  return scales[step]?.px ?? scales[0].px;
+}
+
+function GanttZoomMenu({ zoomStep, onSelect, scales }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
-  const current = GANTT_ZOOM_SCALES.find((scale) => scale.step === zoomStep)
-    || GANTT_ZOOM_SCALES[0];
+  const current = scales[zoomStep] || scales[0];
 
   useEffect(() => {
     if (!open) return undefined;
@@ -4027,17 +4035,17 @@ function GanttZoomMenu({ zoomStep, onSelect }) {
       </button>
       {open ? (
         <div className="overview-filter-menu gantt-zoom-menu-list" role="menu" aria-label="Timeline scale">
-          {GANTT_ZOOM_SCALES.map((scale) => {
-            const checked = scale.step === zoomStep;
+          {scales.map((scale, index) => {
+            const checked = index === zoomStep;
             return (
               <button
-                key={scale.step}
+                key={scale.label}
                 type="button"
                 role="menuitemradio"
                 aria-checked={checked}
                 className={`overview-filter-option${checked ? ' overview-filter-option--on' : ''}`}
                 onClick={() => {
-                  onSelect(scale.step);
+                  onSelect(index);
                   setOpen(false);
                 }}
               >
@@ -4055,13 +4063,18 @@ function GanttZoomMenu({ zoomStep, onSelect }) {
 }
 
 function defaultMainZoomStep(mobile = false, viewportPx = 1120) {
+  const scales = ganttZoomScales(mobile);
+  if (mobile) {
+    const quarter = scales.findIndex((scale) => scale.label === 'Quarter');
+    return quarter >= 0 ? quarter : 0;
+  }
   const todayDay = daysFromEpoch(today());
   const remainingDays = Math.max(1, ganttTotalDays(todayDay, GANTT_TIMELINE_LAST_DAY));
-  const usablePx = Math.max(320, viewportPx - (mobile ? 0 : GANTT_LEAD_W_DESKTOP));
+  const usablePx = Math.max(320, viewportPx - GANTT_LEAD_W_DESKTOP);
   const idealPx = usablePx / remainingDays;
   let best = 0;
-  for (let i = 0; i < FOCUS_ZOOM_STEPS.length; i += 1) {
-    if (FOCUS_ZOOM_STEPS[i] <= idealPx + 0.5) best = i;
+  for (let i = 0; i < scales.length; i += 1) {
+    if (scales[i].px <= idealPx + 0.5) best = i;
   }
   return best;
 }
@@ -4490,7 +4503,7 @@ function GanttChartInner({
 
   const timelineView = useMemo(() => {
     if (focusedProject && focusRange) {
-      const pxPerDay = FOCUS_ZOOM_STEPS[focusZoomStep] ?? FOCUS_ZOOM_STEPS[0];
+      const pxPerDay = ganttPxForZoomStep(focusZoomStep, mobileLayout);
       return {
         minDay: focusRange.minDay,
         maxDay: focusRange.maxDay,
@@ -4522,10 +4535,10 @@ function GanttChartInner({
       minDay,
       maxDay,
       totalDays,
-      pxPerDay: FOCUS_ZOOM_STEPS[mainZoomStep] ?? GANTT_PX_PER_DAY,
+      pxPerDay: ganttPxForZoomStep(mainZoomStep, mobileLayout),
       focusMode: false,
     };
-  }, [focusedProject, focusRange, focusZoomStep, mainZoomStep, validProjects, todayDay]);
+  }, [focusedProject, focusRange, focusZoomStep, mainZoomStep, validProjects, todayDay, mobileLayout]);
 
   const { minDay, maxDay, totalDays, pxPerDay, focusMode } = timelineView;
   /** Focus + mobile have no label column — tracks must match the full chart width. */
@@ -4770,15 +4783,24 @@ function GanttChartInner({
     });
   }, [focusMode]);
 
+  const prevMobileLayoutRef = useRef(mobileLayout);
+
   useLayoutEffect(() => {
-    if (!mobileLayout) return;
+    if (prevMobileLayoutRef.current === mobileLayout) return;
+    prevMobileLayoutRef.current = mobileLayout;
+    const viewportPx = typeof window !== 'undefined' ? window.innerWidth : 1120;
+    const prevScales = ganttZoomScales(!mobileLayout);
+    const nextScales = ganttZoomScales(mobileLayout);
+    const mapStep = (step) => {
+      const px = prevScales[step]?.px;
+      if (px == null) return defaultMainZoomStep(mobileLayout, viewportPx);
+      const matched = nextScales.findIndex((scale) => scale.px === px);
+      if (matched >= 0) return matched;
+      return defaultMainZoomStep(mobileLayout, viewportPx);
+    };
     centerOnTodayPendingRef.current = true;
-    setMainZoomStep((step) => {
-      const viewportPx = window.innerWidth;
-      const desktopDefault = defaultMainZoomStep(false, viewportPx);
-      const mobileDefault = defaultMainZoomStep(true, viewportPx);
-      return step === desktopDefault ? mobileDefault : step;
-    });
+    setMainZoomStep(mapStep);
+    setFocusZoomStep(mapStep);
   }, [mobileLayout]);
 
   const prevFocusModeRef = useRef(false);
@@ -5387,13 +5409,14 @@ function GanttChartInner({
     };
   };
 
+  const zoomScales = ganttZoomScales(mobileLayout);
   const zoomStep = focusMode ? focusZoomStep : mainZoomStep;
   const setZoomStep = focusMode ? setFocusZoomStep : setMainZoomStep;
 
   const setZoomScale = useCallback((step) => {
     centerOnTodayPendingRef.current = true;
-    setZoomStep(Math.max(0, Math.min(FOCUS_ZOOM_STEPS.length - 1, step)));
-  }, [setZoomStep]);
+    setZoomStep(Math.max(0, Math.min(zoomScales.length - 1, step)));
+  }, [setZoomStep, zoomScales.length]);
 
   const changeZoomStep = useCallback((delta) => {
     setZoomScale(zoomStep + delta);
@@ -5474,7 +5497,7 @@ function GanttChartInner({
 
   const timelineZoomCluster = (
     <div className="gantt-toolbar gantt-toolbar--tools gantt-toolbar--zoom" role="toolbar" aria-label="Timeline zoom">
-      <GanttZoomMenu zoomStep={zoomStep} onSelect={setZoomScale} />
+      <GanttZoomMenu zoomStep={zoomStep} onSelect={setZoomScale} scales={zoomScales} />
       <div className="gantt-toolbar-inner gantt-toolbar-inner--bubble">
         <button
           type="button"
@@ -5489,7 +5512,7 @@ function GanttChartInner({
           type="button"
           className="gantt-nav-btn gantt-nav-btn--icon"
           onClick={() => changeZoomStep(1)}
-          disabled={zoomStep >= FOCUS_ZOOM_STEPS.length - 1}
+          disabled={zoomStep >= zoomScales.length - 1}
           aria-label="Zoom in"
         >
           +
@@ -5640,7 +5663,7 @@ function GanttChartInner({
               focusMode ? 'gantt-chart--focused' : '',
               focusMode && timelineEditMode ? 'gantt-chart--editing' : '',
               timelineSchedule.ticks.length === 0 ? 'gantt-chart--months-only' : '',
-              zoomStep === 0 ? 'gantt-chart--zoom-30' : '',
+              pxPerDay < 12 ? 'gantt-chart--zoom-30' : '',
             ].filter(Boolean).join(' ')}
             style={{ minWidth: chartMinWidthPx }}
           >

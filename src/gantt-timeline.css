@@ -1403,7 +1403,7 @@ button.gantt-focus-copy:focus-visible {
   }
 
   .gantt-lane-label--job {
-    font-size: 11px;
+    font-size: 10px;
     max-width: min(72vw, 280px);
     line-height: 1.25;
     padding-right: 12px;
@@ -1430,11 +1430,11 @@ button.gantt-focus-copy:focus-visible {
   }
 
   .gantt-lane-label-client {
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .gantt-lane-label-project {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
   }
 
