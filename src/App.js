@@ -3655,6 +3655,12 @@ function ganttTickDayNumberNZ(epochDay) {
   return String(new Date(ganttCivilUtcMs(epochDay)).getUTCDate());
 }
 
+/** Last civil day of the UTC year that contains `epochDay`. */
+function ganttYearEndDay(epochDay) {
+  const year = new Date(ganttCivilUtcMs(epochDay)).getUTCFullYear();
+  return daysFromEpoch(`${year}-12-31`);
+}
+
 function ganttDayPx(day, minDay, pxPerDay) {
   return (day - minDay) * pxPerDay;
 }
@@ -3855,21 +3861,24 @@ function useGanttMobileLayout() {
 /** Pixels per day on the timeline (horizontal scroll width). */
 const GANTT_PX_PER_DAY = 3;
 const GANTT_FOCUS_HEAD_DAYS = 14;
-const GANTT_FOCUS_TAIL_DAYS = 62;
 /** Press-and-hold before a phase can be dragged along the timeline. */
 const PHASE_TIMELINE_HOLD_MS = 400;
 /** Match --gantt-lead-w in gantt-timeline.css (10px pad + label + 4px gap). */
 const GANTT_LEAD_W_DESKTOP = 124;
 const GANTT_WEEKEND_BAND_MAX_PX = 10;
-const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
+const FOCUS_ZOOM_STEPS = [3, 9, 18, 30];
 
-function defaultMainZoomStep(mobile = false) {
-  if (mobile) {
-    const mobileIdx = FOCUS_ZOOM_STEPS.indexOf(12);
-    if (mobileIdx >= 0) return mobileIdx;
+function defaultMainZoomStep(mobile = false, viewportPx = 1120) {
+  const todayDay = daysFromEpoch(today());
+  const yearEnd = ganttYearEndDay(todayDay);
+  const remainingDays = Math.max(1, ganttTotalDays(todayDay, yearEnd));
+  const usablePx = Math.max(320, viewportPx - (mobile ? 0 : GANTT_LEAD_W_DESKTOP));
+  const idealPx = usablePx / remainingDays;
+  let best = 0;
+  for (let i = 0; i < FOCUS_ZOOM_STEPS.length; i += 1) {
+    if (FOCUS_ZOOM_STEPS[i] <= idealPx + 0.5) best = i;
   }
-  const idx = FOCUS_ZOOM_STEPS.indexOf(GANTT_PX_PER_DAY);
-  return idx >= 0 ? idx : 1;
+  return best;
 }
 
 function defaultFocusZoomStep(totalDays) {
@@ -4233,6 +4242,7 @@ function GanttChartInner({
   const [mobileExpandedPhases, setMobileExpandedPhases] = useState(() => new Set());
   const [mainZoomStep, setMainZoomStep] = useState(() => defaultMainZoomStep(
     typeof window !== 'undefined' && window.matchMedia(GANTT_MOBILE_MQ).matches,
+    typeof window !== 'undefined' ? window.innerWidth : 1120,
   ));
   const centerOnTodayPendingRef = useRef(true);
   const [focusZoomStep, setFocusZoomStep] = useState(0);
@@ -4291,7 +4301,7 @@ function GanttChartInner({
       ? Math.max(...projectDays)
       : daysFromEpoch(timelineFocusProject.endDate);
     const minDay = minStart - GANTT_FOCUS_HEAD_DAYS;
-    const maxDay = maxEnd + GANTT_FOCUS_TAIL_DAYS;
+    const maxDay = ganttYearEndDay(maxEnd);
     const totalDays = ganttTotalDays(minDay, maxDay);
     return { minDay, maxDay, totalDays };
   }, [timelineFocusProject]);
@@ -4302,8 +4312,6 @@ function GanttChartInner({
   }, [expandedProjectId, focusRange]);
 
   const timelineView = useMemo(() => {
-    const ganttLastDay = daysFromEpoch('2027-12-31');
-
     if (focusedProject && focusRange) {
       const pxPerDay = FOCUS_ZOOM_STEPS[focusZoomStep] ?? FOCUS_ZOOM_STEPS[0];
       return {
@@ -4316,21 +4324,15 @@ function GanttChartInner({
     }
 
     const allStarts = validProjects.map((p) => daysFromEpoch(p.startDate));
-    const allEnds = validProjects.map((p) => daysFromEpoch(p.endDate));
     validProjects.forEach((p) => {
       if (!Array.isArray(p.milestones)) return;
       p.milestones.forEach((ph) => {
         if (ph.startDate) allStarts.push(daysFromEpoch(ph.startDate));
-        if (ph.endDate) allEnds.push(daysFromEpoch(ph.endDate));
       });
     });
-    const minStart = Math.min(...allStarts);
-    const maxEnd = Math.max(...allEnds);
+    const minStart = allStarts.length ? Math.min(...allStarts) : todayDay;
     let minDay = minStart - 14;
-    let maxDay = Math.min(
-      Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
-      ganttLastDay,
-    );
+    let maxDay = ganttYearEndDay(todayDay);
     if (maxDay <= minDay) minDay = maxDay - 365;
     const totalDays = ganttTotalDays(minDay, maxDay);
     return {
@@ -4583,8 +4585,9 @@ function GanttChartInner({
     if (!mobileLayout) return;
     centerOnTodayPendingRef.current = true;
     setMainZoomStep((step) => {
-      const desktopDefault = defaultMainZoomStep(false);
-      const mobileDefault = defaultMainZoomStep(true);
+      const viewportPx = window.innerWidth;
+      const desktopDefault = defaultMainZoomStep(false, viewportPx);
+      const mobileDefault = defaultMainZoomStep(true, viewportPx);
       return step === desktopDefault ? mobileDefault : step;
     });
   }, [mobileLayout]);
