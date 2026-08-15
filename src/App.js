@@ -2591,25 +2591,26 @@ function ProjectDetailsPanel({
         </div>
       </div>
 
-      <div className="sheet-modal-section sheet-modal-section--project-dates">
-        <div className="sheet-project-dates-row">
-          <div className="sheet-modal-section-label sheet-project-dates-label">Date</div>
-          <MilestoneDateRangePickerWithRef
-            startDate={form.startDate}
-            endDate={form.endDate}
-            onChange={(patch) => setForm((f) => applyProjectDatePatch(f, patch))}
-            className="sheet-name-dates-range sheet-project-dates-btn"
-            emptyLabel="Add dates"
-            ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
-            endDateOnly={isEditing}
-          />
+      <div className="sheet-project-split-row">
+        <div className="sheet-modal-section sheet-modal-section--project-dates">
+          <div className="sheet-project-dates-row">
+            <div className="sheet-modal-section-label sheet-project-dates-label">Date</div>
+            <MilestoneDateRangePickerWithRef
+              startDate={form.startDate}
+              endDate={form.endDate}
+              onChange={(patch) => setForm((f) => applyProjectDatePatch(f, patch))}
+              className="sheet-name-dates-range sheet-project-dates-btn"
+              emptyLabel="Add dates"
+              ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
+              endDateOnly={isEditing}
+            />
+          </div>
         </div>
-      </div>
 
-      <div className="sheet-modal-section sheet-modal-section--project-designers">
-        <div className="sheet-project-designers-row">
-          <div className="sheet-modal-section-label sheet-project-designers-label">Designers</div>
-          <div className="sheet-designer-chips-row">
+        <div className="sheet-modal-section sheet-modal-section--project-designers">
+          <div className="sheet-project-designers-row">
+            <div className="sheet-modal-section-label sheet-project-designers-label">Designers</div>
+            <div className="sheet-designer-chips-row">
             {form.designerIds.map((id) => {
               const d = designers.find((x) => x.id === id);
               if (!d) return null;
@@ -2657,10 +2658,11 @@ function ProjectDetailsPanel({
             ) : null}
           </div>
         </div>
+        </div>
       </div>
 
-      <div className="sheet-modal-section sheet-modal-section--project-meta">
-        <div className="sheet-project-meta">
+      <div className="sheet-project-split-row">
+        <div className="sheet-modal-section sheet-modal-section--project-meta">
           <div className="sheet-project-meta-group">
             <label htmlFor="project-modal-category" className="sheet-modal-section-sublabel">
               Focus
@@ -2683,6 +2685,8 @@ function ProjectDetailsPanel({
               </select>
             </div>
           </div>
+        </div>
+        <div className="sheet-modal-section sheet-modal-section--project-meta">
           <div className="sheet-project-meta-group">
             <label htmlFor="project-modal-status" className="sheet-modal-section-sublabel">
               Status
@@ -3113,15 +3117,6 @@ function ProjectModal({
             </button>
           )}
           <div className="modal-footer-actions">
-            <button
-              type="button"
-              className="modal-btn-close"
-              onClick={() => setShowOverview(true)}
-              disabled={!form.name.trim()}
-              title={!form.name.trim() ? 'Add a project name first' : 'Preview client overview PDF'}
-            >
-              Export
-            </button>
             <button type="button" className="modal-btn-close" onClick={onClose}>
               Close
             </button>
@@ -5580,32 +5575,30 @@ function GanttChartInner({
                   </button>
                 </>
               ) : (
-                <>
-                  {onUpdateProject ? (
-                    <button
-                      type="button"
-                      className="gantt-export-btn gantt-focus-action-btn"
-                      onClick={beginTimelineEdit}
-                      disabled={!projectHasMilestones(timelineFocusProject)}
-                      title={
-                        projectHasMilestones(timelineFocusProject)
-                          ? 'Edit schedule beside the timeline'
-                          : 'Add milestones to edit schedule'
-                      }
-                    >
-                      Edit
-                    </button>
-                  ) : null}
+                onUpdateProject ? (
                   <button
                     type="button"
-                    className="gantt-export-btn gantt-focus-action-btn"
-                    onClick={() => setShowOverview(true)}
+                    className="icon-bubble gantt-focus-edit-bubble"
+                    onClick={beginTimelineEdit}
                     disabled={!projectHasMilestones(timelineFocusProject)}
-                    title={!projectHasMilestones(timelineFocusProject) ? 'Add milestones to export' : 'Export timeline overview'}
+                    aria-label="Edit"
+                    title={
+                      projectHasMilestones(timelineFocusProject)
+                        ? 'Edit schedule beside the timeline'
+                        : 'Add milestones to edit schedule'
+                    }
                   >
-                    Export
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+                      <path
+                        d="M10.6 2.9l2.5 2.5-7.8 7.8H2.8v-2.5l7.8-7.8z"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span className="icon-bubble-text">Edit</span>
                   </button>
-                </>
+                ) : null
               )}
             </div>
             {timelineZoomCluster}

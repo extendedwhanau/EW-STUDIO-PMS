@@ -2731,8 +2731,7 @@ body.overview-dragging * {
 }
 
 .modal--project .sheet-project-dates-row,
-.modal--project .sheet-project-designers-row,
-.modal--project .sheet-modal-section--project-meta .sheet-project-meta {
+.modal--project .sheet-project-designers-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2786,28 +2785,48 @@ body.overview-dragging * {
   font-size: calc(var(--sheet-pt) * 0.9);
 }
 
-.modal--project .sheet-modal-section--project-meta .sheet-project-meta {
-  flex-wrap: wrap;
-  gap: 10px 20px;
-  padding-top: 0;
+.sheet-project-split-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
 }
 
-.modal--project .sheet-modal-section--project-meta .sheet-project-meta-group {
+.sheet-project-split-row > .sheet-modal-section {
+  min-width: 0;
+  padding: 12px;
+}
+
+.sheet-project-split-row .sheet-project-meta-group {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
+  min-height: calc(var(--sheet-pt) * 1.25);
 }
 
-.modal--project .sheet-modal-section--project-meta .sheet-modal-section-sublabel {
+.sheet-project-split-row .sheet-modal-section-sublabel {
+  flex-shrink: 0;
   line-height: 1.25;
 }
 
-.modal--project .sheet-modal-section--project-meta .sheet-select-hit {
+.sheet-project-split-row .sheet-select-hit {
+  min-width: 0;
   min-height: 0;
   height: auto;
   width: auto;
+  flex: 1;
 }
 
-.modal--project .sheet-modal-section--project-meta .sheet-value {
-  line-height: 1.25;
+.sheet-project-split-row .sheet-project-dates-row,
+.sheet-project-split-row .sheet-project-designers-row {
+  min-width: 0;
+}
+
+.sheet-project-split-row .sheet-designer-chips-row {
+  flex: 1;
+  min-width: 0;
 }
 
 .sheet-project-name-row {
@@ -2842,7 +2861,6 @@ body.overview-dragging * {
   font-weight: 600;
 }
 
-.sheet-modal-section--project-meta .sheet-project-meta,
 .sheet-modal-section--project-notes .sheet-project-notes {
   padding-top: 0;
 }
@@ -4229,8 +4247,8 @@ body.overview-dragging * {
   }
 
   /* Priority / Status meta wraps with breathing room */
-  .modal--project .sheet-project-meta {
-    gap: 14px 22px;
+  .modal--project .sheet-project-split-row {
+    gap: 12px;
   }
 
   /* Larger tab hit area in the project modal header */
