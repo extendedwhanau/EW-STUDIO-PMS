@@ -451,15 +451,12 @@ function formatDueDaysDisplay(endDateStr) {
   return days === 1 ? '1 Day' : `${days} Days`;
 }
 
-/** Day + month for marker labels, e.g. "29 July". */
+/** Day + short month for marker labels, e.g. "14 Aug". */
 function formatMarkerDateLabel(str) {
   if (!str) return '';
   const d = new Date(`${str}T12:00:00Z`);
-  return d.toLocaleDateString('en-NZ', {
-    timeZone: 'UTC',
-    day: 'numeric',
-    month: 'long',
-  });
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${d.getUTCDate()} ${months[d.getUTCMonth()]}`;
 }
 
 /** Short date for compact UI, e.g. "7 Jul 26". */
@@ -3705,6 +3702,15 @@ function isSundayNZ(epochDay) {
   return new Date(ganttCivilUtcMs(epochDay)).getUTCDay() === 0;
 }
 
+function isWeekdayNZ(epochDay) {
+  const dow = new Date(ganttCivilUtcMs(epochDay)).getUTCDay();
+  return dow >= 1 && dow <= 5;
+}
+
+function ganttIsFullDayZoom(pxPerDay) {
+  return pxPerDay >= 24;
+}
+
 /** Day of month only (civil date). */
 function ganttTickDayNumberNZ(epochDay) {
   return String(new Date(ganttCivilUtcMs(epochDay)).getUTCDate());
@@ -3729,9 +3735,10 @@ function ganttFilterTicksByGap(candidates, minDay, pxPerDay, minGapPx) {
 }
 
 /** How much date detail to show in the week row. */
-function ganttRulerLabelTier(pxPerDay) {
+function ganttRulerLabelTier(pxPerDay, { showWeekDates = false } = {}) {
   if (pxPerDay >= 24) return 'full';
   if (pxPerDay >= 12) return 'week';
+  if (showWeekDates && pxPerDay >= 9) return 'week';
   return 'hidden';
 }
 
@@ -3769,6 +3776,19 @@ function ganttWeekendBandRightPct(startDay, spanDays, minDay, totalDays, pxPerDa
 function buildWeekendBands(minDay, maxDay, totalDays, pxPerDay) {
   const bands = [];
 
+  if (ganttIsFullDayZoom(pxPerDay)) {
+    const widthPct = (1 / Math.max(totalDays, 1)) * 100;
+    for (let day = minDay; day <= maxDay; day += 1) {
+      if (!isSaturdayNZ(day) && !isSundayNZ(day)) continue;
+      bands.push({
+        key: `wknd-${day}`,
+        left: ganttDayLeftPct(day, minDay, totalDays),
+        widthPct,
+      });
+    }
+    return bands;
+  }
+
   const addBand = (startDay, spanDays) => {
     const widthPx = Math.min(GANTT_WEEKEND_BAND_MAX_PX, spanDays * pxPerDay);
     if (widthPx < 1) return;
@@ -3791,12 +3811,26 @@ function buildWeekendBands(minDay, maxDay, totalDays, pxPerDay) {
   return bands;
 }
 
+function buildWeekdayLines(minDay, maxDay, totalDays, pxPerDay) {
+  if (!ganttIsFullDayZoom(pxPerDay)) return [];
+  const lines = [];
+  for (let day = minDay; day <= maxDay; day += 1) {
+    if (!isWeekdayNZ(day)) continue;
+    lines.push({
+      key: `wd-${day}`,
+      left: ganttDayLeftPct(day, minDay, totalDays),
+    });
+  }
+  return lines;
+}
+
 /**
  * Monday week ticks — left edge of each white work week.
  */
-function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay) {
+function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay, options = {}) {
   const toPct = (day) => ganttDayLeftPct(day, minDay, totalDays);
-  const labelTier = ganttRulerLabelTier(pxPerDay);
+  const labelTier = ganttRulerLabelTier(pxPerDay, options);
+  const fullDayZoom = ganttIsFullDayZoom(pxPerDay);
 
   let ticks = [];
   if (labelTier !== 'hidden') {
@@ -3805,7 +3839,11 @@ function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay) {
       if (!isMondayNZ(day) || isFirstOfMonthNZ(day)) continue;
       const prevSaturday = day - 2;
       let left = toPct(day);
-      if (labelTier !== 'hidden' && prevSaturday >= minDay && isSaturdayNZ(prevSaturday)) {
+      if (
+        !fullDayZoom
+        && prevSaturday >= minDay
+        && isSaturdayNZ(prevSaturday)
+      ) {
         let weekendSpan = 1;
         if (isSundayNZ(day - 1)) weekendSpan = 2;
         left = ganttWeekendBandRightPct(
@@ -3834,6 +3872,7 @@ function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay) {
   return {
     ticks,
     weekendBands: buildWeekendBands(minDay, maxDay, totalDays, pxPerDay),
+    weekdayLines: buildWeekdayLines(minDay, maxDay, totalDays, pxPerDay),
   };
 }
 
@@ -3950,22 +3989,81 @@ const GANTT_LEAD_W_DESKTOP = 124;
 const GANTT_WEEKEND_BAND_MAX_PX = 10;
 const GANTT_TIMELINE_LAST_DAY = daysFromEpoch('2027-12-31');
 const FOCUS_ZOOM_STEPS = [9, 18, 30];
+const GANTT_ZOOM_SCALES = [
+  { step: 0, label: 'Months' },
+  { step: 1, label: 'Weeks' },
+  { step: 2, label: 'Days' },
+];
+
+function GanttZoomMenu({ zoomStep, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const current = GANTT_ZOOM_SCALES.find((scale) => scale.step === zoomStep)
+    || GANTT_ZOOM_SCALES[0];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (e) => {
+      if (wrapRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="gantt-zoom-menu" ref={wrapRef}>
+      <button
+        type="button"
+        className={`gantt-zoom-menu-tab${open ? ' gantt-zoom-menu-tab--open' : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Timeline scale, ${current.label}`}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {current.label}
+      </button>
+      {open ? (
+        <div className="overview-filter-menu gantt-zoom-menu-list" role="menu" aria-label="Timeline scale">
+          {GANTT_ZOOM_SCALES.map((scale) => {
+            const checked = scale.step === zoomStep;
+            return (
+              <button
+                key={scale.step}
+                type="button"
+                role="menuitemradio"
+                aria-checked={checked}
+                className={`overview-filter-option${checked ? ' overview-filter-option--on' : ''}`}
+                onClick={() => {
+                  onSelect(scale.step);
+                  setOpen(false);
+                }}
+              >
+                <span className="overview-filter-option-label">{scale.label}</span>
+                <span className={`overview-filter-tick${checked ? '' : ' overview-filter-tick--off'}`} aria-hidden>
+                  ✓
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function defaultMainZoomStep(mobile = false, viewportPx = 1120) {
   const todayDay = daysFromEpoch(today());
   const remainingDays = Math.max(1, ganttTotalDays(todayDay, GANTT_TIMELINE_LAST_DAY));
   const usablePx = Math.max(320, viewportPx - (mobile ? 0 : GANTT_LEAD_W_DESKTOP));
   const idealPx = usablePx / remainingDays;
-  let best = 0;
-  for (let i = 0; i < FOCUS_ZOOM_STEPS.length; i += 1) {
-    if (FOCUS_ZOOM_STEPS[i] <= idealPx + 0.5) best = i;
-  }
-  return best;
-}
-
-function defaultFocusZoomStep(totalDays) {
-  const targetWidth = 1120;
-  const idealPx = targetWidth / Math.max(totalDays, 1);
   let best = 0;
   for (let i = 0; i < FOCUS_ZOOM_STEPS.length; i += 1) {
     if (FOCUS_ZOOM_STEPS[i] <= idealPx + 0.5) best = i;
@@ -4328,6 +4426,8 @@ function GanttChartInner({
   ));
   const centerOnTodayPendingRef = useRef(true);
   const [focusZoomStep, setFocusZoomStep] = useState(0);
+  const mainZoomStepRef = useRef(mainZoomStep);
+  mainZoomStepRef.current = mainZoomStep;
   const [resizePreviewProject, setResizePreviewProject] = useState(null);
   const resizePreviewRef = useRef(null);
   const phaseResizeActiveRef = useRef(false);
@@ -4389,9 +4489,9 @@ function GanttChartInner({
   }, [timelineFocusProject]);
 
   useEffect(() => {
-    if (!expandedProjectId || !focusRange) return;
-    setFocusZoomStep(defaultFocusZoomStep(focusRange.totalDays));
-  }, [expandedProjectId, focusRange]);
+    if (!expandedProjectId) return;
+    setFocusZoomStep(mainZoomStepRef.current);
+  }, [expandedProjectId]);
 
   const timelineView = useMemo(() => {
     if (focusedProject && focusRange) {
@@ -4545,6 +4645,7 @@ function GanttChartInner({
 
   const exitFocusView = useCallback(() => {
     if (timelineEditMode) finishTimelineEdit();
+    centerOnTodayPendingRef.current = true;
     setExpandedProjectId(null);
   }, [timelineEditMode, finishTimelineEdit]);
 
@@ -4565,11 +4666,13 @@ function GanttChartInner({
       maxDay,
       totalDays,
       pxPerDay,
+      { showWeekDates: focusMode },
     ),
-    [minDay, maxDay, totalDays, pxPerDay],
+    [minDay, maxDay, totalDays, pxPerDay, focusMode],
   );
   const gridLines = timelineSchedule.ticks;
   const weekendBands = timelineSchedule.weekendBands;
+  const weekdayLines = timelineSchedule.weekdayLines;
 
   useEffect(() => {
     if (!onFocusMetaChange) return undefined;
@@ -4653,10 +4756,13 @@ function GanttChartInner({
 
   const updateJobLabelPins = useCallback(() => {
     const wrapper = scrollRef.current;
-    if (!wrapper || focusMode) return;
+    if (!wrapper) return;
     const stickPx = 15;
+    const selector = focusMode
+      ? '.gantt-lane-label--phase[data-label-pct]'
+      : '.gantt-lane-label--job[data-label-pct]';
     const wrapperLeft = wrapper.getBoundingClientRect().left;
-    wrapper.querySelectorAll('.gantt-lane-label--job[data-label-pct]').forEach((label) => {
+    wrapper.querySelectorAll(selector).forEach((label) => {
       const labelPct = Number(label.dataset.labelPct);
       if (!Number.isFinite(labelPct)) return;
       const track = label.closest('.gantt-track');
@@ -4680,7 +4786,13 @@ function GanttChartInner({
     });
   }, [mobileLayout]);
 
+  const prevFocusModeRef = useRef(false);
+
   useLayoutEffect(() => {
+    if (prevFocusModeRef.current && !focusMode) {
+      centerOnTodayPendingRef.current = true;
+    }
+    prevFocusModeRef.current = focusMode;
     if (!centerOnTodayPendingRef.current || !scrollRef.current) return;
     scrollToToday('auto');
     centerOnTodayPendingRef.current = false;
@@ -4697,7 +4809,6 @@ function GanttChartInner({
   }, [focusMode, expandedProjectId, mobileLayout]);
 
   useLayoutEffect(() => {
-    if (focusMode) return undefined;
     const wrapper = scrollRef.current;
     if (!wrapper) return undefined;
 
@@ -5039,6 +5150,7 @@ function GanttChartInner({
           `gantt-lane-label--${variant}`,
         ].filter(Boolean).join(' ')}
         style={{ left: `${left}%` }}
+        data-label-pct={left}
         title={text}
       >
         <span className="gantt-lane-label-text">{text}</span>
@@ -5053,7 +5165,7 @@ function GanttChartInner({
     if (!list.length) return null;
     const barColor = colors?.bar || '#8B978C';
     return list.map((marker) => {
-      const left = ganttDayCenterPct(daysFromEpoch(marker.date), minDay, totalDays);
+      const left = ganttDayLeftPct(daysFromEpoch(marker.date), minDay, totalDays);
       const dateLabel = formatMarkerDateLabel(marker.date);
       const title = marker.title.trim() || 'Milestone';
       const tip = [dateLabel, title, marker.linkedTo ? `Linked: ${marker.linkedTo}` : '']
@@ -5070,8 +5182,8 @@ function GanttChartInner({
         >
           <span className="gantt-marker-dot" aria-hidden />
           <span className="gantt-marker-hover">
-            <span className="gantt-marker-date">{dateLabel}</span>
             <span className="gantt-marker-title">{title}</span>
+            <span className="gantt-marker-date">{dateLabel}</span>
           </span>
         </div>
       );
@@ -5260,7 +5372,13 @@ function GanttChartInner({
     if (!onSelectProject) return;
     if (focusMode) return;
     if (projectHasMilestones(project)) {
-      setExpandedProjectId((cur) => (cur === project.id ? null : project.id));
+      setExpandedProjectId((cur) => {
+        if (cur === project.id) {
+          centerOnTodayPendingRef.current = true;
+          return null;
+        }
+        return project.id;
+      });
       return;
     }
     openProjectEdit(project);
@@ -5277,10 +5395,14 @@ function GanttChartInner({
   const zoomStep = focusMode ? focusZoomStep : mainZoomStep;
   const setZoomStep = focusMode ? setFocusZoomStep : setMainZoomStep;
 
-  const changeZoomStep = useCallback((delta) => {
+  const setZoomScale = useCallback((step) => {
     centerOnTodayPendingRef.current = true;
-    setZoomStep((s) => Math.max(0, Math.min(FOCUS_ZOOM_STEPS.length - 1, s + delta)));
+    setZoomStep(Math.max(0, Math.min(FOCUS_ZOOM_STEPS.length - 1, step)));
   }, [setZoomStep]);
+
+  const changeZoomStep = useCallback((delta) => {
+    setZoomScale(zoomStep + delta);
+  }, [setZoomScale, zoomStep]);
 
   // Trackpad pinch (ctrl/meta + wheel) and ⌘/Ctrl + − to zoom the timeline.
   useEffect(() => {
@@ -5325,9 +5447,6 @@ function GanttChartInner({
     };
   }, [changeZoomStep, focusMode, chartMinWidthPx]);
 
-  const zoomMaxPx = FOCUS_ZOOM_STEPS[FOCUS_ZOOM_STEPS.length - 1];
-  const zoomPct = Math.round((pxPerDay / zoomMaxPx) * 100);
-
   const timelineNavCluster = (
     <div className="gantt-toolbar gantt-toolbar--tools gantt-toolbar--nav" role="toolbar" aria-label="Timeline date">
       <div className="gantt-toolbar-inner gantt-toolbar-inner--bubble">
@@ -5360,7 +5479,7 @@ function GanttChartInner({
 
   const timelineZoomCluster = (
     <div className="gantt-toolbar gantt-toolbar--tools gantt-toolbar--zoom" role="toolbar" aria-label="Timeline zoom">
-      {zoomPct === 30 ? <span className="gantt-zoom-scale">Months</span> : null}
+      <GanttZoomMenu zoomStep={zoomStep} onSelect={setZoomScale} />
       <div className="gantt-toolbar-inner gantt-toolbar-inner--bubble">
         <button
           type="button"
@@ -5371,7 +5490,6 @@ function GanttChartInner({
         >
           −
         </button>
-        <span className="gantt-zoom-pct" aria-live="polite">{zoomPct}%</span>
         <button
           type="button"
           className="gantt-nav-btn gantt-nav-btn--icon"
@@ -5390,8 +5508,21 @@ function GanttChartInner({
       {weekendBands.map((band) => (
         <div
           key={`${keyPrefix}-${band.key}`}
-          className="gantt-weekend-band"
-          style={{ left: `${band.left}%`, width: `${band.widthPx}px` }}
+          className={[
+            'gantt-weekend-band',
+            band.widthPct != null ? 'gantt-weekend-band--day' : '',
+          ].filter(Boolean).join(' ')}
+          style={{
+            left: `${band.left}%`,
+            width: band.widthPct != null ? `${band.widthPct}%` : `${band.widthPx}px`,
+          }}
+        />
+      ))}
+      {weekdayLines.map((line) => (
+        <div
+          key={`${keyPrefix}-${line.key}`}
+          className="gantt-weekday-line"
+          style={{ left: `${line.left}%` }}
         />
       ))}
     </>
@@ -5516,6 +5647,7 @@ function GanttChartInner({
               focusMode ? 'gantt-chart--focused' : '',
               focusMode && timelineEditMode ? 'gantt-chart--editing' : '',
               timelineSchedule.ticks.length === 0 ? 'gantt-chart--months-only' : '',
+              zoomStep === 0 ? 'gantt-chart--zoom-30' : '',
             ].filter(Boolean).join(' ')}
             style={{ minWidth: chartMinWidthPx }}
           >

@@ -138,17 +138,17 @@ describe('ganttGeometry date positioning', () => {
       expect(chartMinWidthPx).toBe(trackWidthPx);
 
       const tick20Px = (ganttDayLeftPct(july20, minDay, totalDays) / 100) * trackWidthPx;
-      const marker29Px = (ganttDayCenterPct(july29, minDay, totalDays) / 100) * trackWidthPx;
+      const marker29Px = (ganttDayLeftPct(july29, minDay, totalDays) / 100) * trackWidthPx;
 
       expect(marker29Px).toBeGreaterThan(tick20Px);
-      // ~9 days after Mon 20 (centre of Wed 29 ≈ 20 + 9.5)
-      expect(marker29Px - tick20Px).toBeCloseTo(9.5 * pxPerDay, 6);
+      // 9 days after Mon 20 (left edge of Wed 29)
+      expect(marker29Px - tick20Px).toBeCloseTo(9 * pxPerDay, 6);
 
       // Ruler tick for 29 Jul Mon-week neighbour (27 Mon) must sit left of the marker.
       const july27 = daysFromEpoch('2026-07-27');
       const tick27Px = (ganttDayLeftPct(july27, minDay, totalDays) / 100) * trackWidthPx;
       expect(marker29Px).toBeGreaterThan(tick27Px);
-      expect(marker29Px - tick27Px).toBeCloseTo(2.5 * pxPerDay, 6);
+      expect(marker29Px - tick27Px).toBeCloseTo(2 * pxPerDay, 6);
     });
   });
 });
