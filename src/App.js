@@ -1603,6 +1603,7 @@ function MilestoneDateRangePicker({
   onChange,
   className = '',
   emptyLabel = 'Add dates',
+  emptyAsPlus = false,
   ariaLabel = 'Set dates',
   endDateOnly = false,
   rangeFormat = 'long',
@@ -1664,13 +1665,20 @@ function MilestoneDateRangePicker({
           className,
           calendarOpen ? 'sheet-date-range-btn--active' : '',
           hasDates ? '' : 'sheet-date-range-btn--empty',
+          !hasDates && emptyAsPlus ? 'icon-bubble sheet-date-range-btn--plus' : '',
+          calendarOpen && !hasDates && emptyAsPlus ? 'icon-bubble--open' : '',
         ].filter(Boolean).join(' ')}
         onClick={toggleCalendar}
         aria-label={ariaLabel}
         aria-expanded={calendarOpen}
         aria-live="polite"
       >
-        {rangeLabel}
+        {hasDates ? rangeLabel : (emptyAsPlus ? (
+          <>
+            <span className="icon-bubble-glyph" aria-hidden>+</span>
+            <span className="icon-bubble-text">Add</span>
+          </>
+        ) : rangeLabel)}
       </button>
       <DateRangeBubbleCalendar
         anchorRef={rangeBtnRef}
@@ -2144,7 +2152,7 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
   const [importError, setImportError] = useState('');
   const [importNotice, setImportNotice] = useState('');
   const csvInputRef = useRef(null);
-  const projectNameSize = Math.max(10, (form.name.trim() || 'Project name').length + 1);
+  const projectNameSize = Math.max(7, (form.name.trim() || 'Project').length + 1);
   const phaseOptions = availablePhases(phases).map((phase) => ({
     key: phase.key,
     label: phase.title,
@@ -2402,8 +2410,8 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
               <input
                 className="sheet-name-dates-name sheet-project-name-input"
                 type="text"
-                placeholder="Project name"
-                aria-label="Project name"
+                placeholder="Project"
+                aria-label="Project"
                 value={form.name}
                 size={projectNameSize}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -2419,7 +2427,7 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
                 endDate={form.endDate}
                 onChange={handleKickoffChange}
                 className="sheet-name-dates-range sheet-project-dates-btn"
-                emptyLabel="Add dates"
+                emptyAsPlus
                 ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
                 endDateOnly={isEditing}
               />
@@ -2530,7 +2538,8 @@ function ProjectDetailsPanel({
   existingClients,
   isEditing = false,
 }) {
-  const projectNameSize = Math.max(10, (form.name.trim() || 'Project name').length + 1);
+  const projectNameSize = Math.max(7, (form.name.trim() || 'Project').length + 1);
+  const clientSize = Math.max(6, (form.client.trim() || 'Client').length + 1);
 
   return (
     <>
@@ -2538,35 +2547,37 @@ function ProjectDetailsPanel({
         <div className="sheet-client-row">
           <input
             id="project-modal-client"
-            className="sheet-text-input sheet-text-input--left sheet-client-input"
+            className="sheet-name-dates-name sheet-client-input"
             type="text"
             placeholder="Client"
             aria-label="Client"
             autoComplete="off"
             value={form.client}
+            size={clientSize}
             onChange={(e) => set('client', e.target.value)}
           />
           {existingClients.length > 0 ? (
             <div className="sheet-designer-add-wrap sheet-client-add-wrap">
               <button
                 type="button"
-                className="sheet-milestone-add-task"
-                aria-label="Choose client"
+                className="sheet-milestone-add-task icon-bubble"
+                aria-label="Add client"
                 tabIndex={-1}
               >
-                +
+                <span className="icon-bubble-glyph" aria-hidden>+</span>
+                <span className="icon-bubble-text">Add</span>
               </button>
               <select
                 className="sheet-designer-add-select"
                 value=""
-                aria-label="Choose client"
+                aria-label="Add client"
                 onChange={(e) => {
                   const v = e.target.value;
                   if (v) set('client', v);
                   e.target.value = '';
                 }}
               >
-                <option value="" disabled>Choose client</option>
+                <option value="" disabled>Add client</option>
                 {existingClients.map((name) => (
                   <option key={name} value={name}>{name}</option>
                 ))}
@@ -2582,8 +2593,8 @@ function ProjectDetailsPanel({
             id="project-modal-name"
             className="sheet-name-dates-name sheet-project-name-input"
             type="text"
-            placeholder="Project name"
-            aria-label="Project name"
+            placeholder="Project"
+            aria-label="Project"
             value={form.name}
             size={projectNameSize}
             onChange={(e) => set('name', e.target.value)}
@@ -2599,7 +2610,7 @@ function ProjectDetailsPanel({
             endDate={form.endDate}
             onChange={(patch) => setForm((f) => applyProjectDatePatch(f, patch))}
             className="sheet-name-dates-range sheet-project-dates-btn"
-            emptyLabel="Add dates"
+            emptyAsPlus
             ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
             endDateOnly={isEditing}
           />
@@ -2632,11 +2643,12 @@ function ProjectDetailsPanel({
               <div className="sheet-designer-add-wrap">
                 <button
                   type="button"
-                  className="sheet-milestone-add-task"
+                  className="sheet-milestone-add-task icon-bubble"
                   aria-label="Add designer"
                   tabIndex={-1}
                 >
-                  +
+                  <span className="icon-bubble-glyph" aria-hidden>+</span>
+                  <span className="icon-bubble-text">Add</span>
                 </button>
                 <select
                   className="sheet-designer-add-select"
@@ -3063,7 +3075,7 @@ function ProjectModal({
         className="modal modal--project modal--drawer"
         role="dialog"
         aria-modal="true"
-        aria-label={isEditing ? (form.name.trim() || 'Project') : 'New project'}
+        aria-label={isEditing ? (form.name.trim() || 'Project') : 'New Project'}
       >
         <div className="modal-header modal-header--project">
           {isEditing ? (
@@ -3080,7 +3092,7 @@ function ProjectModal({
               <span className="modal-project-sheet-heading">Project</span>
             )
           ) : (
-            <h2 className="modal-project-sheet-heading">New project</h2>
+            <h2 className="modal-project-sheet-heading">New Project</h2>
           )}
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
@@ -3123,7 +3135,7 @@ function ProjectModal({
               className="modal-btn-submit"
               disabled={!form.name.trim()}
             >
-              {project ? 'Save' : 'Add project'}
+              {project ? 'Save' : 'Add'}
             </button>
           </div>
         </div>
@@ -3768,6 +3780,7 @@ function ganttWeekendBandRightPct(startDay, spanDays, minDay, totalDays, pxPerDa
 /** Soft grey weekend separators — max 10px, shrink when zoomed out. */
 function buildWeekendBands(minDay, maxDay, totalDays, pxPerDay) {
   const bands = [];
+  if (pxPerDay <= 1) return bands;
 
   if (ganttIsFullDayZoom(pxPerDay)) {
     const widthPct = (1 / Math.max(totalDays, 1)) * 100;
@@ -3802,6 +3815,19 @@ function buildWeekendBands(minDay, maxDay, totalDays, pxPerDay) {
   }
 
   return bands;
+}
+
+function buildMonthGuideLines(minDay, maxDay, totalDays, pxPerDay) {
+  if (pxPerDay > 1) return [];
+  const lines = [];
+  for (let day = minDay; day <= maxDay; day += 1) {
+    if (!isFirstOfMonthNZ(day)) continue;
+    lines.push({
+      key: `mo-${day}`,
+      left: ganttDayLeftPct(day, minDay, totalDays),
+    });
+  }
+  return lines;
 }
 
 function buildWeekdayLines(minDay, maxDay, totalDays, pxPerDay) {
@@ -3866,6 +3892,7 @@ function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay, options
     ticks,
     weekendBands: buildWeekendBands(minDay, maxDay, totalDays, pxPerDay),
     weekdayLines: buildWeekdayLines(minDay, maxDay, totalDays, pxPerDay),
+    monthLines: buildMonthGuideLines(minDay, maxDay, totalDays, pxPerDay),
   };
 }
 
@@ -4681,6 +4708,7 @@ function GanttChartInner({
   const gridLines = timelineSchedule.ticks;
   const weekendBands = timelineSchedule.weekendBands;
   const weekdayLines = timelineSchedule.weekdayLines;
+  const monthLines = timelineSchedule.monthLines || [];
 
   useEffect(() => {
     if (!onFocusMetaChange) return undefined;
@@ -5543,6 +5571,13 @@ function GanttChartInner({
           style={{ left: `${line.left}%` }}
         />
       ))}
+      {monthLines.map((line) => (
+        <div
+          key={`${keyPrefix}-${line.key}`}
+          className="gantt-month-line"
+          style={{ left: `${line.left}%` }}
+        />
+      ))}
     </>
   );
 
@@ -5577,24 +5612,36 @@ function GanttChartInner({
             {timelineNavCluster}
             <div
               className="gantt-focus-controls"
-              style={focusControlsAlignPx > 0 ? { marginLeft: focusControlsAlignPx } : undefined}
+              style={!mobileLayout && focusControlsAlignPx > 0 ? { marginLeft: focusControlsAlignPx } : undefined}
             >
               {timelineEditMode ? (
                 <>
-                  <span className="gantt-focus-edit-badge" aria-live="polite">Editing</span>
+                  <span className="icon-bubble icon-bubble--on gantt-focus-edit-bubble" aria-live="polite">
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+                      <path
+                        d="M10.6 2.9l2.5 2.5-7.8 7.8H2.8v-2.5l7.8-7.8z"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span className="icon-bubble-text">Editing</span>
+                  </span>
                   <button
                     type="button"
-                    className="gantt-export-btn gantt-focus-action-btn"
+                    className="icon-bubble gantt-focus-cancel-bubble"
                     onClick={cancelTimelineEdit}
+                    aria-label="Cancel"
                   >
-                    Cancel
+                    <span className="icon-bubble-text">Cancel</span>
                   </button>
                   <button
                     type="button"
-                    className="gantt-export-btn gantt-focus-action-btn gantt-focus-action-btn--primary"
+                    className="icon-bubble gantt-focus-done-bubble"
                     onClick={finishTimelineEdit}
+                    aria-label="Done"
                   >
-                    Done
+                    <span className="icon-bubble-text">Done</span>
                   </button>
                 </>
               ) : (
@@ -5633,12 +5680,7 @@ function GanttChartInner({
           </div>
         )}
       </div>
-      {focusMode && timelineEditMode ? (
-        <p className="gantt-focus-edit-hint" role="status">
-          Changes update the timeline. Cancel restores the previous dates.
-        </p>
-      ) : null}
-      <div
+      <div>
         className={
           focusMode && timelineEditMode && !mobileLayout && timelineFocusProject
             ? 'gantt-edit-layout'

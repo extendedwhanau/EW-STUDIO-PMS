@@ -1784,7 +1784,7 @@ body.overview-dragging * {
   font-weight: 500;
 }
 
-.sheet-date-range-btn:hover {
+.sheet-date-range-btn:hover:not(.sheet-date-range-btn--plus) {
   opacity: 0.75;
 }
 
@@ -2289,6 +2289,19 @@ body.overview-dragging * {
     color: var(--text-primary);
     background: rgba(120, 120, 128, 0.14);
   }
+
+  .sheet-modal-section--project-designers .sheet-designer-add-wrap:hover .icon-bubble-text,
+  .sheet-modal-section--project-client .sheet-client-add-wrap:hover .icon-bubble-text {
+    max-width: 6.5em;
+    margin-left: 6px;
+    opacity: 1;
+  }
+
+  .sheet-modal-section--project-designers .sheet-designer-add-wrap:hover .sheet-milestone-add-task.icon-bubble,
+  .sheet-modal-section--project-client .sheet-client-add-wrap:hover .sheet-milestone-add-task.icon-bubble {
+    color: var(--text-primary);
+    background: rgba(120, 120, 128, 0.14);
+  }
 }
 
 .sheet-milestone-add-task.icon-bubble svg {
@@ -2668,15 +2681,15 @@ body.overview-dragging * {
 .sheet-client-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 
 .sheet-client-input {
-  flex: 1;
-  min-width: 0;
-  min-height: 40px;
+  flex: 0 0 auto;
 }
 
 .sheet-client-add-wrap {
@@ -2710,9 +2723,7 @@ body.overview-dragging * {
   min-height: calc(var(--sheet-pt) * 1.25);
 }
 
-.modal--project .sheet-modal-section--project-client .sheet-text-input {
-  min-height: 0;
-  padding: 0;
+.modal--project .sheet-modal-section--project-client .sheet-client-input {
   line-height: 1.25;
 }
 
@@ -2723,6 +2734,11 @@ body.overview-dragging * {
   font-size: calc(var(--sheet-pt) * 0.9);
 }
 
+.modal--project .sheet-modal-section--project-client .sheet-milestone-add-task.icon-bubble {
+  width: auto;
+  padding: 0 8px;
+}
+
 .modal--project .sheet-modal-section--project-dates,
 .modal--project .sheet-modal-section--project-designers,
 .modal--project .sheet-modal-section--project-meta {
@@ -2730,6 +2746,7 @@ body.overview-dragging * {
   gap: 0;
 }
 
+.modal--project .sheet-client-row,
 .modal--project .sheet-project-dates-row,
 .modal--project .sheet-project-designers-row {
   display: flex;
@@ -2783,6 +2800,11 @@ body.overview-dragging * {
   height: calc(var(--sheet-pt) * 1.25);
   min-width: calc(var(--sheet-pt) * 1.25);
   font-size: calc(var(--sheet-pt) * 0.9);
+}
+
+.modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task.icon-bubble {
+  width: auto;
+  padding: 0 8px;
 }
 
 .sheet-project-split-row {
@@ -2851,8 +2873,21 @@ body.overview-dragging * {
   letter-spacing: -0.02em;
 }
 
-.modal--project .sheet-modal-section--project-dates .sheet-project-dates-btn.sheet-date-range-btn--empty {
-  font-weight: 600;
+.modal--project .sheet-modal-section--project-dates .sheet-project-dates-btn.sheet-date-range-btn--plus {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: calc(var(--sheet-pt) * 1.25);
+  height: calc(var(--sheet-pt) * 1.25);
+  padding: 0 8px;
+  font-size: calc(var(--sheet-pt) * 0.9);
+  font-weight: 400;
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+  background: rgba(120, 120, 128, 0.08);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  text-align: center;
+  overflow: hidden;
 }
 
 .sheet-modal-section--project-notes .sheet-project-notes {
@@ -4222,6 +4257,11 @@ body.overview-dragging * {
     height: calc(var(--sheet-pt) * 1.25);
     min-width: calc(var(--sheet-pt) * 1.25);
     font-size: calc(var(--sheet-pt) * 0.9);
+  }
+
+  .modal--project .sheet-modal-section--project-client .sheet-milestone-add-task.icon-bubble {
+    width: auto;
+    padding: 0 8px;
   }
 
   .modal--project .sheet-modal-section--project-designers .sheet-milestone-add-task {
