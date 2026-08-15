@@ -2906,6 +2906,7 @@ body.overview-dragging * {
   width: auto;
   min-width: var(--bubble-size-sm);
   height: var(--bubble-size-sm);
+  min-height: var(--bubble-size-sm);
   padding: 0 var(--bubble-pad-x-sm);
   font-size: var(--bubble-icon-sm);
   font-weight: 400;
@@ -4255,10 +4256,14 @@ body.overview-dragging * {
   }
 
   /* Date range text: comfortable vertical tap area on touch */
-  .modal--project .sheet-date-range-btn:not(.sheet-task-chip-range) {
+  .modal--project .sheet-date-range-btn:not(.sheet-task-chip-range):not(.sheet-date-range-btn--plus) {
     display: inline-flex;
     align-items: center;
     min-height: 30px;
+  }
+  .modal--project .sheet-date-range-btn--plus {
+    min-height: var(--bubble-size-sm);
+    height: var(--bubble-size-sm);
   }
   .modal--project .sheet-task-chip-range {
     min-height: 0;

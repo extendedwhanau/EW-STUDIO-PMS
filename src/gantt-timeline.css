@@ -1341,7 +1341,7 @@ button.gantt-focus-copy:focus-visible {
   }
 
   .gantt-frame--focused .gantt-wrapper {
-    padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   }
 
   .main-header-actions {
@@ -2005,7 +2005,7 @@ body.gantt-phase-move-active * {
   .gantt-frame--focused .gantt-focus-controls {
     position: absolute;
     left: 50%;
-    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
     margin-left: 0;
     flex: none;
