@@ -105,7 +105,7 @@ html, body, #root {
   font-size: 11px;
   font-weight: 500;
   letter-spacing: -0.01em;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   word-break: break-all;
 }
 
@@ -115,14 +115,14 @@ html, body, #root {
   padding: 0;
   margin: 0;
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .sidebar-session-signout:hover {
-  opacity: 0.7;
+  color: var(--text-primary);
 }
 
 .sidebar-close-btn {
@@ -357,12 +357,6 @@ html, body, #root {
 }
 
 .sidebar-bottom { margin-top: auto; }
-.sidebar-date {
-  font-size: 11px; color: var(--text-tertiary);
-  font-family: 'Die Grotesk A', ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  padding: 0 var(--sidebar-inner-pad-x);
-}
 
 /* ── Main ──────────────────────────────────────────────────────────────────── */
 .main {

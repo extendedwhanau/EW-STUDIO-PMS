@@ -6862,14 +6862,6 @@ export default function App() {
             ✕
           </button>
         </div>
-        {sessionUser?.email ? (
-          <div className="sidebar-session">
-            <p className="sidebar-session-email">{sessionUser.email}</p>
-            <button type="button" className="sidebar-session-signout" onClick={signOutStudio}>
-              Sign out
-            </button>
-          </div>
-        ) : null}
 
         <nav className="sidebar-nav">
           <button
@@ -6969,9 +6961,14 @@ export default function App() {
         </div>
 
         <div className="sidebar-bottom">
-          <div className="sidebar-date">
-            {new Date().toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'long' })}
-          </div>
+          {sessionUser?.email ? (
+            <div className="sidebar-session">
+              <p className="sidebar-session-email">{sessionUser.email}</p>
+              <button type="button" className="sidebar-session-signout" onClick={signOutStudio}>
+                Sign out
+              </button>
+            </div>
+          ) : null}
         </div>
       </aside>
 
