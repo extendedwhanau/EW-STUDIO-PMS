@@ -92,6 +92,39 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.sidebar-session {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 var(--sidebar-inner-pad-x);
+}
+
+.sidebar-session-email {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.sidebar-session-signout {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.sidebar-session-signout:hover {
+  opacity: 0.7;
+}
+
 .sidebar-close-btn {
   display: none;
   width: 36px;

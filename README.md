@@ -28,6 +28,68 @@ A minimal project management tool for small design studios.
 
 Anyone who opens your Netlify URL then shares the same **Supabase** `studio_workspace` row — no extra setup on their machine.
 
+## Google login (studio accounts)
+
+The live app signs in with **Google** through Supabase. Only `@extendedwhanau.com` emails can load or save data (see `supabase/auth-rls.sql`).
+
+### 1. Google Cloud — OAuth client
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/)
+2. Create or pick a project in the Extended Whānau org
+3. [APIs & Services → OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent)  
+   User type: **Internal** (Workspace only)
+4. [Credentials → Create credentials → OAuth client ID](https://console.cloud.google.com/apis/credentials)  
+   Application type: **Web application**
+5. Authorised JavaScript origins:
+   - `http://localhost:3000`
+   - `https://extendedwhanau.netlify.app`
+   - your custom domain if you add one
+6. Authorised redirect URIs — copy the callback from Supabase (step 2). It looks like:  
+   `https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback`
+
+### 2. Supabase — Google provider
+
+Dashboard links (replace `YOUR_PROJECT_REF` with your ref from **Project Settings → General**):
+
+- [Authentication → Providers → Google](https://supabase.com/dashboard/project/_/auth/providers)
+- [Authentication → URL Configuration](https://supabase.com/dashboard/project/_/auth/url-configuration)
+- [SQL Editor](https://supabase.com/dashboard/project/_/sql/new)
+- [Project Settings → API](https://supabase.com/dashboard/project/_/settings/api)
+
+Steps:
+
+1. **Providers → Google** → enable, paste the Google **Client ID** and **Client secret**
+2. **URL Configuration**
+   - Site URL: `https://extendedwhanau.netlify.app` (and `http://localhost:3000` for local)
+   - Redirect URLs: same origins as above
+3. Copy **Callback URL** from the Google provider panel into Google Cloud redirect URIs
+4. SQL Editor → paste and run [`supabase/auth-rls.sql`](supabase/auth-rls.sql)  
+   If your email domain is not `extendedwhanau.com`, edit the domain list in that file first.
+
+### 3. App + Netlify env
+
+In `.env.local` and Netlify **Site configuration → Environment variables**:
+
+- `REACT_APP_SUPABASE_URL`
+- `REACT_APP_SUPABASE_ANON_KEY`
+- `REACT_APP_STUDIO_EMAIL_DOMAINS=extendedwhanau.com`
+- `REACT_APP_STUDIO_MANAGER_EMAIL=kaye@extendedwhanau.com`
+
+Redeploy after changing env vars.
+
+### Notifications (personal, not a studio channel)
+
+After a save, the app queues events in `studio_notify_events`:
+
+- **Job changes** → Google emails on that job (set each person’s **Google email** in Team)
+- **Milestone changes** → people on the job **and** Kaye (`REACT_APP_STUDIO_MANAGER_EMAIL`)
+
+Chat DMs need a Google Chat app in a follow-up (webhooks cannot DM). The queue is ready; delivering to Chat is the next wiring step.
+
+### Team emails
+
+Sidebar → Team → edit a person → **Google email**. That address must match how they sign in.
+
 ## Run locally
 
 ```bash

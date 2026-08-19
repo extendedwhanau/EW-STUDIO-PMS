@@ -5,7 +5,15 @@ const anonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
 /** Single browser client — safe to import from anywhere. Uses anon key only. */
 export const supabase =
-  url && anonKey ? createClient(url, anonKey) : null;
+  url && anonKey
+    ? createClient(url, anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
+    : null;
 
 export function isSupabaseConfigured() {
   return Boolean(url && anonKey);

@@ -1,5 +1,6 @@
 -- Run once in Supabase → SQL Editor → New query → Run
--- Shared studio: one JSON blob (last save wins — add auth + RLS later for real security)
+-- Shared studio: one JSON blob (last save wins).
+-- After Google login is enabled, also run supabase/auth-rls.sql to lock the table.
 
 create table if not exists public.studio_workspace (
   id text primary key,

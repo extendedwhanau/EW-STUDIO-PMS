@@ -13,6 +13,12 @@ import {
   fetchWorkspaceUpdatedAt,
   subscribeWorkspaceChanges,
 } from './supabaseData';
+import { supabase } from './supabaseClient';
+import { isStudioEmail, normalizeEmail } from './studioConfig';
+import {
+  buildNotifyEvents,
+  enqueueStudioNotifications,
+} from './studioNotifications';
 import {
   getDevTimelinePreviewProjects,
   getDevOverviewPreviewProject,
@@ -3156,6 +3162,7 @@ function ProjectModal({
 function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
   const isEdit = initialDesigner != null;
   const [name, setName] = useState(initialDesigner?.name ?? '');
+  const [email, setEmail] = useState(initialDesigner?.email ?? '');
   const [barHex, setBarHex] = useState(() =>
     normalizeHex(
       initialDesigner
@@ -3170,6 +3177,7 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
     const idx = DESIGNER_COLORS.findIndex((c) => c.bar.toLowerCase() === hex.toLowerCase());
     const payload = {
       name: name.trim(),
+      email: normalizeEmail(email),
       colorHex: hex,
       colorIdx: idx >= 0 ? idx : 0,
     };
@@ -3215,6 +3223,17 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
               </label>
             </div>
           </div>
+          <input
+            id="designer-modal-email"
+            className="sheet-text-input sheet-text-input--left"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="Google email"
+            aria-label="Google email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
         </div>
         <div className="modal-footer modal-footer--project">
           {isEdit && (
@@ -6043,12 +6062,19 @@ function isRemoteNewer(remoteAt, knownAt) {
   return parseUpdatedAt(remoteAt) > parseUpdatedAt(knownAt);
 }
 
-function AccessScreen({ onUnlock }) {
+function AccessScreen({
+  mode = 'code',
+  onUnlock,
+  onGoogleSignIn,
+  errorMessage = '',
+  busy = false,
+}) {
   const [value, setValue] = useState('');
   const [error, setError] = useState(false);
 
   const submit = (e) => {
     e.preventDefault();
+    if (mode === 'google') return;
     if (value === STUDIO_ACCESS_CODE) {
       try {
         localStorage.setItem(STUDIO_ACCESS_STORAGE, '1');
@@ -6066,25 +6092,43 @@ function AccessScreen({ onUnlock }) {
     <div className="access-gate">
       <form className="access-gate-form" onSubmit={submit}>
         <p className="access-gate-brand">Extended Whānau</p>
-        <input
-          className="access-gate-input"
-          type="password"
-          inputMode="numeric"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          placeholder="••••"
-          aria-label="Access code"
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            setError(false);
-          }}
-        />
-        {error && <p className="access-gate-error">Code not recognised.</p>}
-        <button type="submit" className="access-gate-continue" disabled={!value.trim()}>
-          Continue
-        </button>
+        {mode === 'google' ? (
+          <>
+            {(errorMessage || error) && (
+              <p className="access-gate-error">{errorMessage || 'Could not sign in.'}</p>
+            )}
+            <button
+              type="button"
+              className="access-gate-continue"
+              onClick={onGoogleSignIn}
+              disabled={busy}
+            >
+              {busy ? 'Signing in…' : 'Continue with Google'}
+            </button>
+          </>
+        ) : (
+          <>
+            <input
+              className="access-gate-input"
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="••••"
+              aria-label="Access code"
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setError(false);
+              }}
+            />
+            {error && <p className="access-gate-error">Code not recognised.</p>}
+            <button type="submit" className="access-gate-continue" disabled={!value.trim()}>
+              Continue
+            </button>
+          </>
+        )}
       </form>
     </div>
   );
@@ -6157,11 +6201,16 @@ export default function App() {
   ));
   /** After first Supabase pull (or immediately if Supabase off), cloud saves are allowed. */
   const [cloudReady, setCloudReady] = useState(() => !isSupabaseConfigured());
+  const [authReady, setAuthReady] = useState(() => !isSupabaseConfigured());
+  const [sessionUser, setSessionUser] = useState(null);
+  const [authError, setAuthError] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
 
   const designersRef = useRef(designers);
   const projectsRef = useRef(projects);
   designersRef.current = designers;
   projectsRef.current = projects;
+  const notifyPrevRef = useRef({ designers, projects });
   const remoteUpdatedAtRef = useRef(null);
   const pendingRemoteUpdatedAtRef = useRef(null);
   const remotePullInFlightRef = useRef(false);
@@ -6229,7 +6278,84 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!isSupabaseConfigured() || !supabase) {
+      setAuthReady(true);
+      return undefined;
+    }
+    let cancelled = false;
+    const applySession = async (session) => {
+      const email = session?.user?.email || '';
+      if (!email) {
+        if (!cancelled) {
+          setSessionUser(null);
+          setCloudReady(false);
+        }
+        return;
+      }
+      if (!isStudioEmail(email)) {
+        await supabase.auth.signOut();
+        if (!cancelled) {
+          setSessionUser(null);
+          setCloudReady(false);
+          setAuthError('Use your Extended Whānau Google account.');
+        }
+        return;
+      }
+      if (!cancelled) {
+        setAuthError('');
+        setSessionUser(session.user);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      applySession(data?.session).finally(() => {
+        if (!cancelled) setAuthReady(true);
+      });
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
+    });
+    return () => {
+      cancelled = true;
+      listener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    if (!supabase) return;
+    setAuthBusy(true);
+    setAuthError('');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: { hd: 'extendedwhanau.com' },
+      },
+    });
+    if (error) {
+      setAuthError(error.message || 'Google sign-in is not enabled yet in Supabase.');
+      setAuthBusy(false);
+    }
+  }, []);
+
+  const signOutStudio = useCallback(async () => {
+    try {
+      localStorage.removeItem(STUDIO_ACCESS_STORAGE);
+    } catch {
+      /* ignore */
+    }
+    if (supabase) await supabase.auth.signOut();
+    setSessionUser(null);
+    setAccessUnlocked(false);
+    setCloudReady(false);
+    setSidebarOpen(false);
+  }, []);
+
+  useEffect(() => {
     if (!isSupabaseConfigured()) return undefined;
+    if (!sessionUser) return undefined;
     let cancelled = false;
     (async () => {
       const remote = await loadWorkspacePayload();
@@ -6239,6 +6365,7 @@ export default function App() {
         return;
       }
       if (remote.designers.length > 0 || remote.projects.length > 0) {
+        applyingRemoteRef.current = true;
         const normalized = normalizeRemoteWorkspace(remote);
         setDesigners(normalized.designers);
         setProjects(normalized.projects);
@@ -6261,7 +6388,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sessionUser]);
 
   useEffect(() => {
     try {
@@ -6279,10 +6406,12 @@ export default function App() {
 
     if (applyingRemoteRef.current) {
       applyingRemoteRef.current = false;
+      notifyPrevRef.current = { designers, projects };
       return undefined;
     }
 
     const t = window.setTimeout(() => {
+      const prev = notifyPrevRef.current;
       saveWorkspacePayload({ designers, projects }).then((result) => {
         if (result.ok && result.updatedAt) {
           remoteUpdatedAtRef.current = result.updatedAt;
@@ -6290,11 +6419,19 @@ export default function App() {
             && !isRemoteNewer(pendingRemoteUpdatedAtRef.current, result.updatedAt)) {
             pendingRemoteUpdatedAtRef.current = null;
           }
+          const events = buildNotifyEvents({
+            prevProjects: prev.projects,
+            nextProjects: projects,
+            designers,
+            actorEmail: sessionUser?.email,
+          });
+          enqueueStudioNotifications(events);
+          notifyPrevRef.current = { designers, projects };
         }
       });
     }, 550);
     return () => window.clearTimeout(t);
-  }, [designers, projects, cloudReady]);
+  }, [designers, projects, cloudReady, sessionUser]);
 
   useEffect(() => {
     try {
@@ -6683,8 +6820,27 @@ export default function App() {
     />
   );
 
-  if (!accessUnlocked) {
-    return <AccessScreen onUnlock={() => setAccessUnlocked(true)} />;
+  if (!authReady) {
+    return (
+      <div className="access-gate">
+        <p className="access-gate-brand">Extended Whānau</p>
+      </div>
+    );
+  }
+
+  if (isSupabaseConfigured() && !sessionUser) {
+    return (
+      <AccessScreen
+        mode="google"
+        onGoogleSignIn={signInWithGoogle}
+        errorMessage={authError}
+        busy={authBusy}
+      />
+    );
+  }
+
+  if (!isSupabaseConfigured() && !accessUnlocked) {
+    return <AccessScreen mode="code" onUnlock={() => setAccessUnlocked(true)} />;
   }
 
   return (
@@ -6706,6 +6862,14 @@ export default function App() {
             ✕
           </button>
         </div>
+        {sessionUser?.email ? (
+          <div className="sidebar-session">
+            <p className="sidebar-session-email">{sessionUser.email}</p>
+            <button type="button" className="sidebar-session-signout" onClick={signOutStudio}>
+              Sign out
+            </button>
+          </div>
+        ) : null}
 
         <nav className="sidebar-nav">
           <button
