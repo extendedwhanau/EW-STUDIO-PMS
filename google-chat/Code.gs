@@ -72,17 +72,18 @@ function messageTextFromEvent(event) {
 function doPost(e) {
   try {
     const secret = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
-    const querySecret = (e && e.parameter && e.parameter.secret) || '';
+    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const querySecret = (e && e.parameter && e.parameter.secret)
+      || String(body.webhook_secret || '');
     if (!secret || querySecret !== secret) {
       return jsonOut({ ok: false, error: 'unauthorized' });
     }
 
-    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const record = body.record || body;
     const summary = String(record.summary || '').trim();
     const recipients = parseRecipients(record.recipients);
     if (!summary || recipients.length === 0) {
-      return jsonOut({ ok: true, sent: 0, skipped: 'no recipients' });
+      return jsonOut({ ok: true, sent: 0, skipped: 'no recipients', summary: summary, rawRecipients: record.recipients });
     }
 
     const sent = [];
@@ -104,6 +105,32 @@ function doPost(e) {
 
 function doGet() {
   return ContentService.createTextOutput('PMS Chat app is deployed. Use POST from Supabase.');
+}
+
+/** Run in editor after messaging Studio PMS with test — same path as Supabase webhook. */
+function testDoPostWebhook() {
+  const email = Session.getActiveUser().getEmail();
+  const secret = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
+  const out = doPost({
+    parameter: { secret: secret },
+    postData: {
+      contents: JSON.stringify({
+        type: 'INSERT',
+        record: {
+          summary: 'Apps Script webhook test',
+          recipients: [email],
+        },
+        webhook_secret: secret,
+      }),
+    },
+  });
+  Logger.log(out.getContent());
+}
+
+/** Run in editor — lists emails that have messaged the bot (can receive DMs). */
+function listLinkedChatUsers() {
+  const spaces = parseJsonMap_(PropertiesService.getScriptProperties().getProperty('CHAT_USER_SPACES'));
+  Logger.log('Linked emails: ' + (Object.keys(spaces).join(', ') || '(none — send test to Studio PMS in Chat first)'));
 }
 
 /** Send a bot DM. Select testDm, Run. */

@@ -1,13 +1,29 @@
 /**
  * Supabase → Apps Script bridge.
- * Apps Script /exec returns 302; fetch must re-POST to the redirect URL.
- * Set APPS_SCRIPT_WEBHOOK_URL to the web app URL including ?secret=...
+ * Secret goes in the JSON body (Google drops ?secret= on redirect).
+ * APPS_SCRIPT_WEBHOOK_URL may include ?secret=... or use APPS_SCRIPT_WEBHOOK_SECRET.
  */
-async function postAppsScript(target, body) {
+function splitTarget(raw) {
+  const url = new URL(raw);
+  const secret = url.searchParams.get('secret') || process.env.APPS_SCRIPT_WEBHOOK_SECRET || '';
+  url.searchParams.delete('secret');
+  return { target: url.toString(), secret };
+}
+
+async function postAppsScript(target, body, secret) {
+  let payload = body;
+  try {
+    const parsed = JSON.parse(body || '{}');
+    if (secret) parsed.webhook_secret = secret;
+    payload = JSON.stringify(parsed);
+  } catch (err) {
+    payload = JSON.stringify({ webhook_secret: secret, record: { summary: body, recipients: [] } });
+  }
+
   let res = await fetch(target, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body,
+    body: payload,
     redirect: 'manual',
   });
 
@@ -17,7 +33,7 @@ async function postAppsScript(target, body) {
       res = await fetch(location, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body,
+        body: payload,
       });
     }
   }
@@ -30,17 +46,18 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: 'POST only' };
   }
 
-  const target = process.env.APPS_SCRIPT_WEBHOOK_URL;
-  if (!target) {
+  const raw = process.env.APPS_SCRIPT_WEBHOOK_URL;
+  if (!raw) {
     return { statusCode: 500, body: 'Missing APPS_SCRIPT_WEBHOOK_URL' };
   }
 
+  const { target, secret } = splitTarget(raw);
   const body = event.body || '{}';
 
   try {
-    const res = await postAppsScript(target, body);
+    const res = await postAppsScript(target, body, secret);
     const text = await res.text();
-    const ok = res.status >= 200 && res.status < 300;
+    const ok = res.status >= 200 && res.status < 300 && text.indexOf('"ok":false') === -1;
     return {
       statusCode: ok ? 200 : 502,
       body: text.slice(0, 2000) || ('HTTP ' + res.status),
