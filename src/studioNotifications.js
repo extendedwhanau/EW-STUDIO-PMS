@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { normalizeEmail, studioManagerEmail } from './studioConfig';
+import { normalizeEmail } from './studioConfig';
 
 function designerEmailById(designers) {
   const map = new Map();
@@ -67,9 +67,9 @@ function uniqueEmails(list) {
 }
 
 /**
- * Build notify rows: job changes → people on the job.
- * Milestone changes → people on the job + studio manager (Kaye).
- * Actor is skipped.
+ * Build notify rows for people assigned to the job.
+ * If someone else is on the job, the person who saved is skipped.
+ * If you are the only assignee, you still get the DM (so solo jobs notify).
  */
 export function buildNotifyEvents({
   prevProjects,
@@ -78,14 +78,15 @@ export function buildNotifyEvents({
   actorEmail,
 }) {
   const emailById = designerEmailById(designers);
-  const manager = studioManagerEmail();
   const actor = normalizeEmail(actorEmail);
   const prevMap = new Map((prevProjects || []).map((p) => [p.id, p]));
   const nextMap = new Map((nextProjects || []).map((p) => [p.id, p]));
   const events = [];
 
   const push = (project, kind, summary, recipients, extra = {}) => {
-    const to = uniqueEmails(recipients).filter((e) => e && e !== actor);
+    const assigned = uniqueEmails(recipients).filter(Boolean);
+    const others = assigned.filter((e) => e !== actor);
+    const to = others.length > 0 ? others : assigned;
     if (to.length === 0) return;
     events.push({
       kind,
@@ -112,7 +113,7 @@ export function buildNotifyEvents({
           next,
           'milestone_changed',
           `Milestones updated on ${projectLabel(next)}`,
-          [...emailsForProject(next, emailById), manager],
+          emailsForProject(next, emailById),
         );
       }
       return;
@@ -139,7 +140,7 @@ export function buildNotifyEvents({
         next,
         'milestone_changed',
         `Milestones updated on ${projectLabel(next)}`,
-        [...emailsForProject(next, emailById), manager],
+        emailsForProject(next, emailById),
       );
     }
   });

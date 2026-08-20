@@ -9,12 +9,6 @@ export function studioEmailDomains() {
     .filter(Boolean);
 }
 
-export function studioManagerEmail() {
-  return String(process.env.REACT_APP_STUDIO_MANAGER_EMAIL || '')
-    .trim()
-    .toLowerCase();
-}
-
 export function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
 }

@@ -73,22 +73,14 @@ In `.env.local` and Netlify **Site configuration → Environment variables**:
 - `REACT_APP_SUPABASE_URL`
 - `REACT_APP_SUPABASE_ANON_KEY`
 - `REACT_APP_STUDIO_EMAIL_DOMAINS=extendedwhanau.com`
-- `REACT_APP_STUDIO_MANAGER_EMAIL=kaye@extendedwhanau.com`
 
 Redeploy after changing env vars.
 
-### Notifications (personal, not a studio channel)
+### Notifications (Google Chat)
 
-After a save, the app queues events in `studio_notify_events`:
+Saves queue events in `studio_notify_events` for **people assigned to that job** (set each person’s Google email in Team). The Chat app in [`google-chat/`](google-chat/) DMs those people.
 
-- **Job changes** → Google emails on that job (set each person’s **Google email** in Team)
-- **Milestone changes** → people on the job **and** Kaye (`REACT_APP_STUDIO_MANAGER_EMAIL`)
-
-Chat DMs need a Google Chat app in a follow-up (webhooks cannot DM). The queue is ready; delivering to Chat is the next wiring step.
-
-### Team emails
-
-Sidebar → Team → edit a person → **Google email**. That address must match how they sign in.
+See [`google-chat/README.md`](google-chat/README.md) to deploy and test the bot.
 
 ## Run locally
 

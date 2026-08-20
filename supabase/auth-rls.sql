@@ -1,6 +1,6 @@
 -- Run in Supabase → SQL Editor after enabling Google Auth.
 -- Locks studio_workspace to signed-in @extendedwhanau.com users
--- and stores personal notification events (Chat bot / email later).
+-- and stores personal notification events for the Chat app.
 
 create or replace function public.is_studio_user()
 returns boolean
