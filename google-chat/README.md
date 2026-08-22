@@ -147,6 +147,7 @@ If invites never appear: confirm Team Google emails, and that the person who own
 Dated to-dos from the PMS **To-Do** page become a Google **Task** only (Calendar → Tasks, with a checkbox). They do **not** create calendar events.
 
 - Tick it done in the PMS → the Google Task completes  
+- Tick it done in Google Tasks / Calendar → the PMS to-do completes (within about a minute)  
 - Clear the date or delete the to-do → the Google Task is removed  
 - No date → stays in the PMS only  
 
@@ -157,9 +158,19 @@ Tasks are created on the Apps Script owner’s Google Tasks list (Execute as Me)
 3. Run **`testTodoTask`** → allow Tasks access if Google asks  
 4. **Web app → New version → Deploy** (Execute as Me, Anyone)  
 
-Team members need a **Google email** set. Google sync only runs when you are **signed into the PMS** (not the localhost preview bypass).
+### Google Tasks → PMS (write-back)
 
-Ticking complete in Google Calendar does not yet write back to the PMS — that is the next step.
+1. Supabase → **SQL Editor** → New query. Paste [`todo-task-sync.sql`](../supabase/todo-task-sync.sql). Run.  
+2. Apps Script → **Project Settings** → **Script properties**. Add:  
+   - **`SUPABASE_URL`** — same Project URL as `.env.local` (`https://YOUR_PROJECT_REF.supabase.co`)  
+   - **`SUPABASE_SERVICE_ROLE_KEY`** — Supabase **Project Settings → API → `service_role`** (secret).  
+     Paste it **only** here. Do not put it in Netlify or `.env.local`.  
+3. Editor → function **`installTodoCompletionSync`** → **Run**. Allow access if Google asks (new ScriptApp scope).  
+4. Optional: **`showLastTodoPull`** shows the last sync result.
+
+After that, completing a task in Google ticks it off in the PMS on the next 1-minute check. Open tabs pick it up live.
+
+Team members need a **Google email** set. Google sync only runs when you are **signed into the PMS** (not the localhost preview bypass).
 
 ---
 

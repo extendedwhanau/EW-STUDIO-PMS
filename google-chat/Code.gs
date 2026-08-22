@@ -5,9 +5,11 @@
  * Also replies if someone messages the bot with "test".
  *
  * Script properties:
- *   WEBHOOK_SECRET         — same as ?secret= on the web app URL
- *   CHAT_SERVICE_ACCOUNT   — full JSON key of a service account in the Chat Cloud project
- *   WEBHOOK_PUBLIC_URL     — optional /exec URL for self-tests
+ *   WEBHOOK_SECRET              — same as ?secret= on the web app URL
+ *   CHAT_SERVICE_ACCOUNT        — full JSON key of a service account in the Chat Cloud project
+ *   WEBHOOK_PUBLIC_URL          — optional /exec URL for self-tests
+ *   SUPABASE_URL                — Project URL (for Google Tasks → PMS completions)
+ *   SUPABASE_SERVICE_ROLE_KEY   — service_role key (Apps Script only, never the website)
  *
  * Calendar milestones need domain-wide delegation on that service account for
  * scope https://www.googleapis.com/auth/calendar (impersonate each designer).
@@ -156,7 +158,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return ContentService.createTextOutput('PMS webhook v4 todo-tasks. Use POST from Supabase.');
+  return ContentService.createTextOutput('PMS webhook v5 todo-tasks. Use POST from Supabase.');
 }
 
 /** Run in editor after messaging Studio PMS with test — same path as Supabase webhook. */
@@ -690,6 +692,152 @@ function testTodoTask() {
   if (!result.ok) {
     throw new Error('To-do test failed: ' + JSON.stringify(result));
   }
+}
+
+/**
+ * Run once after adding SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.
+ * Creates a 1-minute trigger so ticking a Google Task completes the PMS to-do.
+ */
+function installTodoCompletionSync() {
+  const probe = markTodosDoneInSupabase_([]);
+  if (!probe.ok) {
+    throw new Error('Could not reach Supabase: ' + JSON.stringify(probe));
+  }
+  const existing = ScriptApp.getProjectTriggers();
+  existing.forEach(function (t) {
+    if (t.getHandlerFunction() === 'syncCompletedGoogleTasks') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  ScriptApp.newTrigger('syncCompletedGoogleTasks')
+    .timeBased()
+    .everyMinutes(1)
+    .create();
+  const result = syncCompletedGoogleTasks_();
+  PropertiesService.getScriptProperties().setProperty('LAST_TODO_PULL', JSON.stringify(result));
+  Logger.log(JSON.stringify(result));
+  if (!result.ok) {
+    throw new Error('Trigger installed, but first sync failed: ' + JSON.stringify(result));
+  }
+}
+
+/** Time trigger — do not throw (that emails the script owner every minute). */
+function syncCompletedGoogleTasks() {
+  try {
+    const result = syncCompletedGoogleTasks_();
+    PropertiesService.getScriptProperties().setProperty('LAST_TODO_PULL', JSON.stringify(result));
+  } catch (err) {
+    const bad = { ok: false, error: String(err && err.message ? err.message : err) };
+    PropertiesService.getScriptProperties().setProperty('LAST_TODO_PULL', JSON.stringify(bad));
+  }
+}
+
+function syncCompletedGoogleTasks_() {
+  const completedIds = listCompletedPmsTodoIds_();
+  if (!completedIds.length) {
+    return { ok: true, completed: 0, changed: 0 };
+  }
+  const marked = markTodosDoneInSupabase_(completedIds);
+  return {
+    ok: Boolean(marked && marked.ok),
+    completed: completedIds.length,
+    ids: completedIds,
+    supabase: marked,
+    changed: marked && marked.changed,
+    error: marked && marked.error,
+  };
+}
+
+function listCompletedPmsTodoIds_() {
+  const props = PropertiesService.getScriptProperties();
+  const ids = parseJsonMap_(props.getProperty('TODO_TASK_IDS'));
+  const todoByTask = {};
+  Object.keys(ids).forEach(function (todoId) {
+    const taskId = ids[todoId];
+    if (taskId) todoByTask[taskId] = todoId;
+  });
+  const mapped = Object.keys(todoByTask);
+  if (!mapped.length) return [];
+
+  const seen = {};
+  const completed = [];
+  let pageToken = '';
+  do {
+    const params = {
+      showCompleted: true,
+      showHidden: true,
+      maxResults: 100
+    };
+    if (pageToken) params.pageToken = pageToken;
+    const resp = Tasks.Tasks.list('@default', params);
+    (resp.items || []).forEach(function (task) {
+      if (!task || !task.id) return;
+      seen[task.id] = true;
+      const todoId = todoByTask[task.id];
+      if (todoId && task.status === 'completed') completed.push(todoId);
+    });
+    pageToken = resp.nextPageToken || '';
+  } while (pageToken);
+
+  mapped.forEach(function (taskId) {
+    if (seen[taskId]) return;
+    try {
+      const task = Tasks.Tasks.get('@default', taskId);
+      if (task && task.status === 'completed' && todoByTask[task.id]) {
+        completed.push(todoByTask[task.id]);
+      }
+    } catch (err) { /* task gone */ }
+  });
+
+  const unique = {};
+  completed.forEach(function (id) { unique[id] = true; });
+  return Object.keys(unique);
+}
+
+function markTodosDoneInSupabase_(todoIds) {
+  const props = PropertiesService.getScriptProperties();
+  const base = String(props.getProperty('SUPABASE_URL') || '').replace(/\/+$/, '');
+  const key = String(props.getProperty('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
+  if (!base || !key) {
+    return {
+      ok: false,
+      error: 'missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY',
+      hint: 'Project Settings → API. URL + service_role go in Apps Script properties only.',
+    };
+  }
+  const resp = UrlFetchApp.fetch(base + '/rest/v1/rpc/mark_studio_todos_done', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      apikey: key,
+      Authorization: 'Bearer ' + key,
+    },
+    payload: JSON.stringify({ p_todo_ids: todoIds }),
+    muteHttpExceptions: true,
+  });
+  const raw = resp.getContentText() || '';
+  let body = {};
+  try {
+    body = JSON.parse(raw);
+  } catch (err) {
+    body = { ok: false, error: raw.slice(0, 240) };
+  }
+  if (resp.getResponseCode() >= 400) {
+    return {
+      ok: false,
+      error: (body && body.message) || (body && body.error) || raw.slice(0, 240),
+      hint: 'Run supabase/todo-task-sync.sql in the SQL Editor, then try again.',
+    };
+  }
+  if (body && typeof body === 'object' && !Array.isArray(body)) return body;
+  return { ok: true, changed: 0, raw: body };
+}
+
+/** Run in editor — shows the last Google Tasks → PMS sync result. */
+function showLastTodoPull() {
+  const raw = PropertiesService.getScriptProperties().getProperty('LAST_TODO_PULL') || '(none yet)';
+  Logger.log(raw);
+  throw new Error(raw);
 }
 
 /** Impersonate a Workspace user — only if domain-wide delegation is set up. Unused by default. */
