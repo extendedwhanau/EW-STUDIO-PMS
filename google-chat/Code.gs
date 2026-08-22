@@ -76,14 +76,26 @@ function doPost(e) {
     const querySecret = (e && e.parameter && e.parameter.secret)
       || String(body.webhook_secret || '');
     if (!secret || querySecret !== secret) {
-      return jsonOut({ ok: false, error: 'unauthorized' });
+      const bad = { ok: false, error: 'unauthorized', hasSecret: Boolean(secret), hasQuerySecret: Boolean(querySecret) };
+      Logger.log(JSON.stringify(bad));
+      PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(bad));
+      return jsonOut(bad);
     }
 
     const record = body.record || body;
     const summary = String(record.summary || '').trim();
     const recipients = parseRecipients(record.recipients);
     if (!summary || recipients.length === 0) {
-      return jsonOut({ ok: true, sent: 0, skipped: 'no recipients', summary: summary, rawRecipients: record.recipients });
+      const skip = {
+        ok: false,
+        error: 'no recipients',
+        summary: summary,
+        rawRecipients: record.recipients,
+        linked: Object.keys(parseJsonMap_(PropertiesService.getScriptProperties().getProperty('CHAT_USER_SPACES'))),
+      };
+      Logger.log(JSON.stringify(skip));
+      PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(skip));
+      return jsonOut(skip);
     }
 
     const sent = [];
@@ -97,9 +109,15 @@ function doPost(e) {
       }
     });
 
-    return jsonOut({ ok: failed.length === 0, sent: sent, failed: failed });
+    const result = { ok: failed.length === 0 && sent.length > 0, sent: sent, failed: failed };
+    Logger.log(JSON.stringify(result));
+    PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
+    return jsonOut(result);
   } catch (err) {
-    return jsonOut({ ok: false, error: String(err && err.message ? err.message : err) });
+    const bad = { ok: false, error: String(err && err.message ? err.message : err) };
+    Logger.log(JSON.stringify(bad));
+    PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(bad));
+    return jsonOut(bad);
   }
 }
 
@@ -192,6 +210,51 @@ function linkMyChat() {
 function listLinkedChatUsers() {
   const spaces = parseJsonMap_(PropertiesService.getScriptProperties().getProperty('CHAT_USER_SPACES'));
   Logger.log('Linked emails: ' + (Object.keys(spaces).join(', ') || '(none — send test to Studio PMS in Chat first)'));
+}
+
+/** Run after a quiet date-change: shows the last webhook result (why Chat stayed silent). */
+function showLastDoPost() {
+  const raw = PropertiesService.getScriptProperties().getProperty('LAST_DOPOST') || '(none yet)';
+  Logger.log(raw);
+  throw new Error(raw);
+}
+
+/**
+ * Calls this project's Web app over HTTP (same path Netlify uses).
+ * Web app must be: Execute as Me, Who has access = Anyone.
+ * Optional script property WEBHOOK_PUBLIC_URL = the /exec URL from Manage deployments.
+ */
+function testWebhookViaHttp() {
+  const props = PropertiesService.getScriptProperties();
+  const url = props.getProperty('WEBHOOK_PUBLIC_URL') || ScriptApp.getService().getUrl();
+  if (!url) {
+    throw new Error('No Web app URL. Deploy → New deployment → Web app (access: Anyone), then set WEBHOOK_PUBLIC_URL to the /exec link.');
+  }
+  const secret = props.getProperty('WEBHOOK_SECRET') || '';
+  const email = Session.getActiveUser().getEmail();
+  if (!email) throw new Error('Could not read your email.');
+  Logger.log('POST ' + url);
+  const res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      webhook_secret: secret,
+      type: 'INSERT',
+      record: {
+        summary: 'Self HTTP webhook test',
+        recipients: [email],
+      },
+    }),
+    muteHttpExceptions: true,
+    followRedirects: true,
+  });
+  const text = res.getContentText() || '';
+  const short = text.indexOf('<!DOCTYPE') === 0
+    ? ('HTML error page (access not public). HTTP ' + res.getResponseCode()
+      + '. Redeploy Web app with Who has access = Anyone, copy /exec URL into WEBHOOK_PUBLIC_URL and Netlify.')
+    : text;
+  Logger.log('HTTP ' + res.getResponseCode() + ' ' + short.slice(0, 500));
+  throw new Error('HTTP ' + res.getResponseCode() + ' ' + short.slice(0, 500));
 }
 
 /** Send a bot DM. Select testDm, Run. */
