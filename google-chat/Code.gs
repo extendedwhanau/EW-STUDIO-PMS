@@ -86,8 +86,12 @@ function doPost(e) {
       return jsonOut(bad);
     }
 
-    const record = body.record || body;
-    const kind = String(record.kind || '').trim();
+    const record = parseNotifyRecord_(body);
+    const kind = notifyKind_(record);
+    PropertiesService.getScriptProperties().setProperty(
+      'LAST_DOPOST',
+      JSON.stringify({ kind: kind, summary: record.summary || '', payload: record.payload || {} })
+    );
     if (kind === 'calendar_milestone') {
       const result = handleCalendarMilestone_(record);
       Logger.log(JSON.stringify(result));
@@ -100,8 +104,8 @@ function doPost(e) {
       PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
       return jsonOut(result);
     }
-    if (kind.indexOf('calendar_') === 0) {
-      const skipCal = { ok: false, error: 'unknown calendar kind: ' + kind };
+    if (kind.indexOf('calendar_') === 0 || (record.payload && (record.payload.todo_id || record.payload.marker_id || record.payload.calendar_title))) {
+      const skipCal = { ok: false, error: 'skip chat for calendar payload', kind: kind };
       Logger.log(JSON.stringify(skipCal));
       PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(skipCal));
       return jsonOut(skipCal);
@@ -386,6 +390,35 @@ function parseJsonMap_(raw) {
   } catch (err) {
     return {};
   }
+}
+
+function objectPayload_(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch (err) { /* ignore */ }
+  }
+  return {};
+}
+
+function parseNotifyRecord_(body) {
+  let record = (body && (body.record || body.new)) || body || {};
+  if (typeof record === 'string') {
+    try { record = JSON.parse(record); } catch (err) { record = {}; }
+  }
+  if (!record || typeof record !== 'object') record = {};
+  record.payload = objectPayload_(record.payload);
+  return record;
+}
+
+function notifyKind_(record) {
+  const payload = (record && record.payload) || {};
+  if (payload.todo_id || payload.notify_kind === 'calendar_todo') return 'calendar_todo';
+  if (payload.marker_id || payload.notify_kind === 'calendar_milestone') return 'calendar_milestone';
+  return String((record && record.kind) || payload.notify_kind || '').trim();
 }
 
 function chatEmailFromEvent_(event) {

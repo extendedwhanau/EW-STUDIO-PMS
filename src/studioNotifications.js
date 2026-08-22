@@ -439,6 +439,7 @@ function syncTodoCalendars({
       {
         action,
         todo_id: todo.id,
+        notify_kind: 'calendar_todo',
         date: String(todo.date || '').trim(),
         done: Boolean(todo.done),
         calendar_title: title,
