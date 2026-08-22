@@ -70,10 +70,78 @@ function timelineDatesChanged(prev, next) {
   return timelineFingerprint(prev) !== timelineFingerprint(next);
 }
 
-function formatDateRange(project) {
-  const start = String(project?.startDate || '').trim() || '—';
-  const end = String(project?.endDate || '').trim() || '—';
-  return `${start} → ${end}`;
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function parseIsoLocal(iso) {
+  const m = String(iso || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function dayOrdinal(n) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+/** e.g. 14th August */
+function formatNiceDate(iso) {
+  const d = parseIsoLocal(iso);
+  if (!d) return '—';
+  return `${dayOrdinal(d.getDate())} ${MONTHS[d.getMonth()]}`;
+}
+
+function startOfLocalDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** Calendar days from today to end date. */
+function formatDaysAway(iso) {
+  const end = parseIsoLocal(iso);
+  if (!end) return '';
+  const today = startOfLocalDay(new Date());
+  const target = startOfLocalDay(end);
+  const days = Math.round((target - today) / 86400000);
+  if (days === 0) return 'Due today';
+  if (days === 1) return '1 day away';
+  if (days > 1) return `${days} days away`;
+  if (days === -1) return '1 day overdue';
+  return `${Math.abs(days)} days overdue`;
+}
+
+function dateChangeSummary(project) {
+  const label = projectLabel(project);
+  const from = formatNiceDate(project.startDate);
+  const to = formatNiceDate(project.endDate);
+  const away = formatDaysAway(project.endDate);
+  const lines = [
+    label,
+    `Date change. From ${from} to ${to}.`,
+  ];
+  if (away) lines.push(away);
+  return lines.join('\n');
+}
+
+function assignedSummary(project) {
+  const label = projectLabel(project);
+  const from = formatNiceDate(project.startDate);
+  const to = formatNiceDate(project.endDate);
+  const away = formatDaysAway(project.endDate);
+  const lines = [
+    label,
+    'You have been added to this job.',
+    `Dates: ${from} to ${to}.`,
+  ];
+  if (away) lines.push(away);
+  return lines.join('\n');
 }
 
 /**
@@ -122,7 +190,7 @@ export function buildNotifyEvents({
       push(
         next,
         'assigned_to_job',
-        `You have been added to ${projectLabel(next)}`,
+        assignedSummary(next),
         emailsForProject(next, emailById),
         { startDate: next.startDate, endDate: next.endDate },
       );
@@ -134,20 +202,17 @@ export function buildNotifyEvents({
       push(
         next,
         'assigned_to_job',
-        `You have been added to ${projectLabel(next)}`,
+        assignedSummary(next),
         added,
         { startDate: next.startDate, endDate: next.endDate },
       );
     }
 
     if (timelineDatesChanged(prev, next)) {
-      const rangeChanged = prev.startDate !== next.startDate || prev.endDate !== next.endDate;
       push(
         next,
         'timeline_dates_changed',
-        rangeChanged
-          ? `${projectLabel(next)}: dates ${formatDateRange(next)}`
-          : `${projectLabel(next)}: timeline dates changed`,
+        dateChangeSummary(next),
         emailsForProject(next, emailById),
         {
           startDate: next.startDate,
