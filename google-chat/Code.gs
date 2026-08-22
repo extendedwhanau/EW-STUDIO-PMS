@@ -134,6 +134,33 @@ function testDoPostWebhook() {
   }
 }
 
+function pickBotDm_(dms) {
+  const list = dms || [];
+  if (list.length === 0) return null;
+  const score = function (space) {
+    const label = String(space.displayName || space.name || '').toLowerCase();
+    let n = 0;
+    if (label.indexOf('pms') >= 0) n += 100;
+    if (label.indexOf('studio') >= 0) n += 50;
+    if (label.indexOf('whanau') >= 0 || label.indexOf('whānau') >= 0) n += 20;
+    return n;
+  };
+  let best = list[0];
+  let bestScore = score(best);
+  for (let i = 1; i < list.length; i++) {
+    const s = score(list[i]);
+    if (s > bestScore) {
+      best = list[i];
+      bestScore = s;
+    }
+  }
+  if (bestScore > 0) return best;
+  const byActive = list.slice().sort(function (a, b) {
+    return String(b.lastActiveTime || b.updateTime || '').localeCompare(String(a.lastActiveTime || a.updateTime || ''));
+  });
+  return byActive[0] || list[0];
+}
+
 /**
  * Run once per person: links your Google email to your Studio PMS Chat DM.
  * Do this after sending test to Studio PMS in Chat.
@@ -148,23 +175,17 @@ function linkMyChat() {
     token
   );
   const dms = (listed.spaces || []).filter(function (s) { return s.singleUserBotDm; });
-  let picked = null;
-  for (let i = 0; i < dms.length; i++) {
-    const label = String(dms[i].displayName || dms[i].name || '').toLowerCase();
-    if (label.indexOf('pms') >= 0 || label.indexOf('studio') >= 0) {
-      picked = dms[i];
-      break;
-    }
-  }
-  if (!picked && dms.length === 1) picked = dms[0];
+  const picked = pickBotDm_(dms);
   if (!picked) {
-    throw new Error('Send test to Studio PMS in Chat first. Bot DMs found: ' + dms.length);
+    throw new Error('Send test to Studio PMS in Chat first. No bot DMs found.');
   }
   const props = PropertiesService.getScriptProperties();
   const spaces = parseJsonMap_(props.getProperty('CHAT_USER_SPACES'));
   spaces[String(email).toLowerCase()] = picked.name;
   props.setProperty('CHAT_USER_SPACES', JSON.stringify(spaces));
-  sendDirectMessage(email, 'You are linked. PMS job updates will appear here from Studio PMS.');
+  chatApi_('post', 'https://chat.googleapis.com/v1/' + picked.name + '/messages', token, {
+    text: 'You are linked. PMS job updates will appear here from Studio PMS.',
+  });
 }
 
 /** Run in editor — lists emails that have messaged the bot (can receive DMs). */
@@ -242,18 +263,11 @@ function spaceNameForEmail_(email, token) {
     token
   );
   const dms = (listed.spaces || []).filter(function (s) { return s.singleUserBotDm; });
-  for (let i = 0; i < dms.length; i++) {
-    const label = String(dms[i].displayName || dms[i].name || '').toLowerCase();
-    if (label.indexOf('pms') >= 0 || label.indexOf('studio') >= 0) {
-      spaces[key] = dms[i].name;
-      props.setProperty('CHAT_USER_SPACES', JSON.stringify(spaces));
-      return dms[i].name;
-    }
-  }
-  if (dms.length === 1 && dms[0].name) {
-    spaces[key] = dms[0].name;
+  const picked = pickBotDm_(dms);
+  if (picked && picked.name) {
+    spaces[key] = picked.name;
     props.setProperty('CHAT_USER_SPACES', JSON.stringify(spaces));
-    return dms[0].name;
+    return picked.name;
   }
   return '';
 }

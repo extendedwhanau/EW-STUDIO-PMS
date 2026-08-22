@@ -6412,6 +6412,14 @@ export default function App() {
 
     const t = window.setTimeout(() => {
       const prev = notifyPrevRef.current;
+      const events = buildNotifyEvents({
+        prevProjects: prev.projects,
+        nextProjects: projects,
+        designers,
+        actorEmail: sessionUser?.email,
+      });
+      enqueueStudioNotifications(events);
+      notifyPrevRef.current = { designers, projects };
       saveWorkspacePayload({ designers, projects }).then((result) => {
         if (result.ok && result.updatedAt) {
           remoteUpdatedAtRef.current = result.updatedAt;
@@ -6419,14 +6427,6 @@ export default function App() {
             && !isRemoteNewer(pendingRemoteUpdatedAtRef.current, result.updatedAt)) {
             pendingRemoteUpdatedAtRef.current = null;
           }
-          const events = buildNotifyEvents({
-            prevProjects: prev.projects,
-            nextProjects: projects,
-            designers,
-            actorEmail: sessionUser?.email,
-          });
-          enqueueStudioNotifications(events);
-          notifyPrevRef.current = { designers, projects };
         }
       });
     }, 550);

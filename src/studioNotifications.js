@@ -95,12 +95,13 @@ export function buildNotifyEvents({
   const nextMap = new Map((nextProjects || []).map((p) => [p.id, p]));
   const events = [];
 
-  const push = (project, kind, summary, recipients, extra = {}) => {
+  const push = (project, kind, summary, recipients, extra = {}, opts = {}) => {
     const assigned = uniqueEmails(recipients).filter(Boolean);
-    // Skip the person who saved when someone else is also notified.
-    // Solo: still ping you (you added yourself / only person on the job).
     const others = assigned.filter((e) => e !== actor);
-    const to = others.length > 0 ? others : assigned;
+    const includeActor = Boolean(opts.includeActor);
+    const to = includeActor
+      ? assigned
+      : (others.length > 0 ? others : assigned);
     if (to.length === 0) return;
     events.push({
       kind,
@@ -154,6 +155,7 @@ export function buildNotifyEvents({
           prevStartDate: prev.startDate,
           prevEndDate: prev.endDate,
         },
+        { includeActor: true },
       );
     }
   });
