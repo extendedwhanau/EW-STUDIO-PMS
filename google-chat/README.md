@@ -1,11 +1,12 @@
 # Studio PMS Chat app
 
-DMs **people on the job** for only two things:
+DMs for:
 
-1. **Added to a job** — new job with them on it, or they were assigned later  
-2. **Timeline dates changed** — job start/end, phase bars, or check-in markers on a job they are on  
+1. **Added to a job** — not while **Potential** or **Scheduled**  
+2. **Timeline dates changed** — not while **Potential** / **Scheduled**  
+3. **Job Complete** — always `kaye@extendedwhanau.com`  
 
-Milestones are **not** Chat; they go to Google Calendar (client · project · milestone · date).
+Check-in milestones also create/update all-day events on each assignee’s **primary Google Calendar** (Client — Project — Milestone).
 
 **Already done if the bot replied in Chat:** Cloud Chat API, Apps Script `onMessage`, Head deployment ID.
 
@@ -122,6 +123,23 @@ Replace `YOUR_WEBHOOK_SECRET` with the exact value from step B (no extra spaces)
 If nobody is DMed: Table Editor → `studio_notify_events`. A new row should appear after Save.  
 - No row → the PMS did not queue a notification (email missing, or you were the only assignee).  
 - Row exists, no DM → Apps Script **Executions**: look for `doPost`. Open the failed one for the error.
+
+---
+
+## Calendar (milestones → personal calendars)
+
+When a check-in milestone is added or its date/title changes, the webhook runs `calendar_milestone` and writes an all-day event to each assignee’s **primary** calendar.
+
+**One-time Workspace admin setup**
+
+1. Cloud Console → enable **Google Calendar API** on the same project as Chat  
+2. Note the service account **client ID** from the JSON key (`client_id` number, not the email)  
+3. [Admin → API controls → Domain-wide delegation](https://admin.google.com/ac/owl/domainwidedelegation) → Add new  
+   - Client ID: that number  
+   - Scope: `https://www.googleapis.com/auth/calendar`  
+4. Apps Script: paste latest `Code.gs` → Save → **Web app → New version → Deploy**
+
+Event title: `Client — Project — Milestone name` on the milestone date.
 
 ---
 

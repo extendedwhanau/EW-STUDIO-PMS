@@ -78,9 +78,15 @@ Redeploy after changing env vars.
 
 ### Notifications (Google Chat)
 
-Chat DMs only when someone is **added to a job**, or **any dates on that job’s timeline** change (job range, phases, or markers). Set each person’s **Google email** in Team. See [`google-chat/README.md`](google-chat/README.md).
+Chat DMs:
 
-**Milestones** are intended for **Google Calendar** (client + project + milestone name + date), not Chat.
+- **Added to a job** — not while status is **Potential** or **Scheduled**
+- **Timeline dates changed** — not while **Potential** / **Scheduled**
+- **Job marked Complete** — always to `kaye@extendedwhanau.com`
+
+Check-in **milestones** (markers) are queued for each assignee’s **Google Calendar** (title: Client — Project — Milestone). Calendar writes need domain-wide delegation on the Chat service account — see [`google-chat/README.md`](google-chat/README.md).
+
+Set each person’s **Google email** in Team.
 
 ## Run locally
 
@@ -134,10 +140,6 @@ If you skip the SQL step, the app keeps working from **localStorage** only (you 
 
 ## Google Calendar (milestones)
 
-When a milestone (review / check-in marker) is **added or its date changes**, create or update an all-day Calendar event for each designer on that job:
+Check-in milestones sync to each assignee’s primary calendar via the Chat Apps Script webhook (domain-wide delegation required — see `google-chat/README.md`).
 
-- **Title:** `{Client} — {Project} — {Milestone name}`
-- **Date:** the milestone date
-- **Who:** people assigned to the job (same Google emails as Team)
-
-Store `google_event_id` on each marker so updates move the event instead of duplicating it. Not wired yet — Chat path is separate.
+Title: `{Client} — {Project} — {Milestone name}` · all-day on the milestone date.

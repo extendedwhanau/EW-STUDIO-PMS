@@ -7,6 +7,10 @@
  * Script properties:
  *   WEBHOOK_SECRET         — same as ?secret= on the web app URL
  *   CHAT_SERVICE_ACCOUNT   — full JSON key of a service account in the Chat Cloud project
+ *   WEBHOOK_PUBLIC_URL     — optional /exec URL for self-tests
+ *
+ * Calendar milestones need domain-wide delegation on that service account for
+ * scope https://www.googleapis.com/auth/calendar (impersonate each designer).
  */
 
 function onMessage(event) {
@@ -83,6 +87,14 @@ function doPost(e) {
     }
 
     const record = body.record || body;
+    const kind = String(record.kind || '').trim();
+    if (kind === 'calendar_milestone') {
+      const result = handleCalendarMilestone_(record);
+      Logger.log(JSON.stringify(result));
+      PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
+      return jsonOut(result);
+    }
+
     const summary = String(record.summary || '').trim();
     const recipients = parseRecipients(record.recipients);
     if (!summary || recipients.length === 0) {
@@ -371,6 +383,18 @@ function chatUserNameFromEvent_(event) {
 }
 
 function getChatBotToken_() {
+  return getServiceAccountToken_('https://www.googleapis.com/auth/chat.bot');
+}
+
+/** Impersonate a Workspace user to write their primary calendar (needs domain-wide delegation). */
+function getCalendarToken_(email) {
+  return getServiceAccountToken_(
+    'https://www.googleapis.com/auth/calendar',
+    String(email || '').trim().toLowerCase()
+  );
+}
+
+function getServiceAccountToken_(scope, subject) {
   const raw = PropertiesService.getScriptProperties().getProperty('CHAT_SERVICE_ACCOUNT');
   if (!raw) {
     throw new Error('Add script property CHAT_SERVICE_ACCOUNT: paste the whole service account JSON key.');
@@ -380,13 +404,15 @@ function getChatBotToken_() {
   const b64urlJson = function (obj) {
     return Utilities.base64EncodeWebSafe(JSON.stringify(obj)).replace(/=+$/, '');
   };
-  const toSign = b64urlJson({ alg: 'RS256', typ: 'JWT' }) + '.' + b64urlJson({
+  const claim = {
     iss: sa.client_email,
     aud: 'https://oauth2.googleapis.com/token',
     iat: now,
     exp: now + 3600,
-    scope: 'https://www.googleapis.com/auth/chat.bot'
-  });
+    scope: scope
+  };
+  if (subject) claim.sub = subject;
+  const toSign = b64urlJson({ alg: 'RS256', typ: 'JWT' }) + '.' + b64urlJson(claim);
   const sig = Utilities.computeRsaSha256Signature(toSign, sa.private_key);
   const jwt = toSign + '.' + Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
   const resp = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
@@ -399,9 +425,76 @@ function getChatBotToken_() {
   });
   const body = JSON.parse(resp.getContentText() || '{}');
   if (!body.access_token) {
-    throw new Error('Could not get Chat bot token. ' + resp.getContentText());
+    throw new Error('Could not get token (' + scope + '). ' + resp.getContentText());
   }
   return body.access_token;
+}
+
+function handleCalendarMilestone_(record) {
+  const payload = record.payload || {};
+  const date = String(payload.date || '').trim();
+  const title = String(payload.calendar_title || record.summary || '').trim();
+  const markerId = String(payload.marker_id || '').trim();
+  const action = String(payload.action || 'create').trim();
+  const recipients = parseRecipients(record.recipients);
+  if (!date || !title || recipients.length === 0) {
+    return { ok: false, error: 'calendar missing date/title/recipients' };
+  }
+  const nextDay = addIsoDays_(date, 1);
+  const eventBody = {
+    summary: title,
+    description: 'From Studio PMS',
+    start: { date: date },
+    end: { date: nextDay },
+  };
+  const sent = [];
+  const failed = [];
+  const props = PropertiesService.getScriptProperties();
+  const ids = parseJsonMap_(props.getProperty('CALENDAR_EVENT_IDS'));
+
+  recipients.forEach(function (email) {
+    try {
+      const key = markerId + ':' + email;
+      const existing = ids[key];
+      const token = getCalendarToken_(email);
+      if ((action === 'update' || existing) && existing) {
+        chatApi_(
+          'patch',
+          'https://www.googleapis.com/calendar/v3/calendars/primary/events/' + encodeURIComponent(existing),
+          token,
+          eventBody
+        );
+        sent.push(email);
+      } else {
+        const created = chatApi_(
+          'post',
+          'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+          token,
+          eventBody
+        );
+        if (created && created.id && markerId) {
+          ids[key] = created.id;
+        }
+        sent.push(email);
+      }
+    } catch (err) {
+      failed.push({ email: email, error: String(err && err.message ? err.message : err) });
+    }
+  });
+
+  props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
+  return { ok: failed.length === 0 && sent.length > 0, kind: 'calendar_milestone', sent: sent, failed: failed };
+}
+
+function addIsoDays_(iso, days) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  d.setUTCDate(d.getUTCDate() + days);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return y + '-' + mo + '-' + day;
 }
 
 function chatApi_(method, url, token, payload) {
@@ -420,7 +513,7 @@ function chatApi_(method, url, token, payload) {
   try {
     body = JSON.parse(raw);
   } catch (err) {
-    throw new Error('Chat API ' + resp.getResponseCode() + ': ' + raw.slice(0, 180));
+    throw new Error('API ' + resp.getResponseCode() + ': ' + raw.slice(0, 180));
   }
   if (resp.getResponseCode() >= 400) {
     throw new Error(body.error && body.error.message ? body.error.message : raw);

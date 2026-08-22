@@ -1,6 +1,11 @@
 import { supabase } from './supabaseClient';
 import { normalizeEmail } from './studioConfig';
 
+/** No designer Chat while a job sits in the pipeline / leads list. */
+const QUIET_STATUSES = new Set(['Potential', 'Scheduled']);
+
+const KAYE_EMAIL = 'kaye@extendedwhanau.com';
+
 function designerEmailById(designers) {
   const map = new Map();
   (designers || []).forEach((d) => {
@@ -34,6 +39,19 @@ function projectLabel(project) {
   return client ? `${client} — ${name}` : name;
 }
 
+function projectStatus(project) {
+  return String(project?.status || '').trim();
+}
+
+function isQuietStatus(project) {
+  return QUIET_STATUSES.has(projectStatus(project));
+}
+
+function isCompleteStatus(project) {
+  const s = projectStatus(project).toLowerCase();
+  return s === 'complete' || s === 'completed';
+}
+
 function uniqueEmails(list) {
   return [...new Set((list || []).map(normalizeEmail).filter(Boolean))];
 }
@@ -54,7 +72,7 @@ function phaseDateStamp(phase) {
 }
 
 function markerDateStamp(marker) {
-  return `${marker?.id || ''}:${marker?.date || marker?.startDate || ''}`;
+  return `${marker?.id || ''}:${marker?.date || marker?.startDate || ''}:${String(marker?.title || '').trim()}`;
 }
 
 /** Job bar, phase bars, tasks, and check-in markers on the Gantt. */
@@ -144,12 +162,55 @@ function assignedSummary(project) {
   return lines.join('\n');
 }
 
+function completedSummary(project) {
+  const label = projectLabel(project);
+  const end = formatNiceDate(project.endDate || project.completedAt);
+  return [
+    label,
+    'Job marked complete.',
+    end && end !== '—' ? `Ended ${end}.` : null,
+  ].filter(Boolean).join('\n');
+}
+
+function calendarEventTitle(project, milestoneTitle) {
+  const client = String(project?.client || '').trim();
+  const name = String(project?.name || '').trim() || 'Untitled';
+  const milestone = String(milestoneTitle || '').trim() || 'Milestone';
+  const job = client ? `${client} — ${name}` : name;
+  return `${job} — ${milestone}`;
+}
+
+function newlyAddedMarkers(prev, next) {
+  const before = new Map((prev?.markers || []).map((m) => [String(m.id || ''), m]));
+  return (next?.markers || []).filter((m) => {
+    const id = String(m?.id || '');
+    if (!id || before.has(id)) return false;
+    return Boolean(String(m.date || m.startDate || '').trim() && String(m.title || '').trim());
+  });
+}
+
+function changedMarkers(prev, next) {
+  const before = new Map((prev?.markers || []).map((m) => [String(m.id || ''), m]));
+  return (next?.markers || []).filter((m) => {
+    const id = String(m?.id || '');
+    if (!id || !before.has(id)) return false;
+    const old = before.get(id);
+    const oldDate = String(old?.date || old?.startDate || '').trim();
+    const newDate = String(m?.date || m?.startDate || '').trim();
+    const oldTitle = String(old?.title || '').trim();
+    const newTitle = String(m?.title || '').trim();
+    return Boolean(newDate && newTitle && (oldDate !== newDate || oldTitle !== newTitle));
+  });
+}
+
 /**
- * Chat only:
- * 1. You were put on a job (new job with you on it, or added later)
- * 2. Any timeline dates changed (job start/end, phases, tasks, markers)
+ * Chat:
+ * 1. Added to a job — not while Potential / Scheduled
+ * 2. Timeline dates changed — not while Potential / Scheduled
+ * 3. Job marked Complete — always Kaye
  *
- * Status / board moves / deletes do not notify.
+ * Calendar (via same webhook queue):
+ * New / updated check-in milestones → each assignee’s Google Calendar
  */
 export function buildNotifyEvents({
   prevProjects,
@@ -182,47 +243,95 @@ export function buildNotifyEvents({
     });
   };
 
+  const pushCalendar = (project, marker, action) => {
+    const date = String(marker.date || marker.startDate || '').trim();
+    const title = String(marker.title || '').trim();
+    if (!date || !title) return;
+    const recipients = emailsForProject(project, emailById);
+    if (recipients.length === 0) return;
+    const eventTitle = calendarEventTitle(project, title);
+    push(
+      project,
+      'calendar_milestone',
+      eventTitle,
+      recipients,
+      {
+        action,
+        marker_id: marker.id,
+        milestone_title: title,
+        date,
+        calendar_title: eventTitle,
+      },
+      { includeActor: true },
+    );
+  };
+
   nextMap.forEach((next, id) => {
     const prev = prevMap.get(id);
+    const quiet = isQuietStatus(next);
 
     if (!prev) {
-      // New job — only people already assigned
-      push(
-        next,
-        'assigned_to_job',
-        assignedSummary(next),
-        emailsForProject(next, emailById),
-        { startDate: next.startDate, endDate: next.endDate },
-      );
+      if (!quiet) {
+        push(
+          next,
+          'assigned_to_job',
+          assignedSummary(next),
+          emailsForProject(next, emailById),
+          { startDate: next.startDate, endDate: next.endDate },
+        );
+      }
+      newlyAddedMarkers({ markers: [] }, next).forEach((marker) => {
+        pushCalendar(next, marker, 'create');
+      });
       return;
     }
 
-    const added = newlyAssignedEmails(prev, next, emailById);
-    if (added.length > 0) {
+    if (!isCompleteStatus(prev) && isCompleteStatus(next)) {
       push(
         next,
-        'assigned_to_job',
-        assignedSummary(next),
-        added,
+        'job_completed',
+        completedSummary(next),
+        [KAYE_EMAIL],
         { startDate: next.startDate, endDate: next.endDate },
-      );
-    }
-
-    if (timelineDatesChanged(prev, next)) {
-      push(
-        next,
-        'timeline_dates_changed',
-        dateChangeSummary(next),
-        emailsForProject(next, emailById),
-        {
-          startDate: next.startDate,
-          endDate: next.endDate,
-          prevStartDate: prev.startDate,
-          prevEndDate: prev.endDate,
-        },
         { includeActor: true },
       );
     }
+
+    if (!quiet) {
+      const added = newlyAssignedEmails(prev, next, emailById);
+      if (added.length > 0) {
+        push(
+          next,
+          'assigned_to_job',
+          assignedSummary(next),
+          added,
+          { startDate: next.startDate, endDate: next.endDate },
+        );
+      }
+
+      if (timelineDatesChanged(prev, next)) {
+        push(
+          next,
+          'timeline_dates_changed',
+          dateChangeSummary(next),
+          emailsForProject(next, emailById),
+          {
+            startDate: next.startDate,
+            endDate: next.endDate,
+            prevStartDate: prev.startDate,
+            prevEndDate: prev.endDate,
+          },
+          { includeActor: true },
+        );
+      }
+    }
+
+    newlyAddedMarkers(prev, next).forEach((marker) => {
+      pushCalendar(next, marker, 'create');
+    });
+    changedMarkers(prev, next).forEach((marker) => {
+      pushCalendar(next, marker, 'update');
+    });
   });
 
   return events;
