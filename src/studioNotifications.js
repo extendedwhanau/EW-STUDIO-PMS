@@ -46,9 +46,28 @@ function newlyAssignedEmails(prev, next, emailById) {
     .filter(Boolean);
 }
 
+function phaseDateStamp(phase) {
+  const tasks = (phase?.tasks || [])
+    .map((task) => `${task.id || ''}:${task.startDate || ''}:${task.endDate || ''}`)
+    .join(',');
+  return `${phase?.id || ''}:${phase?.startDate || ''}:${phase?.endDate || ''}:${tasks}`;
+}
+
+function markerDateStamp(marker) {
+  return `${marker?.id || ''}:${marker?.date || marker?.startDate || ''}`;
+}
+
+/** Job bar, phase bars, tasks, and check-in markers on the Gantt. */
+function timelineFingerprint(project) {
+  if (!project) return '';
+  const phases = (project.milestones || []).map(phaseDateStamp).join('|');
+  const markers = (project.markers || []).map(markerDateStamp).join('|');
+  return `${project.startDate || ''}..${project.endDate || ''}::${phases}::${markers}`;
+}
+
 function timelineDatesChanged(prev, next) {
   if (!prev || !next) return false;
-  return prev.startDate !== next.startDate || prev.endDate !== next.endDate;
+  return timelineFingerprint(prev) !== timelineFingerprint(next);
 }
 
 function formatDateRange(project) {
@@ -60,9 +79,8 @@ function formatDateRange(project) {
 /**
  * Chat only:
  * 1. You were put on a job (new job with you on it, or added later)
- * 2. Timeline start/end dates changed on a job you are on
+ * 2. Any timeline dates changed (job start/end, phases, tasks, markers)
  *
- * Milestones go to Google Calendar (not Chat).
  * Status / board moves / deletes do not notify.
  */
 export function buildNotifyEvents({
@@ -122,10 +140,13 @@ export function buildNotifyEvents({
     }
 
     if (timelineDatesChanged(prev, next)) {
+      const rangeChanged = prev.startDate !== next.startDate || prev.endDate !== next.endDate;
       push(
         next,
         'timeline_dates_changed',
-        `${projectLabel(next)}: dates ${formatDateRange(next)}`,
+        rangeChanged
+          ? `${projectLabel(next)}: dates ${formatDateRange(next)}`
+          : `${projectLabel(next)}: timeline dates changed`,
         emailsForProject(next, emailById),
         {
           startDate: next.startDate,

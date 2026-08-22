@@ -78,7 +78,7 @@ Redeploy after changing env vars.
 
 ### Notifications (Google Chat)
 
-Chat DMs only when someone is **added to a job**, or that job’s **timeline start/end dates** change. Set each person’s **Google email** in Team. See [`google-chat/README.md`](google-chat/README.md).
+Chat DMs only when someone is **added to a job**, or **any dates on that job’s timeline** change (job range, phases, or markers). Set each person’s **Google email** in Team. See [`google-chat/README.md`](google-chat/README.md).
 
 **Milestones** are intended for **Google Calendar** (client + project + milestone name + date), not Chat.
 

@@ -3,7 +3,7 @@
 DMs **people on the job** for only two things:
 
 1. **Added to a job** — new job with them on it, or they were assigned later  
-2. **Timeline dates changed** — project start/end on a job they are on  
+2. **Timeline dates changed** — job start/end, phase bars, or check-in markers on a job they are on  
 
 Milestones are **not** Chat; they go to Google Calendar (client · project · milestone · date).
 
