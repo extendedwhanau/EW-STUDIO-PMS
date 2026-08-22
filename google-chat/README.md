@@ -144,13 +144,13 @@ If invites never appear: confirm Team Google emails, and that the person who own
 
 ## To-dos → Google Tasks / Calendar
 
-Dated to-dos from the PMS **To-dos** page:
+Dated to-dos from the PMS **To-dos** page become a Google **Task** only (Calendar → Tasks, with a checkbox). They do **not** create calendar events.
 
-- **You** (Apps Script owner): a Google **Task** on that day (Calendar → Tasks, with a checkbox)
-- **Everyone else**: an all-day calendar invite, same as milestones  
-- Tick it done in the PMS → the Google item completes / drops off  
-- Clear the date or delete the to-do → the Google item is removed  
-- No date → stays in the PMS only
+- Tick it done in the PMS → the Google Task completes  
+- Clear the date or delete the to-do → the Google Task is removed  
+- No date → stays in the PMS only  
+
+Tasks are created on the Apps Script owner’s Google Tasks list (Execute as Me).
 
 1. Paste latest `Code.gs` + `appsscript.json` → Save  
 2. Services **+** → **Tasks API** → Add  
