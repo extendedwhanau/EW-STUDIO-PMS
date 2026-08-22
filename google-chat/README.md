@@ -1,6 +1,11 @@
 # Studio PMS Chat app
 
-DMs **people on the job** when the PMS saves a change.
+DMs **people on the job** for only two things:
+
+1. **Added to a job** — new job with them on it, or they were assigned later  
+2. **Timeline dates changed** — project start/end on a job they are on  
+
+Milestones are **not** Chat; they go to Google Calendar (client · project · milestone · date).
 
 **Already done if the bot replied in Chat:** Cloud Chat API, Apps Script `onMessage`, Head deployment ID.
 

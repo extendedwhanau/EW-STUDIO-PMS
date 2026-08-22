@@ -34,42 +34,36 @@ function projectLabel(project) {
   return client ? `${client} — ${name}` : name;
 }
 
-function markerKey(marker) {
-  return String(marker?.id || '');
-}
-
-function markerStamp(marker) {
-  return `${String(marker?.title || '').trim()}|${String(marker?.date || '')}|${String(marker?.phaseKey || '')}`;
-}
-
-function markersChanged(prev, next) {
-  const a = prev?.markers || [];
-  const b = next?.markers || [];
-  if (a.length !== b.length) return true;
-  const map = new Map(a.map((m) => [markerKey(m), markerStamp(m)]));
-  return b.some((m) => map.get(markerKey(m)) !== markerStamp(m));
-}
-
-function jobChanged(prev, next) {
-  if (!prev || !next) return true;
-  if (prev.status !== next.status) return true;
-  if (prev.priority !== next.priority) return true;
-  if (prev.startDate !== next.startDate) return true;
-  if (prev.endDate !== next.endDate) return true;
-  if (prev.name !== next.name) return true;
-  const a = projectDesignerIds(prev).join(',');
-  const b = projectDesignerIds(next).join(',');
-  return a !== b;
-}
-
 function uniqueEmails(list) {
   return [...new Set((list || []).map(normalizeEmail).filter(Boolean))];
 }
 
+function newlyAssignedEmails(prev, next, emailById) {
+  const before = new Set(projectDesignerIds(prev));
+  return projectDesignerIds(next)
+    .filter((id) => !before.has(id))
+    .map((id) => emailById.get(id))
+    .filter(Boolean);
+}
+
+function timelineDatesChanged(prev, next) {
+  if (!prev || !next) return false;
+  return prev.startDate !== next.startDate || prev.endDate !== next.endDate;
+}
+
+function formatDateRange(project) {
+  const start = String(project?.startDate || '').trim() || '—';
+  const end = String(project?.endDate || '').trim() || '—';
+  return `${start} → ${end}`;
+}
+
 /**
- * Build notify rows for people assigned to the job.
- * If someone else is on the job, the person who saved is skipped.
- * If you are the only assignee, you still get the DM (so solo jobs notify).
+ * Chat only:
+ * 1. You were put on a job (new job with you on it, or added later)
+ * 2. Timeline start/end dates changed on a job you are on
+ *
+ * Milestones go to Google Calendar (not Chat).
+ * Status / board moves / deletes do not notify.
  */
 export function buildNotifyEvents({
   prevProjects,
@@ -85,6 +79,8 @@ export function buildNotifyEvents({
 
   const push = (project, kind, summary, recipients, extra = {}) => {
     const assigned = uniqueEmails(recipients).filter(Boolean);
+    // Skip the person who saved when someone else is also notified.
+    // Solo: still ping you (you added yourself / only person on the job).
     const others = assigned.filter((e) => e !== actor);
     const to = others.length > 0 ? others : assigned;
     if (to.length === 0) return;
@@ -101,58 +97,44 @@ export function buildNotifyEvents({
 
   nextMap.forEach((next, id) => {
     const prev = prevMap.get(id);
+
     if (!prev) {
+      // New job — only people already assigned
       push(
         next,
-        'job_created',
-        `Added ${projectLabel(next)}`,
+        'assigned_to_job',
+        `You have been added to ${projectLabel(next)}`,
         emailsForProject(next, emailById),
+        { startDate: next.startDate, endDate: next.endDate },
       );
-      if (markersChanged({ markers: [] }, next)) {
-        push(
-          next,
-          'milestone_changed',
-          `Milestones updated on ${projectLabel(next)}`,
-          emailsForProject(next, emailById),
-        );
-      }
       return;
     }
 
-    if (jobChanged(prev, next)) {
-      const bits = [];
-      if (prev.status !== next.status) bits.push(`status ${prev.status || '—'} → ${next.status || '—'}`);
-      if (prev.priority !== next.priority) bits.push('moved on the board');
-      if (prev.startDate !== next.startDate || prev.endDate !== next.endDate) bits.push('dates changed');
-      if (projectDesignerIds(prev).join(',') !== projectDesignerIds(next).join(',')) {
-        bits.push('team changed');
-      }
+    const added = newlyAssignedEmails(prev, next, emailById);
+    if (added.length > 0) {
       push(
         next,
-        'job_changed',
-        `${projectLabel(next)}: ${bits.join('; ') || 'updated'}`,
-        emailsForProject(next, emailById),
+        'assigned_to_job',
+        `You have been added to ${projectLabel(next)}`,
+        added,
+        { startDate: next.startDate, endDate: next.endDate },
       );
     }
 
-    if (markersChanged(prev, next)) {
+    if (timelineDatesChanged(prev, next)) {
       push(
         next,
-        'milestone_changed',
-        `Milestones updated on ${projectLabel(next)}`,
+        'timeline_dates_changed',
+        `${projectLabel(next)}: dates ${formatDateRange(next)}`,
         emailsForProject(next, emailById),
+        {
+          startDate: next.startDate,
+          endDate: next.endDate,
+          prevStartDate: prev.startDate,
+          prevEndDate: prev.endDate,
+        },
       );
     }
-  });
-
-  prevMap.forEach((prev, id) => {
-    if (nextMap.has(id)) return;
-    push(
-      prev,
-      'job_deleted',
-      `Removed ${projectLabel(prev)}`,
-      emailsForProject(prev, emailById),
-    );
   });
 
   return events;

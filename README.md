@@ -78,9 +78,9 @@ Redeploy after changing env vars.
 
 ### Notifications (Google Chat)
 
-Saves queue events in `studio_notify_events` for **people assigned to that job** (set each person’s Google email in Team). The Chat app in [`google-chat/`](google-chat/) DMs those people.
+Chat DMs only when someone is **added to a job**, or that job’s **timeline start/end dates** change. Set each person’s **Google email** in Team. See [`google-chat/README.md`](google-chat/README.md).
 
-See [`google-chat/README.md`](google-chat/README.md) to deploy and test the bot.
+**Milestones** are intended for **Google Calendar** (client + project + milestone name + date), not Chat.
 
 ## Run locally
 
@@ -132,9 +132,12 @@ If sync stops after the first edit, run the **`set_studio_workspace_updated_at` 
 
 If you skip the SQL step, the app keeps working from **localStorage** only (you may see a `[Supabase] load failed` message in the browser console).
 
-## Adding Google Calendar integration
+## Google Calendar (milestones)
 
-Each project has `startDate` and `endDate`. To push deadlines to Google
-Calendar, use the Google Calendar API with OAuth2. The event creation
-endpoint is `POST /calendars/primary/events` with the project's
-`endDate` as the event date.
+When a milestone (review / check-in marker) is **added or its date changes**, create or update an all-day Calendar event for each designer on that job:
+
+- **Title:** `{Client} — {Project} — {Milestone name}`
+- **Date:** the milestone date
+- **Who:** people assigned to the job (same Google emails as Team)
+
+Store `google_event_id` on each marker so updates move the event instead of duplicating it. Not wired yet — Chat path is separate.
