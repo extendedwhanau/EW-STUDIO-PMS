@@ -142,6 +142,27 @@ If invites never appear: confirm Team Google emails, and that the person who own
 
 ---
 
+## To-dos → Google Tasks / Calendar
+
+Dated to-dos from the PMS **To-dos** page:
+
+- **You** (Apps Script owner): a Google **Task** on that day (Calendar → Tasks, with a checkbox)
+- **Everyone else**: an all-day calendar invite, same as milestones  
+- Tick it done in the PMS → the Google item completes / drops off  
+- Clear the date or delete the to-do → the Google item is removed  
+- No date → stays in the PMS only
+
+1. Paste latest `Code.gs` + `appsscript.json` → Save  
+2. Services **+** → **Tasks API** → Add  
+3. Run **`testTodoTask`** → allow Tasks access if Google asks  
+4. **Web app → New version → Deploy** (Execute as Me, Anyone)  
+
+Team members need a **Google email** set. Google sync only runs when you are **signed into the PMS** (not the localhost preview bypass).
+
+Ticking complete in Google Calendar does not yet write back to the PMS — that is the next step.
+
+---
+
 ## Chat API reminder (already working)
 
 Bot replies in Chat use **Deploy → Test deployments → Head deployment ID** pasted into  

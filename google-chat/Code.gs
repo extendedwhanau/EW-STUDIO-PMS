@@ -94,6 +94,12 @@ function doPost(e) {
       PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
       return jsonOut(result);
     }
+    if (kind === 'calendar_todo') {
+      const result = handleCalendarTodo_(record);
+      Logger.log(JSON.stringify(result));
+      PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
+      return jsonOut(result);
+    }
 
     const summary = String(record.summary || '').trim();
     const recipients = parseRecipients(record.recipients);
@@ -480,6 +486,182 @@ function parseIsoDateLocal_(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return null;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function handleCalendarTodo_(record) {
+  const payload = record.payload || {};
+  const action = String(payload.action || 'create').trim();
+  const title = String(payload.calendar_title || record.summary || '').trim();
+  const todoId = String(payload.todo_id || '').trim();
+  const date = String(payload.date || '').trim();
+  const done = Boolean(payload.done);
+  const recipients = parseRecipients(record.recipients);
+  if (!title || recipients.length === 0 || !todoId) {
+    return { ok: false, error: 'todo missing title/recipients/id' };
+  }
+  if (action !== 'delete' && !date) {
+    return { ok: false, error: 'todo missing date' };
+  }
+
+  let me = '';
+  try {
+    me = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  } catch (err) {
+    me = '';
+  }
+
+  const results = [];
+  recipients.forEach(function (email) {
+    let usedTasks = false;
+    if (me && email === me) {
+      try {
+        if (typeof Tasks !== 'undefined' && Tasks && Tasks.Tasks) {
+          const taskResult = upsertGoogleTask_(todoId, title, date, done, action);
+          results.push(taskResult);
+          usedTasks = Boolean(taskResult && taskResult.ok);
+        }
+      } catch (err) {
+        usedTasks = false;
+      }
+    }
+    if (!usedTasks) {
+      results.push(upsertTodoCalendarEvent_(todoId, email, title, date, done, action));
+    }
+  });
+  return {
+    ok: results.every(function (r) { return r && r.ok; }),
+    kind: 'calendar_todo',
+    results: results,
+  };
+}
+
+function upsertGoogleTask_(todoId, title, date, done, action) {
+  const props = PropertiesService.getScriptProperties();
+  const ids = parseJsonMap_(props.getProperty('TODO_TASK_IDS'));
+  const key = String(todoId);
+  const existingId = ids[key];
+  const listId = '@default';
+
+  try {
+    if (action === 'delete') {
+      if (existingId) {
+        try { Tasks.Tasks.remove(listId, existingId); } catch (err) { /* already gone */ }
+        delete ids[key];
+        props.setProperty('TODO_TASK_IDS', JSON.stringify(ids));
+      }
+      return { ok: true, via: 'tasks', action: 'delete', taskId: existingId || null };
+    }
+
+    const resource = {
+      title: title,
+      notes: 'From Studio PMS',
+      status: done ? 'completed' : 'needsAction',
+    };
+    if (date) resource.due = date + 'T12:00:00.000Z';
+
+    if (existingId) {
+      try {
+        Tasks.Tasks.patch(resource, listId, existingId);
+        return { ok: true, via: 'tasks', action: 'update', taskId: existingId };
+      } catch (err) {
+        /* recreate below */
+      }
+    }
+
+    const created = Tasks.Tasks.insert(resource, listId);
+    const newId = created && created.id;
+    if (newId) {
+      ids[key] = newId;
+      props.setProperty('TODO_TASK_IDS', JSON.stringify(ids));
+    }
+    return { ok: true, via: 'tasks', action: 'create', taskId: newId || null };
+  } catch (err) {
+    return {
+      ok: false,
+      via: 'tasks',
+      error: String(err && err.message ? err.message : err),
+      hint: 'Enable Tasks in Apps Script Services, then Run testTodoTask and allow access.',
+    };
+  }
+}
+
+function upsertTodoCalendarEvent_(todoId, email, title, date, done, action) {
+  const props = PropertiesService.getScriptProperties();
+  const ids = parseJsonMap_(props.getProperty('TODO_EVENT_IDS'));
+  const key = 'todo:' + String(todoId);
+  const existingId = ids[key];
+
+  try {
+    const cal = CalendarApp.getDefaultCalendar();
+    if (action === 'delete' || done) {
+      if (existingId) {
+        try {
+          const event = cal.getEventById(existingId);
+          if (event) event.deleteEvent();
+        } catch (err) { /* already gone */ }
+        delete ids[key];
+        props.setProperty('TODO_EVENT_IDS', JSON.stringify(ids));
+      }
+      return { ok: true, via: 'calendar', action: done && action !== 'delete' ? 'complete' : 'delete', eventId: existingId || null };
+    }
+
+    const start = parseIsoDateLocal_(date);
+    if (!start) {
+      return { ok: false, via: 'calendar', error: 'bad todo date: ' + date };
+    }
+
+    if (existingId) {
+      const event = cal.getEventById(existingId);
+      if (event) {
+        event.setTitle(title);
+        event.setAllDayDate(start);
+        event.setDescription('Studio PMS to-do');
+        syncGuests_(event, [email]);
+        return { ok: true, via: 'calendar', action: 'update', eventId: existingId };
+      }
+    }
+
+    const created = cal.createAllDayEvent(title, start, {
+      description: 'Studio PMS to-do',
+      guests: email,
+      sendInvites: true,
+    });
+    const newId = created.getId();
+    if (newId) ids[key] = newId;
+    props.setProperty('TODO_EVENT_IDS', JSON.stringify(ids));
+    return { ok: true, via: 'calendar', action: 'create', eventId: newId };
+  } catch (err) {
+    return {
+      ok: false,
+      via: 'calendar',
+      error: String(err && err.message ? err.message : err),
+    };
+  }
+}
+
+/** Run once in the editor — Google will ask for Tasks access. Then Deploy Web app → New version. */
+function testTodoTask() {
+  const email = Session.getActiveUser().getEmail();
+  const tomorrow = new Date();
+  tomorrow.setHours(12, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const y = tomorrow.getFullYear();
+  const m = ('0' + (tomorrow.getMonth() + 1)).slice(-2);
+  const d = ('0' + tomorrow.getDate()).slice(-2);
+  const iso = y + '-' + m + '-' + d;
+  const result = handleCalendarTodo_({
+    summary: 'Studio PMS to-do test',
+    recipients: [email],
+    payload: {
+      action: 'create',
+      todo_id: 'pms-todo-test',
+      date: iso,
+      done: false,
+      calendar_title: 'Studio PMS to-do test',
+    },
+  });
+  Logger.log(JSON.stringify(result));
+  throw new Error('To-do test: ' + JSON.stringify(result) + '. Check Calendar → Tasks for tomorrow, then Deploy Web app → New version.');
 }
 
 /** Impersonate a Workspace user — only if domain-wide delegation is set up. Unused by default. */

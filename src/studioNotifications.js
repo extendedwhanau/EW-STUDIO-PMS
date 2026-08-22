@@ -236,10 +236,13 @@ function phaseAsCalendarItem(phase) {
  *
  * Calendar (via same webhook queue):
  * New / updated check-in milestones → each assignee’s Google Calendar
+ * Dated to-dos → Google Task (script owner) or calendar invite (everyone else)
  */
 export function buildNotifyEvents({
   prevProjects,
   nextProjects,
+  prevTodos,
+  nextTodos,
   designers,
   actorEmail,
 }) {
@@ -367,7 +370,115 @@ export function buildNotifyEvents({
     syncCalendars(prev, next);
   });
 
+  syncTodoCalendars({
+    prevTodos,
+    nextTodos,
+    prevProjects,
+    nextProjects,
+    emailById,
+    push,
+  });
+
   return events;
+}
+
+function todoIsDated(todo) {
+  return Boolean(
+    todo
+    && String(todo.title || '').trim()
+    && /^\d{4}-\d{2}-\d{2}$/.test(String(todo.date || '').trim()),
+  );
+}
+
+function todoTaskTitle(todo, project) {
+  const title = String(todo?.title || '').trim() || 'To-do';
+  if (!project) return title;
+  return `${jobShortLabel(project, ' ')}: ${title}`;
+}
+
+function findProjectById(projects, id) {
+  if (!id) return null;
+  return (projects || []).find((p) => p.id === id) || null;
+}
+
+function todoFingerprint(todo) {
+  if (!todo) return '';
+  return [
+    todo.id,
+    String(todo.title || '').trim(),
+    String(todo.designerId || ''),
+    String(todo.projectId || ''),
+    String(todo.date || ''),
+    todo.done ? '1' : '0',
+  ].join('|');
+}
+
+function syncTodoCalendars({
+  prevTodos,
+  nextTodos,
+  prevProjects,
+  nextProjects,
+  emailById,
+  push,
+}) {
+  const prevMap = new Map((prevTodos || []).map((t) => [String(t.id || ''), t]));
+  const nextMap = new Map((nextTodos || []).map((t) => [String(t.id || ''), t]));
+
+  const pushTodo = (todo, projects, action) => {
+    if (!todo?.id) return;
+    const email = emailById.get(todo.designerId);
+    if (!email) return;
+    const project = findProjectById(projects, todo.projectId);
+    const title = todoTaskTitle(todo, project);
+    if (action !== 'delete' && !todoIsDated(todo)) return;
+    push(
+      project || { id: todo.projectId || null, name: title, client: '' },
+      'calendar_todo',
+      title,
+      [email],
+      {
+        action,
+        todo_id: todo.id,
+        date: String(todo.date || '').trim(),
+        done: Boolean(todo.done),
+        calendar_title: title,
+        designer_id: todo.designerId || '',
+      },
+      { includeActor: true },
+    );
+  };
+
+  nextMap.forEach((next, id) => {
+    const prev = prevMap.get(id);
+    if (!prev) {
+      if (todoIsDated(next)) pushTodo(next, nextProjects, 'create');
+      return;
+    }
+    const wasDated = todoIsDated(prev);
+    const isDated = todoIsDated(next);
+    if (!wasDated && isDated) {
+      pushTodo(next, nextProjects, 'create');
+      return;
+    }
+    if (wasDated && !isDated) {
+      pushTodo(prev, prevProjects, 'delete');
+      return;
+    }
+    if (!isDated) return;
+    if (String(prev.designerId || '') !== String(next.designerId || '')) {
+      pushTodo(prev, prevProjects, 'delete');
+      pushTodo(next, nextProjects, 'create');
+      return;
+    }
+    if (todoFingerprint(prev) !== todoFingerprint(next)) {
+      pushTodo(next, nextProjects, 'update');
+    }
+  });
+
+  prevMap.forEach((prev, id) => {
+    if (nextMap.has(id)) return;
+    if (todoIsDated(prev)) pushTodo(prev, prevProjects, 'delete');
+  });
 }
 
 export async function enqueueStudioNotifications(events) {

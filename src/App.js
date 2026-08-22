@@ -6676,7 +6676,7 @@ export default function App() {
   designersRef.current = designers;
   projectsRef.current = projects;
   todosRef.current = todos;
-  const notifyPrevRef = useRef({ designers, projects });
+  const notifyPrevRef = useRef({ designers, projects, todos });
   const remoteUpdatedAtRef = useRef(null);
   const pendingRemoteUpdatedAtRef = useRef(null);
   const remotePullInFlightRef = useRef(false);
@@ -6883,7 +6883,7 @@ export default function App() {
 
     if (applyingRemoteRef.current) {
       applyingRemoteRef.current = false;
-      notifyPrevRef.current = { designers, projects };
+      notifyPrevRef.current = { designers, projects, todos };
       return undefined;
     }
 
@@ -6892,11 +6892,13 @@ export default function App() {
       const events = buildNotifyEvents({
         prevProjects: prev.projects,
         nextProjects: projects,
+        prevTodos: prev.todos,
+        nextTodos: todos,
         designers,
         actorEmail: sessionUser?.email,
       });
       enqueueStudioNotifications(events);
-      notifyPrevRef.current = { designers, projects };
+      notifyPrevRef.current = { designers, projects, todos };
       saveWorkspacePayload({ designers, projects, todos }).then((result) => {
         if (result.ok && result.updatedAt) {
           remoteUpdatedAtRef.current = result.updatedAt;
