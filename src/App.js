@@ -1856,6 +1856,7 @@ function TodosView({
   projects,
   filterDesigner,
   sessionUser,
+  onSignIn,
 }) {
   const inputRef = useRef(null);
   const [draft, setDraft] = useState('');
@@ -1906,6 +1907,8 @@ function TodosView({
   const ownerOptions = (designers || []).map((d) => ({ value: d.id, label: d.name }));
   const ownerDesigner = designers.find((d) => d.id === composerOwner);
   const composerJobProject = composerJob ? projectById.get(composerJob) : null;
+  const ownerHasEmail = Boolean(normalizeEmail(ownerDesigner?.email));
+  const canSyncTasks = Boolean(sessionUser?.email && ownerHasEmail);
 
   const visibleTodos = useMemo(() => {
     const scoped = filterDesigner === 'all'
@@ -1982,6 +1985,21 @@ function TodosView({
   return (
     <div className="todo-page">
       <div className="todo-composer-sticky">
+        {!canSyncTasks ? (
+          <p className="todo-sync-hint">
+            {!sessionUser?.email
+              ? 'Sign in with Google to send dated to-dos to Tasks.'
+              : 'Set a Google email on this person in Team so dated to-dos can sync.'}
+            {!sessionUser?.email && onSignIn ? (
+              <>
+                {' '}
+                <button type="button" className="todo-sync-hint-btn" onClick={onSignIn}>
+                  Sign in
+                </button>
+              </>
+            ) : null}
+          </p>
+        ) : null}
         <div className="todo-composer">
           <TodoOverlaySelect
             value={composerOwner}
@@ -7469,6 +7487,17 @@ export default function App() {
                 Sign out
               </button>
             </div>
+          ) : isSupabaseConfigured() ? (
+            <div className="sidebar-session">
+              <button
+                type="button"
+                className="sidebar-session-signout"
+                onClick={signInWithGoogle}
+                disabled={authBusy}
+              >
+                {authBusy ? 'Signing in…' : 'Sign in to sync'}
+              </button>
+            </div>
           ) : null}
         </div>
       </aside>
@@ -7749,6 +7778,7 @@ export default function App() {
               projects={projects}
               filterDesigner={filterDesigner}
               sessionUser={sessionUser}
+              onSignIn={signInWithGoogle}
             />
           )}
 

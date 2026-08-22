@@ -100,6 +100,12 @@ function doPost(e) {
       PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
       return jsonOut(result);
     }
+    if (kind.indexOf('calendar_') === 0) {
+      const skipCal = { ok: false, error: 'unknown calendar kind: ' + kind };
+      Logger.log(JSON.stringify(skipCal));
+      PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(skipCal));
+      return jsonOut(skipCal);
+    }
 
     const summary = String(record.summary || '').trim();
     const recipients = parseRecipients(record.recipients);
