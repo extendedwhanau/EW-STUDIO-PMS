@@ -4,7 +4,7 @@ const WORKSPACE_ID = 'main';
 
 /**
  * Load shared designers + projects from Supabase.
- * @returns {Promise<{ designers: unknown[], projects: unknown[], updatedAt: string | null } | null>}
+ * @returns {Promise<{ designers: unknown[], projects: unknown[], todos: unknown[], updatedAt: string | null } | null>}
  */
 export async function loadWorkspacePayload() {
   if (!supabase) return null;
@@ -19,13 +19,14 @@ export async function loadWorkspacePayload() {
     return null;
   }
   if (data?.payload == null) {
-    return { designers: [], projects: [], updatedAt: data?.updated_at ?? null };
+    return { designers: [], projects: [], todos: [], updatedAt: data?.updated_at ?? null };
   }
 
   const p = data.payload;
   const designers = Array.isArray(p.designers) ? p.designers : [];
   const projects = Array.isArray(p.projects) ? p.projects : [];
-  return { designers, projects, updatedAt: data.updated_at ?? null };
+  const todos = Array.isArray(p.todos) ? p.todos : [];
+  return { designers, projects, todos, updatedAt: data.updated_at ?? null };
 }
 
 /**
