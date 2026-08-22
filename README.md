@@ -84,7 +84,7 @@ Chat DMs:
 - **Timeline dates changed** — not while **Potential** / **Scheduled**
 - **Job marked Complete** — always to `kaye@extendedwhanau.com`
 
-Check-in **milestones** (markers) are queued for each assignee’s **Google Calendar** (title: Client — Project — Milestone). Calendar writes need domain-wide delegation on the Chat service account — see [`google-chat/README.md`](google-chat/README.md).
+Check-in milestones create an all-day event (on the Apps Script owner’s calendar) and **invite** each assignee — no domain-wide delegation. See [`google-chat/README.md`](google-chat/README.md).
 
 Set each person’s **Google email** in Team.
 

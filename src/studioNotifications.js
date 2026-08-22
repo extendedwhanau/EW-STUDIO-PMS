@@ -75,12 +75,11 @@ function markerDateStamp(marker) {
   return `${marker?.id || ''}:${marker?.date || marker?.startDate || ''}:${String(marker?.title || '').trim()}`;
 }
 
-/** Job bar, phase bars, tasks, and check-in markers on the Gantt. */
+/** Job / phase / task dates only — check-in markers go to Calendar, not date Chat. */
 function timelineFingerprint(project) {
   if (!project) return '';
   const phases = (project.milestones || []).map(phaseDateStamp).join('|');
-  const markers = (project.markers || []).map(markerDateStamp).join('|');
-  return `${project.startDate || ''}..${project.endDate || ''}::${phases}::${markers}`;
+  return `${project.startDate || ''}..${project.endDate || ''}::${phases}`;
 }
 
 function timelineDatesChanged(prev, next) {
@@ -203,6 +202,40 @@ function changedMarkers(prev, next) {
   });
 }
 
+/** Phase milestones (timeline blocks) with an end or start date. */
+function newlyAddedPhases(prev, next) {
+  const before = new Map((prev?.milestones || []).map((p) => [String(p.id || ''), p]));
+  return (next?.milestones || []).filter((p) => {
+    const id = String(p?.id || '');
+    if (!id || before.has(id)) return false;
+    const title = String(p.title || '').trim();
+    const date = String(p.endDate || p.startDate || '').trim();
+    return Boolean(title && date);
+  });
+}
+
+function changedPhases(prev, next) {
+  const before = new Map((prev?.milestones || []).map((p) => [String(p.id || ''), p]));
+  return (next?.milestones || []).filter((p) => {
+    const id = String(p?.id || '');
+    if (!id || !before.has(id)) return false;
+    const old = before.get(id);
+    const oldDate = String(old?.endDate || old?.startDate || '').trim();
+    const newDate = String(p?.endDate || p?.startDate || '').trim();
+    const oldTitle = String(old?.title || '').trim();
+    const newTitle = String(p?.title || '').trim();
+    return Boolean(newDate && newTitle && (oldDate !== newDate || oldTitle !== newTitle));
+  });
+}
+
+function phaseAsCalendarItem(phase) {
+  return {
+    id: phase.id,
+    title: phase.title,
+    date: phase.endDate || phase.startDate || '',
+  };
+}
+
 /**
  * Chat:
  * 1. Added to a job — not while Potential / Scheduled
@@ -243,9 +276,9 @@ export function buildNotifyEvents({
     });
   };
 
-  const pushCalendar = (project, marker, action) => {
-    const date = String(marker.date || marker.startDate || '').trim();
-    const title = String(marker.title || '').trim();
+  const pushCalendar = (project, item, action) => {
+    const date = String(item.date || item.startDate || item.endDate || '').trim();
+    const title = String(item.title || '').trim();
     if (!date || !title) return;
     const recipients = emailsForProject(project, emailById);
     if (recipients.length === 0) return;
@@ -257,13 +290,28 @@ export function buildNotifyEvents({
       recipients,
       {
         action,
-        marker_id: marker.id,
+        marker_id: item.id,
         milestone_title: title,
         date,
         calendar_title: eventTitle,
       },
       { includeActor: true },
     );
+  };
+
+  const syncCalendars = (prev, next) => {
+    newlyAddedMarkers(prev, next).forEach((marker) => {
+      pushCalendar(next, marker, 'create');
+    });
+    changedMarkers(prev, next).forEach((marker) => {
+      pushCalendar(next, marker, 'update');
+    });
+    newlyAddedPhases(prev, next).forEach((phase) => {
+      pushCalendar(next, phaseAsCalendarItem(phase), 'create');
+    });
+    changedPhases(prev, next).forEach((phase) => {
+      pushCalendar(next, phaseAsCalendarItem(phase), 'update');
+    });
   };
 
   nextMap.forEach((next, id) => {
@@ -280,9 +328,7 @@ export function buildNotifyEvents({
           { startDate: next.startDate, endDate: next.endDate },
         );
       }
-      newlyAddedMarkers({ markers: [] }, next).forEach((marker) => {
-        pushCalendar(next, marker, 'create');
-      });
+      syncCalendars({ markers: [], milestones: [] }, next);
       return;
     }
 
@@ -326,12 +372,7 @@ export function buildNotifyEvents({
       }
     }
 
-    newlyAddedMarkers(prev, next).forEach((marker) => {
-      pushCalendar(next, marker, 'create');
-    });
-    changedMarkers(prev, next).forEach((marker) => {
-      pushCalendar(next, marker, 'update');
-    });
+    syncCalendars(prev, next);
   });
 
   return events;

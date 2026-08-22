@@ -269,6 +269,26 @@ function testWebhookViaHttp() {
   throw new Error('HTTP ' + res.getResponseCode() + ' ' + short.slice(0, 500));
 }
 
+/** Run once in the editor — Google will ask for Calendar access. Then Deploy Web app → New version. */
+function testCalendar() {
+  const email = Session.getActiveUser().getEmail();
+  const cal = CalendarApp.getDefaultCalendar();
+  const tomorrow = new Date();
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const event = cal.createAllDayEvent(
+    'Studio PMS calendar test',
+    tomorrow,
+    {
+      description: 'You can delete this. PMS milestone invites will work after this permission.',
+      guests: email,
+      sendInvites: false,
+    }
+  );
+  Logger.log('Created event id: ' + event.getId());
+  throw new Error('Calendar OK. Event “Studio PMS calendar test” is on your calendar for tomorrow. Deploy Web app → New version next.');
+}
+
 /** Send a bot DM. Select testDm, Run. */
 function testDm() {
   const email = Session.getActiveUser().getEmail();
@@ -386,7 +406,83 @@ function getChatBotToken_() {
   return getServiceAccountToken_('https://www.googleapis.com/auth/chat.bot');
 }
 
-/** Impersonate a Workspace user to write their primary calendar (needs domain-wide delegation). */
+function handleCalendarMilestone_(record) {
+  const payload = record.payload || {};
+  const date = String(payload.date || '').trim();
+  const title = String(payload.calendar_title || record.summary || '').trim();
+  const markerId = String(payload.marker_id || '').trim();
+  const action = String(payload.action || 'create').trim();
+  const recipients = parseRecipients(record.recipients);
+  if (!date || !title || recipients.length === 0) {
+    return { ok: false, error: 'calendar missing date/title/recipients' };
+  }
+
+  const start = parseIsoDateLocal_(date);
+  if (!start) {
+    return { ok: false, error: 'bad calendar date: ' + date };
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const ids = parseJsonMap_(props.getProperty('CALENDAR_EVENT_IDS'));
+  const key = markerId || (title + ':' + date);
+  const existingId = ids[key];
+  const guestList = recipients.join(',');
+
+  try {
+    const cal = CalendarApp.getDefaultCalendar();
+    if ((action === 'update' || existingId) && existingId) {
+      const event = cal.getEventById(existingId);
+      if (event) {
+        event.setTitle(title);
+        event.setAllDayDate(start);
+        event.setDescription('From Studio PMS');
+        syncGuests_(event, recipients);
+        props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
+        return { ok: true, kind: 'calendar_milestone', action: 'update', guests: recipients, eventId: existingId };
+      }
+    }
+
+    const created = cal.createAllDayEvent(title, start, {
+      description: 'From Studio PMS',
+      guests: guestList,
+      sendInvites: true,
+    });
+    const newId = created.getId();
+    if (newId) ids[key] = newId;
+    props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
+    return { ok: true, kind: 'calendar_milestone', action: 'create', guests: recipients, eventId: newId };
+  } catch (err) {
+    return {
+      ok: false,
+      kind: 'calendar_milestone',
+      error: String(err && err.message ? err.message : err),
+      hint: 'Web app must Execute as Me. Calendar invites go to each designer as guests (no domain-wide delegation).',
+    };
+  }
+}
+
+function syncGuests_(event, emails) {
+  const want = {};
+  (emails || []).forEach(function (e) { want[String(e).toLowerCase()] = true; });
+  const guests = event.getGuestList(true) || [];
+  guests.forEach(function (g) {
+    const em = String(g.getEmail() || '').toLowerCase();
+    if (em && !want[em]) {
+      try { event.removeGuest(em); } catch (err) { /* ignore */ }
+    }
+  });
+  (emails || []).forEach(function (email) {
+    try { event.addGuest(email); } catch (err) { /* already a guest */ }
+  });
+}
+
+function parseIsoDateLocal_(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/** Impersonate a Workspace user — only if domain-wide delegation is set up. Unused by default. */
 function getCalendarToken_(email) {
   return getServiceAccountToken_(
     'https://www.googleapis.com/auth/calendar',
@@ -428,73 +524,6 @@ function getServiceAccountToken_(scope, subject) {
     throw new Error('Could not get token (' + scope + '). ' + resp.getContentText());
   }
   return body.access_token;
-}
-
-function handleCalendarMilestone_(record) {
-  const payload = record.payload || {};
-  const date = String(payload.date || '').trim();
-  const title = String(payload.calendar_title || record.summary || '').trim();
-  const markerId = String(payload.marker_id || '').trim();
-  const action = String(payload.action || 'create').trim();
-  const recipients = parseRecipients(record.recipients);
-  if (!date || !title || recipients.length === 0) {
-    return { ok: false, error: 'calendar missing date/title/recipients' };
-  }
-  const nextDay = addIsoDays_(date, 1);
-  const eventBody = {
-    summary: title,
-    description: 'From Studio PMS',
-    start: { date: date },
-    end: { date: nextDay },
-  };
-  const sent = [];
-  const failed = [];
-  const props = PropertiesService.getScriptProperties();
-  const ids = parseJsonMap_(props.getProperty('CALENDAR_EVENT_IDS'));
-
-  recipients.forEach(function (email) {
-    try {
-      const key = markerId + ':' + email;
-      const existing = ids[key];
-      const token = getCalendarToken_(email);
-      if ((action === 'update' || existing) && existing) {
-        chatApi_(
-          'patch',
-          'https://www.googleapis.com/calendar/v3/calendars/primary/events/' + encodeURIComponent(existing),
-          token,
-          eventBody
-        );
-        sent.push(email);
-      } else {
-        const created = chatApi_(
-          'post',
-          'https://www.googleapis.com/calendar/v3/calendars/primary/events',
-          token,
-          eventBody
-        );
-        if (created && created.id && markerId) {
-          ids[key] = created.id;
-        }
-        sent.push(email);
-      }
-    } catch (err) {
-      failed.push({ email: email, error: String(err && err.message ? err.message : err) });
-    }
-  });
-
-  props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
-  return { ok: failed.length === 0 && sent.length > 0, kind: 'calendar_milestone', sent: sent, failed: failed };
-}
-
-function addIsoDays_(iso, days) {
-  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return iso;
-  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  d.setUTCDate(d.getUTCDate() + days);
-  const y = d.getUTCFullYear();
-  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return y + '-' + mo + '-' + day;
 }
 
 function chatApi_(method, url, token, payload) {

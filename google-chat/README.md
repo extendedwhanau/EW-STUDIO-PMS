@@ -126,20 +126,19 @@ If nobody is DMed: Table Editor → `studio_notify_events`. A new row should app
 
 ---
 
-## Calendar (milestones → personal calendars)
+## Calendar (milestones → calendars)
 
-When a check-in milestone is added or its date/title changes, the webhook runs `calendar_milestone` and writes an all-day event to each assignee’s **primary** calendar.
+**No domain-wide delegation needed.**
 
-**One-time Workspace admin setup**
+When a check-in milestone is added/updated, the Web app (Execute as **Me**) creates an all-day event on **your** Google Calendar and **invites** each assignee. It shows on their calendars as a meeting invite.
 
-1. Cloud Console → enable **Google Calendar API** on the same project as Chat  
-2. Note the service account **client ID** from the JSON key (`client_id` number, not the email)  
-3. [Admin → API controls → Domain-wide delegation](https://admin.google.com/ac/owl/domainwidedelegation) → Add new  
-   - Client ID: that number  
-   - Scope: `https://www.googleapis.com/auth/calendar`  
-4. Apps Script: paste latest `Code.gs` → Save → **Web app → New version → Deploy**
+1. Paste latest `Code.gs` + `appsscript.json` → Save  
+2. **Web app → New version → Deploy** (Execute as Me, Anyone)  
+3. First calendar run: allow Calendar permission if Google asks  
 
-Event title: `Client — Project — Milestone name` on the milestone date.
+Event title: `Client — Project — Milestone name`.
+
+If invites never appear: confirm Team Google emails, and that the person who owns the Apps Script Web app can create calendar events.
 
 ---
 
