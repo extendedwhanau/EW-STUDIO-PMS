@@ -137,7 +137,13 @@ function doPost(e) {
       }
     });
 
-    const result = { ok: failed.length === 0 && sent.length > 0, sent: sent, failed: failed };
+    const result = {
+      ok: failed.length === 0 && sent.length > 0,
+      via: 'chat',
+      kind: kind || 'chat',
+      sent: sent,
+      failed: failed,
+    };
     Logger.log(JSON.stringify(result));
     PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
     return jsonOut(result);
@@ -150,7 +156,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return ContentService.createTextOutput('PMS Chat app is deployed. Use POST from Supabase.');
+  return ContentService.createTextOutput('PMS webhook v4 todo-tasks. Use POST from Supabase.');
 }
 
 /** Run in editor after messaging Studio PMS with test — same path as Supabase webhook. */
@@ -283,6 +289,50 @@ function testWebhookViaHttp() {
     : text;
   Logger.log('HTTP ' + res.getResponseCode() + ' ' + short.slice(0, 500));
   throw new Error('HTTP ' + res.getResponseCode() + ' ' + short.slice(0, 500));
+}
+
+/** Hits the live Web app with a fake dated to-do — same path as the PMS. */
+function testWebhookTodoViaHttp() {
+  const props = PropertiesService.getScriptProperties();
+  const url = props.getProperty('WEBHOOK_PUBLIC_URL') || ScriptApp.getService().getUrl();
+  if (!url) {
+    throw new Error('No Web app URL. Deploy → Manage deployments → Web app, copy /exec URL into WEBHOOK_PUBLIC_URL.');
+  }
+  const secret = props.getProperty('WEBHOOK_SECRET') || '';
+  const tomorrow = new Date();
+  tomorrow.setHours(12, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const iso = tomorrow.getFullYear() + '-'
+    + ('0' + (tomorrow.getMonth() + 1)).slice(-2) + '-'
+    + ('0' + tomorrow.getDate()).slice(-2);
+  const res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      webhook_secret: secret,
+      type: 'INSERT',
+      record: {
+        kind: 'calendar_todo',
+        summary: 'Studio PMS to-do webhook test',
+        recipients: [Session.getActiveUser().getEmail()],
+        payload: {
+          notify_kind: 'calendar_todo',
+          action: 'create',
+          todo_id: 'pms-todo-webhook-test',
+          date: iso,
+          done: false,
+          calendar_title: 'Studio PMS to-do webhook test',
+        },
+      },
+    }),
+    muteHttpExceptions: true,
+    followRedirects: true,
+  });
+  const text = res.getContentText() || '';
+  const short = text.indexOf('<!DOCTYPE') === 0
+    ? ('HTML error page. Redeploy Web app, access Anyone.')
+    : text;
+  throw new Error('HTTP ' + res.getResponseCode() + ' ' + short.slice(0, 800));
 }
 
 /** Run once in the editor — Google will ask for Calendar access. Then Deploy Web app → New version. */

@@ -7395,7 +7395,7 @@ export default function App() {
             className={`nav-item ${view === 'todos' ? 'active' : ''}`}
             onClick={() => { setView('todos'); closeSidebar(); }}
           >
-            To-dos
+            To-Do
           </button>
           <button
             type="button"
@@ -7522,7 +7522,7 @@ export default function App() {
                   : view === 'archive'
                     ? 'Archive'
                     : view === 'todos'
-                      ? 'To-dos'
+                      ? 'To-Do'
                       : 'Timeline'}
               </h1>
               {view === 'gantt' && ganttFocusMeta ? (

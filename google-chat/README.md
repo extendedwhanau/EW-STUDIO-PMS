@@ -142,9 +142,9 @@ If invites never appear: confirm Team Google emails, and that the person who own
 
 ---
 
-## To-dos → Google Tasks / Calendar
+## To-Do → Google Tasks / Calendar
 
-Dated to-dos from the PMS **To-dos** page become a Google **Task** only (Calendar → Tasks, with a checkbox). They do **not** create calendar events.
+Dated to-dos from the PMS **To-Do** page become a Google **Task** only (Calendar → Tasks, with a checkbox). They do **not** create calendar events.
 
 - Tick it done in the PMS → the Google Task completes  
 - Clear the date or delete the to-do → the Google Task is removed  
