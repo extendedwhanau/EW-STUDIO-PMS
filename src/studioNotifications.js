@@ -39,6 +39,15 @@ function projectLabel(project) {
   return client ? `${client} — ${name}` : name;
 }
 
+/** Short job name for notifications, e.g. NMO-Signage or NMO Signage */
+function jobShortLabel(project, separator = '-') {
+  const name = String(project?.name || '').trim() || 'Untitled';
+  const client = String(project?.client || '').trim();
+  if (!client) return name;
+  const sep = separator === ' ' ? ' ' : '-';
+  return `${client}${sep}${name}`;
+}
+
 function projectStatus(project) {
   return String(project?.status || '').trim();
 }
@@ -87,9 +96,9 @@ function timelineDatesChanged(prev, next) {
   return timelineFingerprint(prev) !== timelineFingerprint(next);
 }
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+const MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
 function parseIsoLocal(iso) {
@@ -98,22 +107,11 @@ function parseIsoLocal(iso) {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
-function dayOrdinal(n) {
-  const v = n % 100;
-  if (v >= 11 && v <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1: return `${n}st`;
-    case 2: return `${n}nd`;
-    case 3: return `${n}rd`;
-    default: return `${n}th`;
-  }
-}
-
-/** e.g. 14th August */
-function formatNiceDate(iso) {
+/** e.g. 24 Aug */
+function formatShortDate(iso) {
   const d = parseIsoLocal(iso);
   if (!d) return '—';
-  return `${dayOrdinal(d.getDate())} ${MONTHS[d.getMonth()]}`;
+  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
 }
 
 function startOfLocalDay(d) {
@@ -128,55 +126,49 @@ function formatDaysAway(iso) {
   const target = startOfLocalDay(end);
   const days = Math.round((target - today) / 86400000);
   if (days === 0) return 'Due today';
-  if (days === 1) return '1 day away';
-  if (days > 1) return `${days} days away`;
-  if (days === -1) return '1 day overdue';
-  return `${Math.abs(days)} days overdue`;
+  if (days === 1) return '1 Day away';
+  if (days > 1) return `${days} Days away`;
+  if (days === -1) return '1 Day overdue';
+  return `${Math.abs(days)} Days overdue`;
+}
+
+function dateRangeLine(project) {
+  const from = formatShortDate(project.startDate);
+  const to = formatShortDate(project.endDate);
+  return `From ${from}  →  ${to}`;
 }
 
 function dateChangeSummary(project) {
-  const label = projectLabel(project);
-  const from = formatNiceDate(project.startDate);
-  const to = formatNiceDate(project.endDate);
-  const away = formatDaysAway(project.endDate);
   const lines = [
-    label,
-    `Date change. From ${from} to ${to}.`,
+    `DATE CHANGE: ${jobShortLabel(project)}`,
+    dateRangeLine(project),
   ];
+  const away = formatDaysAway(project.endDate);
   if (away) lines.push(away);
   return lines.join('\n');
 }
 
 function assignedSummary(project) {
-  const label = projectLabel(project);
-  const from = formatNiceDate(project.startDate);
-  const to = formatNiceDate(project.endDate);
-  const away = formatDaysAway(project.endDate);
   const lines = [
-    label,
-    'You have been added to this job.',
-    `Dates: ${from} to ${to}.`,
+    `ADDED TO JOB: ${jobShortLabel(project)}`,
+    dateRangeLine(project),
   ];
+  const away = formatDaysAway(project.endDate);
   if (away) lines.push(away);
   return lines.join('\n');
 }
 
 function completedSummary(project) {
-  const label = projectLabel(project);
-  const end = formatNiceDate(project.endDate || project.completedAt);
-  return [
-    label,
-    'Job marked complete.',
-    end && end !== '—' ? `Ended ${end}.` : null,
-  ].filter(Boolean).join('\n');
+  const end = formatShortDate(project.endDate || project.completedAt);
+  const lines = [`JOB COMPLETE: ${jobShortLabel(project)}`];
+  if (end && end !== '—') lines.push(`Ended ${end}`);
+  return lines.join('\n');
 }
 
+/** Calendar event title, e.g. NMO Signage: Client review */
 function calendarEventTitle(project, milestoneTitle) {
-  const client = String(project?.client || '').trim();
-  const name = String(project?.name || '').trim() || 'Untitled';
   const milestone = String(milestoneTitle || '').trim() || 'Milestone';
-  const job = client ? `${client} — ${name}` : name;
-  return `${job} — ${milestone}`;
+  return `${jobShortLabel(project, ' ')}: ${milestone}`;
 }
 
 function newlyAddedMarkers(prev, next) {
