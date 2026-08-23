@@ -17,6 +17,7 @@ import { supabase } from './supabaseClient';
 import { isStudioEmail, normalizeEmail } from './studioConfig';
 import {
   buildNotifyEvents,
+  buildMilestoneBackfillEvents,
   enqueueStudioNotifications,
 } from './studioNotifications';
 import {
@@ -172,13 +173,13 @@ const CATEGORY_LABELS = {
 
 const OVERVIEW_COLUMN_TITLE_STORAGE = 'studio_overview_column_titles';
 const OVERVIEW_COLUMN_VISIBILITY_STORAGE = 'studio_overview_column_visibility';
-const OVERVIEW_COLUMN_IDS = ['thisWeek', 'studio', 'schedule', 'potential'];
+const OVERVIEW_COLUMN_IDS = ['studio', 'schedule', 'potential'];
 const OVERVIEW_COLUMN_FALLBACK_TITLES = {
-  thisWeek: 'This Week',
   studio: 'Studio',
   schedule: 'Scheduled',
   potential: 'Potential',
 };
+const MILESTONE_CALENDAR_BACKFILL_KEY = 'studio_milestone_calendar_backfill_v2';
 
 function loadOverviewColumnTitles() {
   try {
@@ -195,7 +196,6 @@ function loadOverviewColumnTitles() {
 
 function defaultOverviewColumnVisibility() {
   return {
-    thisWeek: true,
     studio: true,
     schedule: true,
     potential: true,
@@ -1088,7 +1088,74 @@ function todoJobLabel(project) {
   if (!project) return '';
   const name = String(project.name || '').trim() || 'Untitled';
   const client = String(project.client || '').trim();
-  return client ? `${client} — ${name}` : name;
+  return client ? `${client}: ${name}` : name;
+}
+
+function normalizeTodoHistoryEntry(item) {
+  if (!item) return null;
+  const title = String(item.title || '').trim();
+  if (!title) return null;
+  const dateRaw = String(item.date || '').trim();
+  return {
+    id: item.id || uuidv4(),
+    title,
+    designerId: String(item.designerId || '').trim(),
+    date: /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : '',
+    done: Boolean(item.done),
+    createdAt: item.createdAt || '',
+    doneAt: item.doneAt || '',
+    archivedAt: item.archivedAt || new Date().toISOString(),
+  };
+}
+
+function archiveTodoOntoProjects(todo, setProjects) {
+  if (!todo?.projectId || typeof setProjects !== 'function') return;
+  const entry = normalizeTodoHistoryEntry({
+    ...todo,
+    archivedAt: new Date().toISOString(),
+  });
+  if (!entry) return;
+  setProjects((prev) => prev.map((p) => {
+    if (p.id !== todo.projectId) return p;
+    const history = Array.isArray(p.todoHistory) ? p.todoHistory : [];
+    if (history.some((h) => h.id === entry.id)) {
+      return {
+        ...p,
+        todoHistory: history.map((h) => (h.id === entry.id ? { ...h, ...entry } : h)),
+      };
+    }
+    return { ...p, todoHistory: [...history, entry] };
+  }));
+}
+
+function jobGroupsFromTodos(items, projectById) {
+  const byJob = new Map();
+  (items || []).forEach((item) => {
+    const key = item.projectId || '_none';
+    if (!byJob.has(key)) byJob.set(key, []);
+    byJob.get(key).push(item);
+  });
+  const none = byJob.get('_none') || [];
+  byJob.delete('_none');
+  const groups = [...byJob.keys()]
+    .sort((a, b) => {
+      const la = todoJobLabel(projectById.get(a)) || '';
+      const lb = todoJobLabel(projectById.get(b)) || '';
+      return la.localeCompare(lb);
+    })
+    .map((id) => ({
+      projectId: id,
+      project: projectById.get(id) || null,
+      items: sortTodos(byJob.get(id)),
+    }));
+  if (none.length) {
+    groups.push({
+      projectId: '',
+      project: null,
+      items: sortTodos(none),
+    });
+  }
+  return groups;
 }
 
 function designerIdForSession(designers, sessionUser) {
@@ -1831,20 +1898,202 @@ const MilestoneSingleDatePicker = forwardRef(function MilestoneSingleDatePicker(
   );
 });
 
-function TodoOverlaySelect({ value, onChange, ariaLabel, options, children }) {
+function TodoJobPicker({ value, onChange, options, project, ariaLabel }) {
+  const label = project ? todoJobLabel(project) : '';
+  if (!value || !project) {
+    return (
+      <div className="sheet-designer-add-wrap todo-designer-add">
+        <button
+          type="button"
+          className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
+          aria-label={ariaLabel}
+          tabIndex={-1}
+        >
+          <span className="icon-bubble-glyph" aria-hidden>+</span>
+          <span className="icon-bubble-text">Job</span>
+        </button>
+        <select
+          className="sheet-designer-add-select"
+          value=""
+          aria-label={ariaLabel}
+          onChange={(e) => {
+            const next = e.target.value;
+            if (next) onChange(next);
+            e.target.value = '';
+          }}
+        >
+          <option value="" disabled hidden />
+          {(options || []).filter((opt) => opt.value).map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
   return (
-    <div className="todo-pick">
-      <span className="todo-pick-face">{children}</span>
-      <select
-        className="todo-pick-select"
-        value={value}
-        aria-label={ariaLabel}
-        onChange={(e) => onChange(e.target.value)}
+    <div className="todo-job-chip">
+      <div className="todo-job-chip-main">
+        <span className="todo-pick-face">
+          <span className="todo-pick-label">{label}</span>
+        </span>
+        <select
+          className="todo-job-chip-select"
+          value={value}
+          aria-label={ariaLabel}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {(options || []).map((opt) => (
+            <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+      <button
+        type="button"
+        className="sheet-designer-chip-remove todo-chip-clear"
+        aria-label={`Remove ${label}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange('');
+        }}
       >
-        {options.map((opt) => (
-          <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
+        ×
+      </button>
+    </div>
+  );
+}
+
+function TodoDateField({
+  date,
+  onChange,
+  className = '',
+  emptyLabel = 'Date',
+  ariaLabel = 'Set date',
+  overdue = false,
+}) {
+  if (!date) {
+    return (
+      <div className="sheet-designer-add-wrap todo-designer-add todo-date-add">
+        <button
+          type="button"
+          className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
+          aria-label={ariaLabel}
+          tabIndex={-1}
+        >
+          <span className="icon-bubble-glyph" aria-hidden>+</span>
+          <span className="icon-bubble-text">Date</span>
+        </button>
+        <MilestoneSingleDatePicker
+          date={date}
+          onChange={onChange}
+          className={`todo-date-add-hit ${className}`.trim()}
+          emptyLabel={emptyLabel}
+          ariaLabel={ariaLabel}
+          rangeFormat="task"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`todo-date-chip${overdue ? ' todo-date-chip--overdue' : ''}`}>
+      <MilestoneSingleDatePicker
+        date={date}
+        onChange={onChange}
+        className={`todo-date-chip-face ${className}`.trim()}
+        emptyLabel={emptyLabel}
+        ariaLabel={ariaLabel}
+        rangeFormat="task"
+      />
+      <button
+        type="button"
+        className="sheet-designer-chip-remove todo-chip-clear"
+        aria-label="Clear date"
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange('');
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function TodoDesignerPicker({
+  value,
+  onChange,
+  designers,
+  ariaLabel,
+  showName = false,
+  avatarSize = 20,
+}) {
+  const owner = (designers || []).find((d) => d.id === value);
+  const assignedOptions = [
+    { value: '', label: 'No one' },
+    ...(designers || []).map((d) => ({ value: d.id, label: d.name })),
+  ];
+
+  if (!owner) {
+    return (
+      <div className="sheet-designer-add-wrap todo-designer-add">
+        <button
+          type="button"
+          className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
+          aria-label={ariaLabel}
+          tabIndex={-1}
+        >
+          <span className="icon-bubble-glyph" aria-hidden>+</span>
+          <span className="icon-bubble-text">Designer</span>
+        </button>
+        <select
+          className="sheet-designer-add-select"
+          value=""
+          aria-label={ariaLabel}
+          onChange={(e) => {
+            const next = e.target.value;
+            if (next) onChange(next);
+            e.target.value = '';
+          }}
+        >
+          <option value="" disabled hidden />
+          {(designers || []).map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  return (
+    <div className="todo-designer-chip">
+      <div className="todo-designer-chip-main">
+        <span className="todo-pick-face">
+          <Avatar designer={owner} size={avatarSize} />
+          {showName ? <span className="todo-pick-label">{owner.name}</span> : null}
+        </span>
+        <select
+          className="todo-designer-chip-select"
+          value={value}
+          aria-label={ariaLabel}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {assignedOptions.map((opt) => (
+            <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+      <button
+        type="button"
+        className="sheet-designer-chip-remove todo-chip-clear"
+        aria-label={`Remove ${owner.name}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange('');
+        }}
+      >
+        ×
+      </button>
     </div>
   );
 }
@@ -1852,6 +2101,7 @@ function TodoOverlaySelect({ value, onChange, ariaLabel, options, children }) {
 function TodosView({
   todos,
   setTodos,
+  setProjects,
   designers,
   projects,
   filterDesigner,
@@ -1863,9 +2113,7 @@ function TodosView({
   const [composerJob, setComposerJob] = useState('');
   const [composerDate, setComposerDate] = useState('');
   const [composerOwner, setComposerOwner] = useState(() => (
-    filterDesigner !== 'all'
-      ? filterDesigner
-      : designerIdForSession(designers, sessionUser)
+    filterDesigner !== 'all' ? filterDesigner : ''
   ));
 
   useEffect(() => {
@@ -1877,10 +2125,8 @@ function TodosView({
       setComposerOwner(filterDesigner);
       return;
     }
-    if (composerOwner && designers.some((d) => d.id === composerOwner)) return;
-    const next = designerIdForSession(designers, sessionUser);
-    if (next) setComposerOwner(next);
-  }, [filterDesigner, designers, sessionUser, composerOwner]);
+    setComposerOwner('');
+  }, [filterDesigner]);
 
   const projectById = useMemo(() => {
     const map = new Map();
@@ -1904,11 +2150,8 @@ function TodosView({
     ];
   }, [projects, composerJob, projectById]);
 
-  const ownerOptions = (designers || []).map((d) => ({ value: d.id, label: d.name }));
-  const ownerDesigner = designers.find((d) => d.id === composerOwner);
   const composerJobProject = composerJob ? projectById.get(composerJob) : null;
-  const ownerHasEmail = Boolean(normalizeEmail(ownerDesigner?.email));
-  const canSyncTasks = Boolean(sessionUser?.email && ownerHasEmail);
+  const canSyncTasks = Boolean(sessionUser?.email);
 
   const visibleTodos = useMemo(() => {
     const scoped = filterDesigner === 'all'
@@ -1917,32 +2160,34 @@ function TodosView({
     return sortTodos(scoped);
   }, [todos, filterDesigner]);
 
-  const groups = useMemo(() => {
+  const designerGroups = useMemo(() => {
     if (filterDesigner !== 'all') {
       const owner = designers.find((d) => d.id === filterDesigner);
-      return [{ designer: owner || null, items: visibleTodos }];
+      const items = visibleTodos.filter((item) => item.designerId === filterDesigner);
+      return items.length
+        ? [{ designer: owner || null, jobGroups: jobGroupsFromTodos(items, projectById) }]
+        : [];
     }
-    const byOwner = new Map();
-    visibleTodos.forEach((item) => {
-      const key = item.designerId || '_none';
-      if (!byOwner.has(key)) byOwner.set(key, []);
-      byOwner.get(key).push(item);
-    });
-    const ordered = [];
-    designers.forEach((d) => {
-      const items = byOwner.get(d.id);
-      if (items?.length) ordered.push({ designer: d, items });
-      byOwner.delete(d.id);
-    });
-    byOwner.forEach((items) => {
-      if (items.length) ordered.push({ designer: null, items });
-    });
-    return ordered;
-  }, [visibleTodos, filterDesigner, designers]);
+    return designers
+      .map((d) => {
+        const items = visibleTodos.filter((item) => item.designerId === d.id);
+        if (!items.length) return null;
+        return { designer: d, jobGroups: jobGroupsFromTodos(items, projectById) };
+      })
+      .filter(Boolean);
+  }, [visibleTodos, filterDesigner, designers, projectById]);
+
+  const jobOnlyGroups = useMemo(() => {
+    if (filterDesigner !== 'all') return [];
+    return jobGroupsFromTodos(
+      visibleTodos.filter((item) => !item.designerId),
+      projectById,
+    );
+  }, [visibleTodos, filterDesigner, projectById]);
 
   const addLines = (raw) => {
     const lines = splitTodoLines(raw);
-    if (!lines.length || !composerOwner) return false;
+    if (!lines.length) return false;
     const createdAtBase = Date.now();
     const items = lines.map((title, i) => normalizeTodo({
       title,
@@ -1972,7 +2217,11 @@ function TodosView({
   };
 
   const removeTodo = (id) => {
-    setTodos((prev) => prev.filter((item) => item.id !== id));
+    setTodos((prev) => {
+      const found = prev.find((item) => item.id === id);
+      if (found) archiveTodoOntoProjects(found, setProjects);
+      return prev.filter((item) => item.id !== id);
+    });
   };
 
   const toggleDone = (item) => {
@@ -1987,10 +2236,8 @@ function TodosView({
       <div className="todo-composer-sticky">
         {!canSyncTasks ? (
           <p className="todo-sync-hint">
-            {!sessionUser?.email
-              ? 'Sign in with Google to send dated to-dos to Tasks.'
-              : 'Set a Google email on this person in Team so dated to-dos can sync.'}
-            {!sessionUser?.email && onSignIn ? (
+            Sign in with Google to send dated to-dos to Tasks.
+            {onSignIn ? (
               <>
                 {' '}
                 <button type="button" className="todo-sync-hint-btn" onClick={onSignIn}>
@@ -2001,38 +2248,20 @@ function TodosView({
           </p>
         ) : null}
         <div className="todo-composer">
-          <TodoOverlaySelect
+          <TodoDesignerPicker
             value={composerOwner}
             onChange={setComposerOwner}
+            designers={designers}
             ariaLabel="Assign to"
-            options={ownerOptions}
-          >
-            {ownerDesigner ? (
-              <>
-                <Avatar designer={ownerDesigner} size={20} />
-                <span className="todo-pick-label">{ownerDesigner.name}</span>
-              </>
-            ) : (
-              <span className="todo-pick-label todo-pick-label--muted">Who</span>
-            )}
-          </TodoOverlaySelect>
-          <TodoOverlaySelect
+            showName
+            avatarSize={20}
+          />
+          <TodoJobPicker
             value={composerJob}
             onChange={setComposerJob}
-            ariaLabel="Link to job"
             options={jobOptions}
-          >
-            <span className={`todo-pick-label${composerJobProject ? '' : ' todo-pick-label--muted'}`}>
-              {composerJobProject ? todoJobLabel(composerJobProject) : 'Job'}
-            </span>
-          </TodoOverlaySelect>
-          <MilestoneSingleDatePicker
-            date={composerDate}
-            onChange={setComposerDate}
-            className="todo-composer-date"
-            emptyLabel="Date"
-            ariaLabel="Due date for new to-dos"
-            rangeFormat="task"
+            project={composerJobProject}
+            ariaLabel="Link to job"
           />
           <input
             ref={inputRef}
@@ -2056,6 +2285,13 @@ function TodosView({
               if (addLines(combined)) setDraft('');
             }}
           />
+          <TodoDateField
+            date={composerDate}
+            onChange={setComposerDate}
+            className="todo-composer-date"
+            emptyLabel="Date"
+            ariaLabel="Due date for new to-dos"
+          />
         </div>
       </div>
 
@@ -2065,46 +2301,55 @@ function TodosView({
         </div>
       ) : (
         <div className="todo-groups">
-          {groups.map((group) => {
-            const heading = filterDesigner === 'all'
-              ? (group.designer?.name || 'Unassigned')
-              : null;
-            const openItems = group.items.filter((item) => !item.done);
-            const doneItems = group.items.filter((item) => item.done);
-            return (
-              <section key={group.designer?.id || 'unassigned'} className="todo-group">
-                {heading ? <h2 className="project-feed-heading">{heading}</h2> : null}
-                <div className="todo-list">
-                  {openItems.map((item) => (
-                    <TodoRow
-                      key={item.id}
-                      item={item}
-                      designers={designers}
-                      projectById={projectById}
-                      jobOptions={jobOptions}
-                      ownerOptions={ownerOptions}
-                      onToggle={() => toggleDone(item)}
-                      onPatch={(patch) => patchTodo(item.id, patch)}
-                      onRemove={() => removeTodo(item.id)}
-                    />
-                  ))}
-                  {doneItems.map((item) => (
-                    <TodoRow
-                      key={item.id}
-                      item={item}
-                      designers={designers}
-                      projectById={projectById}
-                      jobOptions={jobOptions}
-                      ownerOptions={ownerOptions}
-                      onToggle={() => toggleDone(item)}
-                      onPatch={(patch) => patchTodo(item.id, patch)}
-                      onRemove={() => removeTodo(item.id)}
-                    />
-                  ))}
+          {designerGroups.map((group) => (
+            <section key={group.designer?.id || 'designer'} className="todo-group">
+              {filterDesigner === 'all' && group.designer ? (
+                <h2 className="todo-heading">{group.designer.name}</h2>
+              ) : null}
+              {group.jobGroups.map((job) => (
+                <div key={job.projectId || 'no-job'} className="todo-job">
+                  {job.project ? (
+                    <h3 className="todo-job-heading">{todoJobLabel(job.project)}</h3>
+                  ) : null}
+                  <div className="todo-list">
+                    {job.items.map((item) => (
+                      <TodoRow
+                        key={item.id}
+                        item={item}
+                        designers={designers}
+                        projectById={projectById}
+                        jobOptions={jobOptions}
+                        onToggle={() => toggleDone(item)}
+                        onPatch={(patch) => patchTodo(item.id, patch)}
+                        onRemove={() => removeTodo(item.id)}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </section>
-            );
-          })}
+              ))}
+            </section>
+          ))}
+          {jobOnlyGroups.map((job) => (
+            <section key={`job-${job.projectId || 'none'}`} className="todo-group">
+              {job.project ? (
+                <h2 className="todo-job-heading">{todoJobLabel(job.project)}</h2>
+              ) : null}
+              <div className="todo-list">
+                {job.items.map((item) => (
+                  <TodoRow
+                    key={item.id}
+                    item={item}
+                    designers={designers}
+                    projectById={projectById}
+                    jobOptions={jobOptions}
+                    onToggle={() => toggleDone(item)}
+                    onPatch={(patch) => patchTodo(item.id, patch)}
+                    onRemove={() => removeTodo(item.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
         </div>
       )}
     </div>
@@ -2116,12 +2361,10 @@ function TodoRow({
   designers,
   projectById,
   jobOptions,
-  ownerOptions,
   onToggle,
   onPatch,
   onRemove,
 }) {
-  const owner = designers.find((d) => d.id === item.designerId);
   const project = item.projectId ? projectById.get(item.projectId) : null;
   const rowJobOptions = project && !jobOptions.some((opt) => opt.value === project.id)
     ? [...jobOptions, { value: project.id, label: todoJobLabel(project) }]
@@ -2168,35 +2411,27 @@ function TodoRow({
           }
         }}
       />
-      <TodoOverlaySelect
+      <TodoDesignerPicker
         value={item.designerId}
         onChange={(id) => onPatch({ designerId: id })}
+        designers={designers}
         ariaLabel="Assigned to"
-        options={ownerOptions}
-      >
-        {owner ? (
-          <Avatar designer={owner} size={18} />
-        ) : (
-          <span className="todo-pick-label todo-pick-label--muted">Who</span>
-        )}
-      </TodoOverlaySelect>
-      <TodoOverlaySelect
+        avatarSize={18}
+      />
+      <TodoJobPicker
         value={item.projectId || ''}
         onChange={(id) => onPatch({ projectId: id })}
-        ariaLabel="Job"
         options={rowJobOptions}
-      >
-        <span className={`todo-pick-label${project ? '' : ' todo-pick-label--muted'}`}>
-          {project ? todoJobLabel(project) : 'Job'}
-        </span>
-      </TodoOverlaySelect>
-      <MilestoneSingleDatePicker
+        project={project}
+        ariaLabel="Job"
+      />
+      <TodoDateField
         date={item.date}
         onChange={(date) => onPatch({ date })}
         className={`todo-row-date${overdue ? ' todo-row-date--overdue' : ''}`}
         emptyLabel="Date"
         ariaLabel={`Date for ${item.title}`}
-        rangeFormat="task"
+        overdue={overdue}
       />
       <button
         type="button"
@@ -3407,6 +3642,36 @@ function ClientOverviewModal({ project, onClose }) {
   );
 }
 
+function TodoHistoryList({ entries, designers }) {
+  const items = (entries || [])
+    .slice()
+    .sort((a, b) => String(b.archivedAt || '').localeCompare(String(a.archivedAt || '')));
+  if (!items.length) {
+    return (
+      <p className="todo-history-empty">No to-do history for this job yet.</p>
+    );
+  }
+  return (
+    <ul className="todo-history-list">
+      {items.map((entry) => {
+        const designer = (designers || []).find((d) => d.id === entry.designerId);
+        const bits = [
+          designer?.name || null,
+          entry.date ? formatMilestoneDateShort(entry.date) : null,
+          entry.done ? 'Done' : null,
+          entry.archivedAt ? `Archived ${formatMilestoneDateShort(entry.archivedAt.slice(0, 10))}` : null,
+        ].filter(Boolean);
+        return (
+          <li key={entry.id} className="todo-history-item">
+            <p className="todo-history-title">{entry.title}</p>
+            {bits.length ? <p className="todo-history-meta">{bits.join(' · ')}</p> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function ProjectModal({
   project,
   designers,
@@ -3418,6 +3683,7 @@ function ProjectModal({
   onOpenTimeline,
 }) {
   const [showOverview, setShowOverview] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const phasesAnchorRef = useRef(null);
   const isEditing = Boolean(project);
 
@@ -3528,18 +3794,27 @@ function ProjectModal({
       >
         <div className="modal-header modal-header--project">
           {isEditing ? (
-            showTimelineLink ? (
+            <div className="modal-project-link-row">
+              {showTimelineLink ? (
+                <button
+                  type="button"
+                  className="modal-project-timeline-link"
+                  onClick={openTimelineView}
+                  aria-label={`Open ${form.name.trim() || 'project'} on timeline`}
+                >
+                  Timeline
+                </button>
+              ) : (
+                <span className="modal-project-sheet-heading">Project</span>
+              )}
               <button
                 type="button"
-                className="modal-project-timeline-link"
-                onClick={openTimelineView}
-                aria-label={`Open ${form.name.trim() || 'project'} on timeline`}
+                className={`modal-project-timeline-link${showHistory ? ' is-active' : ''}`}
+                onClick={() => setShowHistory((v) => !v)}
               >
-                Timeline
+                View history
               </button>
-            ) : (
-              <span className="modal-project-sheet-heading">Project</span>
-            )
+            </div>
           ) : (
             <h2 className="modal-project-sheet-heading">New Project</h2>
           )}
@@ -3548,6 +3823,13 @@ function ProjectModal({
 
         <form className="modal-project-sheet-form" onSubmit={submitProject} noValidate>
         <div className="modal-body modal-body--project">
+          {showHistory ? (
+            <TodoHistoryList
+              entries={form.todoHistory}
+              designers={designers}
+            />
+          ) : (
+            <>
           <ProjectDetailsPanel
             form={form}
             set={set}
@@ -3567,6 +3849,8 @@ function ProjectModal({
               hideProjectHeader
             />
           </div>
+            </>
+          )}
         </div>
 
         <div className="modal-footer modal-footer--project modal-footer--project-form">
@@ -6931,6 +7215,28 @@ export default function App() {
   }, [designers, projects, todos, cloudReady, sessionUser]);
 
   useEffect(() => {
+    if (!cloudReady || !isSupabaseConfigured() || !sessionUser?.email) return;
+    let already = false;
+    try {
+      already = localStorage.getItem(MILESTONE_CALENDAR_BACKFILL_KEY) === '1';
+    } catch {
+      already = true;
+    }
+    if (already) return;
+    const events = buildMilestoneBackfillEvents({
+      projects,
+      designers,
+      actorEmail: sessionUser.email,
+    });
+    if (events.length) enqueueStudioNotifications(events);
+    try {
+      localStorage.setItem(MILESTONE_CALENDAR_BACKFILL_KEY, '1');
+    } catch {
+      /* ignore */
+    };
+  }, [cloudReady, sessionUser, projects, designers]);
+
+  useEffect(() => {
     try {
       localStorage.setItem(OVERVIEW_COLUMN_TITLE_STORAGE, JSON.stringify(overviewColumnTitles));
     } catch {
@@ -7032,9 +7338,15 @@ export default function App() {
           const { completedAt, ...rest } = base;
           return rest;
         })();
-    setProjects(prev => {
-      const exists = prev.find(x => x.id === normalized.id);
-      return exists ? prev.map(x => x.id === normalized.id ? normalized : x) : [...prev, normalized];
+    setProjects((prev) => {
+      const exists = prev.find((x) => x.id === normalized.id);
+      const next = {
+        ...normalized,
+        todoHistory: Array.isArray(normalized.todoHistory)
+          ? normalized.todoHistory
+          : (exists?.todoHistory || []),
+      };
+      return exists ? prev.map((x) => (x.id === normalized.id ? next : x)) : [...prev, next];
     });
   };
   const deleteProject = (id) => {
@@ -7262,6 +7574,7 @@ export default function App() {
 
   const thisWeekFeed = sortFeed(mainProjects.filter((p) => getProjectCategory(p) === 'thisWeek'));
   const studioFeed = sortSecondaryFeed(mainProjects.filter((p) => getProjectCategory(p) === 'studio'));
+  const studioBoardFeed = [...thisWeekFeed, ...studioFeed];
   const pipelineThisWeekFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'thisWeek'));
   const pipelineStudioFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'studio'));
   const overviewScheduleFeed = pipelineProjects.slice().sort((a, b) =>
@@ -7555,7 +7868,6 @@ export default function App() {
                 {view === 'overview' && (
                   <OverviewFilterMenu
                     titles={{
-                      thisWeek: overviewColumnTitles.thisWeek,
                       studio: overviewColumnTitles.studio,
                       schedule: OVERVIEW_COLUMN_FALLBACK_TITLES.schedule,
                       potential: OVERVIEW_COLUMN_FALLBACK_TITLES.potential,
@@ -7609,30 +7921,17 @@ export default function App() {
         <div className={`main-content${view === 'overview' ? ' main-content--overview' : ''}${view === 'todos' ? ' main-content--todos' : ''}`}>
           {view === 'overview' && (
             <div className={`overview-board${overviewDragId ? ' overview-board--dragging' : ''}`}>
-              {overviewColumnVisibility.thisWeek ? (
-              <OverviewColumn
-                title={overviewColumnTitles.thisWeek}
-                columnId="thisWeek"
-                count={thisWeekFeed.length}
-                empty="Nothing pinned for this week."
-                renameFallback={CATEGORY_LABELS.thisWeek}
-                onRename={(next) => setOverviewColumnTitles((t) => ({ ...t, thisWeek: next }))}
-                {...overviewColDragProps('thisWeek')}
-              >
-                {thisWeekFeed.map((p) => overviewBoardCard(p, 'due'))}
-              </OverviewColumn>
-              ) : null}
               {overviewColumnVisibility.studio ? (
               <OverviewColumn
                 title={overviewColumnTitles.studio}
                 columnId="studio"
-                count={studioFeed.length}
-                empty="No other jobs in the studio."
+                count={studioBoardFeed.length}
+                empty="No jobs in the studio."
                 renameFallback={CATEGORY_LABELS.studio}
                 onRename={(next) => setOverviewColumnTitles((t) => ({ ...t, studio: next }))}
                 {...overviewColDragProps('studio')}
               >
-                {studioFeed.map((p) => overviewBoardCard(p, 'due'))}
+                {studioBoardFeed.map((p) => overviewBoardCard(p, 'due'))}
               </OverviewColumn>
               ) : null}
               {overviewColumnVisibility.schedule ? (
@@ -7774,6 +8073,7 @@ export default function App() {
             <TodosView
               todos={todos}
               setTodos={setTodos}
+              setProjects={setProjects}
               designers={designers}
               projects={projects}
               filterDesigner={filterDesigner}
@@ -7802,7 +8102,7 @@ export default function App() {
         <div
           ref={overviewDragGhostRef}
           className="overview-drag-ghost"
-          style={{ width: overviewDragSize?.w || 300 }}
+          style={{ width: overviewDragSize?.w || 350 }}
         >
           <ProjectRow
             project={overviewDragProject}

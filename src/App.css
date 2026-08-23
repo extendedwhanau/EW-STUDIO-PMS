@@ -731,8 +731,8 @@ html, body, #root {
 .overview-col {
   display: flex;
   flex-direction: column;
-  flex: 0 0 300px;
-  width: 300px;
+  flex: 0 0 350px;
+  width: 350px;
   min-width: 0;
   min-height: 0;
 }
@@ -824,7 +824,7 @@ html, body, #root {
 }
 
 .project-row.project-row--board {
-  width: 300px;
+  width: 350px;
   max-width: 100%;
   background: var(--project-card-fill);
   border-radius: 8px;
@@ -931,8 +931,8 @@ body.overview-dragging * {
   }
 
   .overview-col {
-    flex-basis: min(300px, 78vw);
-    width: min(300px, 78vw);
+    flex-basis: min(350px, 78vw);
+    width: min(350px, 78vw);
   }
 }
 
@@ -1522,6 +1522,13 @@ body.overview-dragging * {
   gap: 10px;
 }
 
+.modal-project-link-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
 .modal-project-timeline-link {
   font-family: inherit;
   font-size: var(--sheet-pt);
@@ -1536,6 +1543,10 @@ body.overview-dragging * {
   line-height: 1.3;
   transition: color 0.12s ease;
   -webkit-tap-highlight-color: transparent;
+}
+
+.modal-project-timeline-link.is-active {
+  color: var(--text-primary);
 }
 
 .modal-project-timeline-link:hover,
@@ -4936,7 +4947,7 @@ body.client-overview-open {
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--text-primary);
@@ -4950,7 +4961,7 @@ body.client-overview-open {
 
 .todo-composer-date {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
   background: none;
@@ -4998,7 +5009,7 @@ body.client-overview-open {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.01em;
   color: var(--text-primary);
@@ -5026,6 +5037,258 @@ body.client-overview-open {
   gap: 28px;
 }
 
+.todo-heading {
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.todo-job-heading {
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.todo-job {
+  margin-top: 4px;
+}
+
+.todo-job + .todo-job {
+  margin-top: 16px;
+}
+
+.todo-designer-add {
+  flex-shrink: 0;
+}
+
+.todo-composer .todo-designer-add .icon-bubble-text,
+.todo-row .todo-designer-add .icon-bubble-text {
+  max-width: 8em;
+  margin-left: 6px;
+  opacity: 1;
+}
+
+.todo-composer .todo-designer-add .sheet-milestone-add-task.icon-bubble,
+.todo-row .todo-designer-add .sheet-milestone-add-task.icon-bubble {
+  width: auto;
+  min-width: var(--bubble-size-sm);
+}
+
+/* No hover/focus chrome on empty +Designer / +Job / +Date */
+.todo-designer-add .sheet-milestone-add-task,
+.todo-designer-add .sheet-milestone-add-task.icon-bubble,
+.todo-designer-add .sheet-milestone-add-task:hover,
+.todo-designer-add .sheet-milestone-add-task.icon-bubble:hover,
+.todo-designer-add .sheet-milestone-add-task:focus,
+.todo-designer-add .sheet-milestone-add-task:focus-visible,
+.todo-designer-add .sheet-milestone-add-task.icon-bubble:focus-visible,
+.todo-designer-add:hover .sheet-milestone-add-task.icon-bubble,
+.todo-designer-add:focus-within .sheet-milestone-add-task.icon-bubble {
+  color: var(--bubble-icon-strong);
+  background: var(--bubble-bg);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  outline: none;
+  transition: none;
+}
+
+.todo-date-add-hit,
+.todo-date-add-hit:hover,
+.todo-date-add-hit:focus,
+.todo-date-add-hit:focus-visible,
+.todo-date-add-hit.sheet-date-range-btn--active,
+.todo-date-add-hit.sheet-date-range-btn--empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  background: transparent !important;
+  box-shadow: none !important;
+  min-height: 0;
+  color: transparent !important;
+  outline: none;
+}
+
+.todo-designer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 220px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+  position: relative;
+}
+
+.todo-designer-chip-main {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.todo-designer-chip-main .todo-pick-face {
+  pointer-events: none;
+}
+
+.todo-designer-chip-select {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.todo-job-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 220px;
+  position: relative;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.todo-job-chip-main {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.todo-job-chip-main .todo-pick-face {
+  pointer-events: none;
+  padding: 4px 8px;
+}
+
+.todo-designer-chip .todo-pick-label,
+.todo-job-chip .todo-pick-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.todo-job-chip-select {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.todo-date-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  position: relative;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+  gap: 0;
+}
+
+.todo-date-chip-face,
+.todo-date-chip .todo-composer-date,
+.todo-date-chip .todo-row-date {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  padding: 4px 8px;
+  min-height: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-primary);
+}
+
+.todo-date-chip--overdue .todo-date-chip-face,
+.todo-date-chip--overdue .todo-composer-date,
+.todo-date-chip--overdue .todo-row-date {
+  color: #C45C26;
+}
+
+.todo-date-chip .todo-composer-date:hover,
+.todo-date-chip .todo-row-date:hover,
+.todo-date-chip .todo-composer-date.sheet-date-range-btn--active,
+.todo-date-chip .todo-row-date.sheet-date-range-btn--active {
+  background: none;
+  box-shadow: none;
+}
+
+.todo-composer .todo-date-chip,
+.todo-composer .todo-date-add {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.todo-chip-clear {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  z-index: 3;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.todo-designer-chip:hover .todo-chip-clear,
+.todo-designer-chip:focus-within .todo-chip-clear,
+.todo-job-chip:hover .todo-chip-clear,
+.todo-job-chip:focus-within .todo-chip-clear,
+.todo-date-chip:hover .todo-chip-clear,
+.todo-date-chip:focus-within .todo-chip-clear {
+  opacity: 0.55;
+  pointer-events: auto;
+}
+
+.todo-chip-clear:hover {
+  opacity: 1;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.todo-designer-chip:hover,
+.todo-designer-chip:focus-within,
+.todo-job-chip:hover,
+.todo-job-chip:focus-within,
+.todo-date-chip:hover,
+.todo-date-chip:focus-within {
+  padding-right: 18px;
+}
+
 .todo-group .project-feed-heading {
   margin-bottom: 8px;
 }
@@ -5041,6 +5304,7 @@ body.client-overview-open {
   gap: 8px;
   padding: 7px 2px;
   border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+  position: relative;
 }
 
 .todo-row:last-child {
@@ -5097,7 +5361,7 @@ body.client-overview-open {
 
 .todo-row-date {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
   background: none;
@@ -5123,16 +5387,18 @@ body.client-overview-open {
 }
 
 .todo-row-remove {
+  position: relative;
   flex-shrink: 0;
   width: 22px;
   height: 22px;
+  margin-left: 10px;
   font-size: 16px;
-  opacity: 0;
+  opacity: 0.55;
+  pointer-events: auto;
 }
 
-.todo-row:hover .todo-row-remove,
-.todo-row:focus-within .todo-row-remove {
-  opacity: 0.55;
+.todo-row-remove:hover {
+  opacity: 1;
 }
 
 .todo-row--done .todo-row-title {
@@ -5160,6 +5426,57 @@ body.client-overview-open {
   }
 
   .todo-row-remove {
-    opacity: 0.45;
+    opacity: 0.55;
+    pointer-events: auto;
   }
+
+  .todo-chip-clear {
+    opacity: 0.45;
+    pointer-events: auto;
+  }
+
+  .todo-designer-chip,
+  .todo-job-chip,
+  .todo-date-chip {
+    padding-right: 18px;
+  }
+}
+
+.todo-history-empty {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.todo-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.todo-history-item {
+  padding: 10px 0;
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+}
+
+.todo-history-item:last-child {
+  border-bottom: none;
+}
+
+.todo-history-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.todo-history-meta {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
 }

@@ -228,6 +228,53 @@ function phaseAsCalendarItem(phase) {
   };
 }
 
+function calendarItemsForProject(project) {
+  const items = [];
+  (project?.markers || []).forEach((marker) => {
+    const date = String(marker.date || marker.startDate || '').trim();
+    const title = String(marker.title || '').trim();
+    if (marker?.id && date && title) items.push({ id: marker.id, title, date });
+  });
+  (project?.milestones || []).forEach((phase) => {
+    const item = phaseAsCalendarItem(phase);
+    if (item.id && item.title && item.date) items.push(item);
+  });
+  return items;
+}
+
+/** One-shot: queue Google Calendar events for every dated milestone already in the PMS. */
+export function buildMilestoneBackfillEvents({ projects, designers, actorEmail }) {
+  const emailById = designerEmailById(designers);
+  const actor = normalizeEmail(actorEmail);
+  const events = [];
+  (projects || []).forEach((project) => {
+    calendarItemsForProject(project).forEach((item) => {
+      const recipients = uniqueEmails([
+        ...emailsForProject(project, emailById),
+        KAYE_EMAIL,
+      ]);
+      const eventTitle = calendarEventTitle(project, item.title);
+      events.push({
+        kind: 'calendar_milestone',
+        project_id: project?.id || null,
+        project_label: projectLabel(project),
+        summary: eventTitle,
+        recipients,
+        actor_email: actor || null,
+        payload: {
+          action: 'create',
+          marker_id: item.id,
+          milestone_title: item.title,
+          date: item.date,
+          calendar_title: eventTitle,
+          notify_kind: 'calendar_milestone',
+        },
+      });
+    });
+  });
+  return events;
+}
+
 /**
  * Chat:
  * 1. Added to a job — not while Potential / Scheduled
@@ -275,8 +322,10 @@ export function buildNotifyEvents({
     const date = String(item.date || item.startDate || item.endDate || '').trim();
     const title = String(item.title || '').trim();
     if (!date || !title) return;
-    const recipients = emailsForProject(project, emailById);
-    if (recipients.length === 0) return;
+    const recipients = uniqueEmails([
+      ...emailsForProject(project, emailById),
+      KAYE_EMAIL,
+    ]);
     const eventTitle = calendarEventTitle(project, title);
     push(
       project,
@@ -289,6 +338,7 @@ export function buildNotifyEvents({
         milestone_title: title,
         date,
         calendar_title: eventTitle,
+        notify_kind: 'calendar_milestone',
       },
       { includeActor: true },
     );
@@ -426,7 +476,7 @@ function syncTodoCalendars({
 
   const pushTodo = (todo, projects, action) => {
     if (!todo?.id) return;
-    const email = emailById.get(todo.designerId);
+    const email = emailById.get(todo.designerId) || KAYE_EMAIL;
     if (!email) return;
     const project = findProjectById(projects, todo.projectId);
     const title = todoTaskTitle(todo, project);
