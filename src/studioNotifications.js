@@ -165,10 +165,15 @@ function completedSummary(project) {
   return lines.join('\n');
 }
 
-/** Calendar event title, e.g. NMO Signage: Client review */
+/** Calendar event title, e.g. Packaging Suite: Client review */
 function calendarEventTitle(project, milestoneTitle) {
+  const projectName = String(project?.name || '').trim() || 'Untitled';
   const milestone = String(milestoneTitle || '').trim() || 'Milestone';
-  return `${jobShortLabel(project, ' ')}: ${milestone}`;
+  return `${projectName}: ${milestone}`;
+}
+
+function calendarEventClient(project) {
+  return String(project?.client || '').trim();
 }
 
 function newlyAddedMarkers(prev, next) {
@@ -194,50 +199,13 @@ function changedMarkers(prev, next) {
   });
 }
 
-/** Phase milestones (timeline blocks) with an end or start date. */
-function newlyAddedPhases(prev, next) {
-  const before = new Map((prev?.milestones || []).map((p) => [String(p.id || ''), p]));
-  return (next?.milestones || []).filter((p) => {
-    const id = String(p?.id || '');
-    if (!id || before.has(id)) return false;
-    const title = String(p.title || '').trim();
-    const date = String(p.endDate || p.startDate || '').trim();
-    return Boolean(title && date);
-  });
-}
-
-function changedPhases(prev, next) {
-  const before = new Map((prev?.milestones || []).map((p) => [String(p.id || ''), p]));
-  return (next?.milestones || []).filter((p) => {
-    const id = String(p?.id || '');
-    if (!id || !before.has(id)) return false;
-    const old = before.get(id);
-    const oldDate = String(old?.endDate || old?.startDate || '').trim();
-    const newDate = String(p?.endDate || p?.startDate || '').trim();
-    const oldTitle = String(old?.title || '').trim();
-    const newTitle = String(p?.title || '').trim();
-    return Boolean(newDate && newTitle && (oldDate !== newDate || oldTitle !== newTitle));
-  });
-}
-
-function phaseAsCalendarItem(phase) {
-  return {
-    id: phase.id,
-    title: phase.title,
-    date: phase.endDate || phase.startDate || '',
-  };
-}
-
+/** Check-in markers only — phase bars are schedule, not separate calendar invites. */
 function calendarItemsForProject(project) {
   const items = [];
   (project?.markers || []).forEach((marker) => {
     const date = String(marker.date || marker.startDate || '').trim();
     const title = String(marker.title || '').trim();
     if (marker?.id && date && title) items.push({ id: marker.id, title, date });
-  });
-  (project?.milestones || []).forEach((phase) => {
-    const item = phaseAsCalendarItem(phase);
-    if (item.id && item.title && item.date) items.push(item);
   });
   return items;
 }
@@ -254,6 +222,7 @@ export function buildMilestoneBackfillEvents({ projects, designers, actorEmail }
         KAYE_EMAIL,
       ]);
       const eventTitle = calendarEventTitle(project, item.title);
+      const client = calendarEventClient(project);
       events.push({
         kind: 'calendar_milestone',
         project_id: project?.id || null,
@@ -262,17 +231,35 @@ export function buildMilestoneBackfillEvents({ projects, designers, actorEmail }
         recipients,
         actor_email: actor || null,
         payload: {
-          action: 'create',
+          action: 'upsert',
           marker_id: item.id,
           milestone_title: item.title,
           date: item.date,
           calendar_title: eventTitle,
+          client,
           notify_kind: 'calendar_milestone',
         },
       });
     });
   });
   return events;
+}
+
+/** Wipe every Studio PMS calendar event the webhook owns (dedupe cleanup). */
+export function buildCalendarResetEvent({ actorEmail }) {
+  const actor = normalizeEmail(actorEmail);
+  return {
+    kind: 'calendar_reset',
+    project_id: null,
+    project_label: null,
+    summary: 'Reset Studio PMS calendar events',
+    recipients: actor ? [actor] : [KAYE_EMAIL],
+    actor_email: actor || null,
+    payload: {
+      action: 'calendar_reset',
+      notify_kind: 'calendar_reset',
+    },
+  };
 }
 
 /**
@@ -338,6 +325,7 @@ export function buildNotifyEvents({
         milestone_title: title,
         date,
         calendar_title: eventTitle,
+        client: calendarEventClient(project),
         notify_kind: 'calendar_milestone',
       },
       { includeActor: true },
@@ -346,16 +334,10 @@ export function buildNotifyEvents({
 
   const syncCalendars = (prev, next) => {
     newlyAddedMarkers(prev, next).forEach((marker) => {
-      pushCalendar(next, marker, 'create');
+      pushCalendar(next, marker, 'upsert');
     });
     changedMarkers(prev, next).forEach((marker) => {
-      pushCalendar(next, marker, 'update');
-    });
-    newlyAddedPhases(prev, next).forEach((phase) => {
-      pushCalendar(next, phaseAsCalendarItem(phase), 'create');
-    });
-    changedPhases(prev, next).forEach((phase) => {
-      pushCalendar(next, phaseAsCalendarItem(phase), 'update');
+      pushCalendar(next, marker, 'upsert');
     });
   };
 

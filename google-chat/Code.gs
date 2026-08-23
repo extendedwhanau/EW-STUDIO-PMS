@@ -100,6 +100,12 @@ function doPost(e) {
       PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
       return jsonOut(result);
     }
+    if (kind === 'calendar_reset') {
+      const result = resetStudioPmsCalendarEvents();
+      Logger.log(JSON.stringify(result));
+      PropertiesService.getScriptProperties().setProperty('LAST_DOPOST', JSON.stringify(result));
+      return jsonOut(result);
+    }
     if (kind === 'calendar_todo') {
       const result = handleCalendarTodo_(record);
       Logger.log(JSON.stringify(result));
@@ -158,7 +164,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return ContentService.createTextOutput('PMS webhook v5 todo-tasks. Use POST from Supabase.');
+  return ContentService.createTextOutput('PMS webhook v7 calendar-upsert. Use POST from Supabase.');
 }
 
 /** Run in editor after messaging Studio PMS with test — same path as Supabase webhook. */
@@ -468,6 +474,7 @@ function parseNotifyRecord_(body) {
 
 function notifyKind_(record) {
   const payload = (record && record.payload) || {};
+  if (payload.notify_kind === 'calendar_reset' || payload.action === 'calendar_reset') return 'calendar_reset';
   if (payload.todo_id || payload.notify_kind === 'calendar_todo') return 'calendar_todo';
   if (payload.marker_id || payload.notify_kind === 'calendar_milestone') return 'calendar_milestone';
   return String((record && record.kind) || payload.notify_kind || '').trim();
@@ -503,15 +510,101 @@ function getChatBotToken_() {
   return getServiceAccountToken_('https://www.googleapis.com/auth/chat.bot');
 }
 
+/** Run once in the editor (or via webhook kind calendar_reset) to wipe Studio PMS calendar junk. */
+function resetStudioPmsCalendarEvents() {
+  const props = PropertiesService.getScriptProperties();
+  const cal = CalendarApp.getDefaultCalendar();
+  const ids = parseJsonMap_(props.getProperty('CALENDAR_EVENT_IDS'));
+  let deletedById = 0;
+  let missingId = 0;
+  Object.keys(ids).forEach(function (key) {
+    const eventId = ids[key];
+    if (!eventId) return;
+    try {
+      const event = cal.getEventById(eventId);
+      if (event) {
+        event.deleteEvent();
+        deletedById += 1;
+      } else {
+        missingId += 1;
+      }
+    } catch (err) {
+      missingId += 1;
+    }
+  });
+
+  const start = new Date();
+  start.setFullYear(start.getFullYear() - 2);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setFullYear(end.getFullYear() + 5);
+  end.setHours(23, 59, 59, 999);
+
+  let deletedByScan = 0;
+  const events = cal.getEvents(start, end) || [];
+  events.forEach(function (event) {
+    const description = String(event.getDescription() || '');
+    const title = String(event.getTitle() || '');
+    // Legacy PMS notes only — new invites are just the client name.
+    const fromPms = description.indexOf('From Studio PMS') >= 0
+      || description.indexOf('pms_marker_id:') >= 0
+      || title.indexOf('Studio PMS calendar test') >= 0;
+    if (!fromPms) return;
+    try {
+      event.deleteEvent();
+      deletedByScan += 1;
+    } catch (err) { /* ignore */ }
+  });
+
+  props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify({}));
+  const result = {
+    ok: true,
+    kind: 'calendar_reset',
+    deletedById: deletedById,
+    missingId: missingId,
+    deletedByScan: deletedByScan,
+  };
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function pmsEventDescription_(markerId, client) {
+  return String(client || '').trim();
+}
+
+function findPmsEventByMarkerId_(cal, markerId, aroundDate) {
+  const id = String(markerId || '').trim();
+  if (!id || !cal) return null;
+  const needle = 'pms_marker_id:' + id;
+  const start = new Date(aroundDate || new Date());
+  start.setMonth(start.getMonth() - 1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(aroundDate || new Date());
+  end.setMonth(end.getMonth() + 1);
+  end.setHours(23, 59, 59, 999);
+  try {
+    const events = cal.getEvents(start, end) || [];
+    for (let i = 0; i < events.length; i += 1) {
+      const description = String(events[i].getDescription() || '');
+      if (description.indexOf(needle) >= 0) return events[i];
+    }
+  } catch (err) { /* ignore */ }
+  return null;
+}
+
 function handleCalendarMilestone_(record) {
   const payload = record.payload || {};
   const date = String(payload.date || '').trim();
   const title = String(payload.calendar_title || record.summary || '').trim();
   const markerId = String(payload.marker_id || '').trim();
-  const action = String(payload.action || 'create').trim();
+  const client = String(payload.client || '').trim();
+  const action = String(payload.action || 'upsert').trim();
   const recipients = parseRecipients(record.recipients);
   if (!date || !title || recipients.length === 0) {
     return { ok: false, error: 'calendar missing date/title/recipients' };
+  }
+  if (!markerId) {
+    return { ok: false, error: 'calendar missing marker_id (refusing undedupable create)' };
   }
 
   const start = parseIsoDateLocal_(date);
@@ -521,33 +614,62 @@ function handleCalendarMilestone_(record) {
 
   const props = PropertiesService.getScriptProperties();
   const ids = parseJsonMap_(props.getProperty('CALENDAR_EVENT_IDS'));
-  const key = markerId || (title + ':' + date);
-  const existingId = ids[key];
+  const key = markerId;
+  let existingId = ids[key];
   const guestList = recipients.join(',');
+  const description = pmsEventDescription_(markerId, client);
 
   try {
     const cal = CalendarApp.getDefaultCalendar();
-    if ((action === 'update' || existingId) && existingId) {
-      const event = cal.getEventById(existingId);
+    let event = null;
+    if (existingId) {
+      try { event = cal.getEventById(existingId); } catch (err) { event = null; }
+    }
+    if (!event) {
+      event = findPmsEventByMarkerId_(cal, markerId, start);
       if (event) {
-        event.setTitle(title);
-        event.setAllDayDate(start);
-        event.setDescription('From Studio PMS');
-        syncGuests_(event, recipients);
-        props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
-        return { ok: true, kind: 'calendar_milestone', action: 'update', guests: recipients, eventId: existingId };
+        existingId = event.getId();
+        if (existingId) ids[key] = existingId;
       }
     }
 
+    if (event) {
+      event.setTitle(title);
+      event.setAllDayDate(start);
+      event.setDescription(description);
+      syncGuests_(event, recipients);
+      props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
+      return {
+        ok: true,
+        kind: 'calendar_milestone',
+        action: 'update',
+        guests: recipients,
+        eventId: existingId || event.getId(),
+        markerId: markerId,
+      };
+    }
+
+    if (action === 'delete') {
+      props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
+      return { ok: true, kind: 'calendar_milestone', action: 'delete', skipped: true, markerId: markerId };
+    }
+
     const created = cal.createAllDayEvent(title, start, {
-      description: 'From Studio PMS',
+      description: description,
       guests: guestList,
       sendInvites: true,
     });
     const newId = created.getId();
     if (newId) ids[key] = newId;
     props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
-    return { ok: true, kind: 'calendar_milestone', action: 'create', guests: recipients, eventId: newId };
+    return {
+      ok: true,
+      kind: 'calendar_milestone',
+      action: 'create',
+      guests: recipients,
+      eventId: newId,
+      markerId: markerId,
+    };
   } catch (err) {
     return {
       ok: false,
