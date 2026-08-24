@@ -592,6 +592,40 @@ function findPmsEventByMarkerId_(cal, markerId, aroundDate) {
   return null;
 }
 
+function clearEventReminders_(event) {
+  if (!event) return;
+  try {
+    event.removeAllReminders();
+  } catch (err) { /* ignore */ }
+}
+
+/** One-shot: strip reminders from every tracked PMS milestone invite. */
+function stripPmsEventReminders() {
+  const props = PropertiesService.getScriptProperties();
+  const cal = CalendarApp.getDefaultCalendar();
+  const ids = parseJsonMap_(props.getProperty('CALENDAR_EVENT_IDS'));
+  let cleared = 0;
+  let missing = 0;
+  Object.keys(ids).forEach(function (key) {
+    const eventId = ids[key];
+    if (!eventId) return;
+    try {
+      const event = cal.getEventById(eventId);
+      if (!event) {
+        missing += 1;
+        return;
+      }
+      clearEventReminders_(event);
+      cleared += 1;
+    } catch (err) {
+      missing += 1;
+    }
+  });
+  const result = { ok: true, kind: 'strip_reminders', cleared: cleared, missing: missing };
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
 function handleCalendarMilestone_(record) {
   const payload = record.payload || {};
   const date = String(payload.date || '').trim();
@@ -637,6 +671,7 @@ function handleCalendarMilestone_(record) {
       event.setTitle(title);
       event.setAllDayDate(start);
       event.setDescription(description);
+      clearEventReminders_(event);
       syncGuests_(event, recipients);
       props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
       return {
@@ -659,6 +694,7 @@ function handleCalendarMilestone_(record) {
       guests: guestList,
       sendInvites: true,
     });
+    clearEventReminders_(created);
     const newId = created.getId();
     if (newId) ids[key] = newId;
     props.setProperty('CALENDAR_EVENT_IDS', JSON.stringify(ids));
