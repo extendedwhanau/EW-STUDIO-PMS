@@ -17,8 +17,6 @@ import { supabase } from './supabaseClient';
 import { isStudioEmail, normalizeEmail } from './studioConfig';
 import {
   buildNotifyEvents,
-  buildMilestoneBackfillEvents,
-  buildCalendarResetEvent,
   enqueueStudioNotifications,
 } from './studioNotifications';
 import {
@@ -180,9 +178,6 @@ const OVERVIEW_COLUMN_FALLBACK_TITLES = {
   schedule: 'Scheduled',
   potential: 'Potential',
 };
-const MILESTONE_CALENDAR_BACKFILL_KEY = 'studio_milestone_calendar_backfill_v4';
-const MILESTONE_CALENDAR_RESET_KEY = 'studio_milestone_calendar_reset_v2';
-
 function loadOverviewColumnTitles() {
   try {
     const raw = JSON.parse(localStorage.getItem(OVERVIEW_COLUMN_TITLE_STORAGE));
@@ -7215,66 +7210,6 @@ export default function App() {
     }, 550);
     return () => window.clearTimeout(t);
   }, [designers, projects, todos, cloudReady, sessionUser]);
-
-  useEffect(() => {
-    if (!cloudReady || !isSupabaseConfigured() || !sessionUser?.email) return undefined;
-
-    let resetDone = false;
-    let backfillState = '';
-    try {
-      resetDone = localStorage.getItem(MILESTONE_CALENDAR_RESET_KEY) === '1';
-      backfillState = localStorage.getItem(MILESTONE_CALENDAR_BACKFILL_KEY) || '';
-    } catch {
-      return undefined;
-    }
-
-    if (!resetDone) {
-      try {
-        localStorage.setItem(MILESTONE_CALENDAR_RESET_KEY, '1');
-        localStorage.setItem(MILESTONE_CALENDAR_BACKFILL_KEY, 'pending');
-        localStorage.removeItem('studio_milestone_calendar_backfill_v2');
-        localStorage.removeItem('studio_milestone_calendar_backfill_v3');
-        localStorage.removeItem('studio_milestone_calendar_reset_v1');
-      } catch {
-        /* ignore */
-      }
-      enqueueStudioNotifications([
-        buildCalendarResetEvent({ actorEmail: sessionUser.email }),
-      ]);
-      backfillState = 'pending';
-    }
-
-    if (backfillState === '1') return undefined;
-    if (backfillState !== 'pending') {
-      try {
-        localStorage.setItem(MILESTONE_CALENDAR_BACKFILL_KEY, 'pending');
-      } catch {
-        /* ignore */
-      }
-    }
-
-    const actorEmail = sessionUser.email;
-    const t = window.setTimeout(() => {
-      try {
-        if (localStorage.getItem(MILESTONE_CALENDAR_BACKFILL_KEY) === '1') return;
-      } catch {
-        /* ignore */
-      }
-      const events = buildMilestoneBackfillEvents({
-        projects: projectsRef.current,
-        designers: designersRef.current,
-        actorEmail,
-      });
-      if (events.length) enqueueStudioNotifications(events);
-      try {
-        localStorage.setItem(MILESTONE_CALENDAR_BACKFILL_KEY, '1');
-      } catch {
-        /* ignore */
-      }
-    }, 15000);
-
-    return () => window.clearTimeout(t);
-  }, [cloudReady, sessionUser?.email]);
 
   useEffect(() => {
     try {

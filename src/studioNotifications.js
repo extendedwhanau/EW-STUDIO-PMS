@@ -210,7 +210,7 @@ function calendarItemsForProject(project) {
   return items;
 }
 
-/** One-shot: queue Google Calendar events for every dated milestone already in the PMS. */
+/** Manual helper only — do not call from login. Login must not reset or backfill calendars. */
 export function buildMilestoneBackfillEvents({ projects, designers, actorEmail }) {
   const emailById = designerEmailById(designers);
   const actor = normalizeEmail(actorEmail);
@@ -245,7 +245,7 @@ export function buildMilestoneBackfillEvents({ projects, designers, actorEmail }
   return events;
 }
 
-/** Wipe every Studio PMS calendar event the webhook owns (dedupe cleanup). */
+/** Manual helper only — do not call from login. */
 export function buildCalendarResetEvent({ actorEmail }) {
   const actor = normalizeEmail(actorEmail);
   return {
