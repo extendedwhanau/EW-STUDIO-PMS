@@ -1081,9 +1081,19 @@ function sortTodos(list) {
   });
 }
 
+function todoProjectName(project) {
+  if (!project) return '';
+  return String(project.name || '').trim() || 'Untitled';
+}
+
+function todoClientName(project) {
+  if (!project) return '';
+  return String(project.client || '').trim() || todoProjectName(project);
+}
+
 function todoJobLabel(project) {
   if (!project) return '';
-  const name = String(project.name || '').trim() || 'Untitled';
+  const name = todoProjectName(project);
   const client = String(project.client || '').trim();
   return client ? `${client}: ${name}` : name;
 }
@@ -1895,8 +1905,17 @@ const MilestoneSingleDatePicker = forwardRef(function MilestoneSingleDatePicker(
   );
 });
 
-function TodoJobPicker({ value, onChange, options, project, ariaLabel }) {
-  const label = project ? todoJobLabel(project) : '';
+function TodoJobPicker({
+  value,
+  onChange,
+  options,
+  project,
+  ariaLabel,
+  nameOnly = false,
+}) {
+  const label = project
+    ? (nameOnly ? todoProjectName(project) : todoJobLabel(project))
+    : '';
   if (!value || !project) {
     return (
       <div className="sheet-designer-add-wrap todo-designer-add">
@@ -2300,7 +2319,7 @@ function TodosView({
               {group.jobGroups.map((job) => (
                 <div key={job.projectId || 'no-job'} className="todo-job">
                   {job.project ? (
-                    <h3 className="todo-job-heading">{todoJobLabel(job.project)}</h3>
+                    <h3 className="todo-job-heading">{todoClientName(job.project)}</h3>
                   ) : null}
                   <div className="todo-list">
                     {job.items.map((item) => (
@@ -2323,7 +2342,7 @@ function TodosView({
           {jobOnlyGroups.map((job) => (
             <section key={`job-${job.projectId || 'none'}`} className="todo-group">
               {job.project ? (
-                <h2 className="todo-job-heading">{todoJobLabel(job.project)}</h2>
+                <h2 className="todo-job-heading">{todoClientName(job.project)}</h2>
               ) : null}
               <div className="todo-list">
                 {job.items.map((item) => (
@@ -2426,6 +2445,7 @@ function TodoRow({
           options={rowJobOptions}
           project={project}
           ariaLabel="Job"
+          nameOnly
         />
         <TodoDateField
           date={item.date}
