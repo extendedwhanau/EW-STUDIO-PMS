@@ -6820,6 +6820,34 @@ function normalizeRemoteWorkspace({ designers, projects, todos }) {
   };
 }
 
+/** Prefer keeping local todos when a remote payload arrives with none. */
+function mergeWorkspaceTodos(localTodos, remoteTodos) {
+  const remote = Array.isArray(remoteTodos) ? remoteTodos : [];
+  const local = Array.isArray(localTodos) ? localTodos : [];
+  if (remote.length > 0) return remote;
+  if (local.length > 0) return local;
+  return remote;
+}
+
+function applyRemoteWorkspaceState(remote, setDesigners, setProjects, setTodos, todosRef) {
+  const normalized = normalizeRemoteWorkspace(remote);
+  const mergedTodos = mergeWorkspaceTodos(todosRef.current, normalized.todos);
+  setDesigners(normalized.designers);
+  setProjects(normalized.projects);
+  setTodos(mergedTodos);
+
+  // If cloud lost its to-dos but this browser still has them, write them back.
+  const shouldHealTodos = normalized.todos.length === 0 && mergedTodos.length > 0;
+  if (shouldHealTodos) {
+    return saveWorkspacePayload({
+      designers: normalized.designers,
+      projects: normalized.projects,
+      todos: mergedTodos,
+    });
+  }
+  return Promise.resolve({ ok: true });
+}
+
 function parseUpdatedAt(iso) {
   if (!iso) return 0;
   const t = Date.parse(iso);
@@ -7025,12 +7053,21 @@ export default function App() {
 
       if (remote.designers.length > 0 || remote.projects.length > 0) {
         applyingRemoteRef.current = true;
-        const normalized = normalizeRemoteWorkspace(remote);
-        setDesigners(normalized.designers);
-        setProjects(normalized.projects);
-        setTodos(normalized.todos);
+        const heal = await applyRemoteWorkspaceState(
+          remote,
+          setDesigners,
+          setProjects,
+          setTodos,
+          todosRef,
+        );
+        if (heal?.ok && heal.updatedAt) {
+          remoteUpdatedAtRef.current = heal.updatedAt;
+        } else {
+          remoteUpdatedAtRef.current = remote.updatedAt;
+        }
+      } else if (remote.updatedAt) {
+        remoteUpdatedAtRef.current = remote.updatedAt;
       }
-      remoteUpdatedAtRef.current = remote.updatedAt;
       pendingRemoteUpdatedAtRef.current = null;
     } finally {
       remotePullInFlightRef.current = false;
@@ -7153,11 +7190,16 @@ export default function App() {
       }
       if (remote.designers.length > 0 || remote.projects.length > 0) {
         applyingRemoteRef.current = true;
-        const normalized = normalizeRemoteWorkspace(remote);
-        setDesigners(normalized.designers);
-        setProjects(normalized.projects);
-        setTodos(normalized.todos);
-        if (remote.updatedAt) {
+        const heal = await applyRemoteWorkspaceState(
+          remote,
+          setDesigners,
+          setProjects,
+          setTodos,
+          todosRef,
+        );
+        if (heal?.ok && heal.updatedAt) {
+          remoteUpdatedAtRef.current = heal.updatedAt;
+        } else if (remote.updatedAt) {
           remoteUpdatedAtRef.current = remote.updatedAt;
         }
       } else {

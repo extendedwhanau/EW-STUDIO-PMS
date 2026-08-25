@@ -50,13 +50,38 @@ export async function fetchWorkspaceUpdatedAt() {
 
 /**
  * Save full workspace (replace payload for id = main).
+ * Protects to-dos from accidental wipes: never replace a non-empty cloud
+ * list with a missing or empty todos array (deploy / sign-in races).
  */
 export async function saveWorkspacePayload(payload) {
   if (!supabase) return { ok: false, error: 'not configured' };
 
+  let nextPayload = payload;
+  try {
+    const { data: existing, error: readError } = await supabase
+      .from('studio_workspace')
+      .select('payload')
+      .eq('id', WORKSPACE_ID)
+      .maybeSingle();
+
+    if (!readError) {
+      const existingTodos = Array.isArray(existing?.payload?.todos)
+        ? existing.payload.todos
+        : [];
+      const hasTodosKey = payload && Object.prototype.hasOwnProperty.call(payload, 'todos');
+      const incomingTodos = hasTodosKey && Array.isArray(payload.todos) ? payload.todos : null;
+
+      if (existingTodos.length > 0 && (!hasTodosKey || incomingTodos?.length === 0)) {
+        nextPayload = { ...payload, todos: existingTodos };
+      }
+    }
+  } catch (err) {
+    console.error('[Supabase] todo overwrite guard failed:', err);
+  }
+
   const { data, error } = await supabase
     .from('studio_workspace')
-    .upsert({ id: WORKSPACE_ID, payload }, { onConflict: 'id' })
+    .upsert({ id: WORKSPACE_ID, payload: nextPayload }, { onConflict: 'id' })
     .select('updated_at')
     .single();
 
