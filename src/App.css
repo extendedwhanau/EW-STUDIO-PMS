@@ -5289,6 +5289,15 @@ body.client-overview-open {
   padding-right: 18px;
 }
 
+.todo-row-meta .todo-designer-chip:hover,
+.todo-row-meta .todo-designer-chip:focus-within,
+.todo-row-meta .todo-job-chip:hover,
+.todo-row-meta .todo-job-chip:focus-within,
+.todo-row-meta .todo-date-chip:hover,
+.todo-row-meta .todo-date-chip:focus-within {
+  padding-right: 0;
+}
+
 .todo-group .project-feed-heading {
   margin-bottom: 8px;
 }
@@ -5300,15 +5309,67 @@ body.client-overview-open {
 
 .todo-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 2px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 2px;
   border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
   position: relative;
 }
 
 .todo-row:last-child {
   border-bottom: none;
+}
+
+.todo-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.todo-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 26px;
+}
+
+.todo-row-meta .todo-designer-chip,
+.todo-row-meta .todo-job-chip,
+.todo-row-meta .todo-date-chip {
+  background: transparent;
+  padding-right: 0;
+}
+
+.todo-row-meta .todo-designer-chip-main .todo-pick-face {
+  padding: 0;
+}
+
+.todo-row-meta .todo-job-chip {
+  flex: 0 1 auto;
+  max-width: none;
+  min-width: 0;
+}
+
+.todo-row-meta .todo-job-chip-main .todo-pick-face {
+  padding: 2px 0;
+}
+
+.todo-row-meta .todo-job-chip .todo-pick-label {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.todo-row-meta .todo-chip-clear {
+  display: none;
+}
+
+.todo-row-meta .todo-date-chip-face,
+.todo-row-meta .todo-row-date {
+  font-size: 14px;
+  padding: 2px 0;
 }
 
 .todo-check {
@@ -5342,8 +5403,8 @@ body.client-overview-open {
 }
 
 .todo-row-title {
-  flex: 1 1 140px;
-  min-width: 80px;
+  flex: 1 1 auto;
+  min-width: 0;
   border: none;
   background: transparent;
   font-family: inherit;
@@ -5391,7 +5452,7 @@ body.client-overview-open {
   flex-shrink: 0;
   width: 22px;
   height: 22px;
-  margin-left: 10px;
+  margin-left: auto;
   font-size: 16px;
   opacity: 0.55;
   pointer-events: auto;
@@ -5425,6 +5486,10 @@ body.client-overview-open {
     max-width: 140px;
   }
 
+  .todo-row-meta .todo-job-chip {
+    max-width: none;
+  }
+
   .todo-row-remove {
     opacity: 0.55;
     pointer-events: auto;
@@ -5435,9 +5500,9 @@ body.client-overview-open {
     pointer-events: auto;
   }
 
-  .todo-designer-chip,
-  .todo-job-chip,
-  .todo-date-chip {
+  .todo-composer .todo-designer-chip,
+  .todo-composer .todo-job-chip,
+  .todo-composer .todo-date-chip {
     padding-right: 18px;
   }
 }

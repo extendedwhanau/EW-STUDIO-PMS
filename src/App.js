@@ -2105,17 +2105,12 @@ function TodosView({
   sessionUser,
   onSignIn,
 }) {
-  const inputRef = useRef(null);
   const [draft, setDraft] = useState('');
   const [composerJob, setComposerJob] = useState('');
   const [composerDate, setComposerDate] = useState('');
   const [composerOwner, setComposerOwner] = useState(() => (
     filterDesigner !== 'all' ? filterDesigner : ''
   ));
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
 
   useEffect(() => {
     if (filterDesigner !== 'all') {
@@ -2261,7 +2256,6 @@ function TodosView({
             ariaLabel="Link to job"
           />
           <input
-            ref={inputRef}
             className="todo-composer-input"
             type="text"
             value={draft}
@@ -2371,73 +2365,77 @@ function TodoRow({
 
   return (
     <div className={`todo-row${item.done ? ' todo-row--done' : ''}`}>
-      <button
-        type="button"
-        className={`todo-check${item.done ? ' todo-check--done' : ''}`}
-        aria-label={item.done ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
-        aria-pressed={item.done}
-        onClick={onToggle}
-      >
-        {item.done ? (
-          <svg viewBox="0 0 16 16" aria-hidden>
-            <path
-              d="M3.5 8.2l3 3.1 6-6.4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : null}
-      </button>
-      <input
-        className="todo-row-title"
-        type="text"
-        value={item.title}
-        aria-label="To-do"
-        onChange={(e) => onPatch({ title: e.target.value })}
-        onBlur={(e) => {
-          const next = e.target.value.trim();
-          onPatch({ title: next || item.title });
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            e.currentTarget.blur();
-          }
-        }}
-      />
-      <TodoDesignerPicker
-        value={item.designerId}
-        onChange={(id) => onPatch({ designerId: id })}
-        designers={designers}
-        ariaLabel="Assigned to"
-        avatarSize={18}
-      />
-      <TodoJobPicker
-        value={item.projectId || ''}
-        onChange={(id) => onPatch({ projectId: id })}
-        options={rowJobOptions}
-        project={project}
-        ariaLabel="Job"
-      />
-      <TodoDateField
-        date={item.date}
-        onChange={(date) => onPatch({ date })}
-        className={`todo-row-date${overdue ? ' todo-row-date--overdue' : ''}`}
-        emptyLabel="Date"
-        ariaLabel={`Date for ${item.title}`}
-        overdue={overdue}
-      />
-      <button
-        type="button"
-        className="sheet-designer-chip-remove todo-row-remove"
-        onClick={onRemove}
-        aria-label={`Remove ${item.title}`}
-      >
-        ×
-      </button>
+      <div className="todo-row-top">
+        <button
+          type="button"
+          className={`todo-check${item.done ? ' todo-check--done' : ''}`}
+          aria-label={item.done ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
+          aria-pressed={item.done}
+          onClick={onToggle}
+        >
+          {item.done ? (
+            <svg viewBox="0 0 16 16" aria-hidden>
+              <path
+                d="M3.5 8.2l3 3.1 6-6.4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : null}
+        </button>
+        <input
+          className="todo-row-title"
+          type="text"
+          value={item.title}
+          aria-label="To-do"
+          onChange={(e) => onPatch({ title: e.target.value })}
+          onBlur={(e) => {
+            const next = e.target.value.trim();
+            onPatch({ title: next || item.title });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="sheet-designer-chip-remove todo-row-remove"
+          onClick={onRemove}
+          aria-label={`Remove ${item.title}`}
+        >
+          ×
+        </button>
+      </div>
+      <div className="todo-row-meta">
+        <TodoDesignerPicker
+          value={item.designerId}
+          onChange={(id) => onPatch({ designerId: id })}
+          designers={designers}
+          ariaLabel="Assigned to"
+          avatarSize={18}
+        />
+        <TodoJobPicker
+          value={item.projectId || ''}
+          onChange={(id) => onPatch({ projectId: id })}
+          options={rowJobOptions}
+          project={project}
+          ariaLabel="Job"
+        />
+        <TodoDateField
+          date={item.date}
+          onChange={(date) => onPatch({ date })}
+          className={`todo-row-date${overdue ? ' todo-row-date--overdue' : ''}`}
+          emptyLabel="Date"
+          ariaLabel={`Date for ${item.title}`}
+          overdue={overdue}
+        />
+      </div>
     </div>
   );
 }
