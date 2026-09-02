@@ -2259,64 +2259,59 @@ function TodosView({
           </p>
         ) : null}
         <div className="todo-composer">
-          <div className="todo-composer-meta">
-            <TodoDesignerPicker
-              value={composerOwner}
-              onChange={setComposerOwner}
-              designers={designers}
-              ariaLabel="Assign to"
-              showName
-              avatarSize={20}
-            />
-            <div className="todo-composer-meta-end">
-              <TodoJobPicker
-                value={composerJob}
-                onChange={setComposerJob}
-                options={jobOptions}
-                project={composerJobProject}
-                ariaLabel="Link to job"
-              />
-              <TodoDateField
-                date={composerDate}
-                onChange={setComposerDate}
-                className="todo-composer-date"
-                emptyLabel="Date"
-                ariaLabel="Due date for new to-dos"
-              />
-            </div>
-          </div>
-          <div className="todo-composer-main">
-            <input
-              className="todo-composer-input"
-              type="text"
-              value={draft}
-              placeholder="Add a to-do"
-              aria-label="Add a to-do"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  submitDraft();
-                }
-              }}
-              onPaste={(e) => {
-                const text = e.clipboardData?.getData('text') || '';
-                if (!text.includes('\n')) return;
+          <TodoDesignerPicker
+            value={composerOwner}
+            onChange={setComposerOwner}
+            designers={designers}
+            ariaLabel="Assign to"
+            showName
+            avatarSize={20}
+          />
+          <TodoJobPicker
+            value={composerJob}
+            onChange={setComposerJob}
+            options={jobOptions}
+            project={composerJobProject}
+            ariaLabel="Link to job"
+          />
+          <TodoDateField
+            date={composerDate}
+            onChange={setComposerDate}
+            className="todo-composer-date"
+            emptyLabel="Date"
+            ariaLabel="Due date for new to-dos"
+          />
+          <input
+            className="todo-composer-input"
+            type="text"
+            value={draft}
+            placeholder="Add a to-do"
+            aria-label="Add a to-do"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
                 e.preventDefault();
-                const combined = `${draft}${text}`;
-                if (addLines(combined)) setDraft('');
-              }}
-            />
-            <button
-              type="button"
-              className="todo-composer-add"
-              onClick={submitDraft}
-              disabled={!draft.trim()}
-              aria-label="Add to-do"
-            >
-              Add
-            </button>
-          </div>
+                submitDraft();
+              }
+            }}
+            onPaste={(e) => {
+              const text = e.clipboardData?.getData('text') || '';
+              if (!text.includes('\n')) return;
+              e.preventDefault();
+              const combined = `${draft}${text}`;
+              if (addLines(combined)) setDraft('');
+            }}
+          />
+          <button
+            type="button"
+            className="sheet-milestone-add-task icon-bubble icon-bubble--sm todo-composer-add"
+            onClick={submitDraft}
+            disabled={!draft.trim()}
+            aria-label="Add to-do"
+          >
+            <span className="icon-bubble-glyph" aria-hidden>+</span>
+            <span className="icon-bubble-text">Add</span>
+          </button>
         </div>
       </div>
 

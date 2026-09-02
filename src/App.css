@@ -4932,7 +4932,8 @@ body.client-overview-open {
 
 .todo-composer {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-height: 48px;
   padding: 8px 10px 8px 12px;
@@ -4940,32 +4941,9 @@ body.client-overview-open {
   background: var(--project-card-fill);
 }
 
-.todo-composer-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.todo-composer-meta-end {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.todo-composer-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
 .todo-composer-input {
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 1 1 120px;
+  min-width: 80px;
   border: none;
   background: transparent;
   font-family: inherit;
@@ -4978,30 +4956,11 @@ body.client-overview-open {
 
 .todo-composer-add {
   flex-shrink: 0;
-  border: none;
-  border-radius: 8px;
-  padding: 7px 14px;
-  background: #1A1A1A;
-  color: #fff;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  cursor: pointer;
-  transition: opacity 0.15s ease, transform 0.1s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.todo-composer-add:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.todo-composer-add:active:not(:disabled) {
-  transform: scale(0.98);
+  margin-left: auto;
 }
 
 .todo-composer-add:disabled {
-  opacity: 0.35;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -5121,6 +5080,7 @@ body.client-overview-open {
 }
 
 .todo-composer .todo-designer-add .icon-bubble-text,
+.todo-composer .todo-composer-add .icon-bubble-text,
 .todo-row .todo-designer-add .icon-bubble-text {
   max-width: 8em;
   margin-left: 6px;
@@ -5128,6 +5088,7 @@ body.client-overview-open {
 }
 
 .todo-composer .todo-designer-add .sheet-milestone-add-task.icon-bubble,
+.todo-composer .todo-composer-add.icon-bubble,
 .todo-row .todo-designer-add .sheet-milestone-add-task.icon-bubble {
   width: auto;
   min-width: var(--bubble-size-sm);
