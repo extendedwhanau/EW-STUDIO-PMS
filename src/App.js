@@ -2309,7 +2309,6 @@ function TodosView({
             disabled={!draft.trim()}
             aria-label="Add to-do"
           >
-            <span className="icon-bubble-glyph" aria-hidden>+</span>
             <span className="icon-bubble-text">Add</span>
           </button>
         </div>
