@@ -144,19 +144,38 @@ If invites never appear: confirm Team Google emails, and that the person who own
 
 ## To-Do → Google Tasks / Calendar
 
-Dated to-dos from the PMS **To-Do** page become a Google **Task** only (Calendar → Tasks, with a checkbox). They do **not** create calendar events.
+Dated to-dos from the PMS **To-Do** page become a Google **Task** on **that person’s** Calendar → Tasks (checkbox). They do **not** create calendar events.
 
 - Tick it done in the PMS → the Google Task completes  
 - Tick it done in Google Tasks / Calendar → the PMS to-do completes (within about a minute)  
 - Clear the date or delete the to-do → the Google Task is removed  
 - No date → stays in the PMS only  
 
-Tasks are created on the Apps Script owner’s Google Tasks list (Execute as Me).
+Your own to-dos still use the Apps Script login. Everyone else’s to-dos need **domain-wide delegation** so the script can write into their Tasks.
 
-1. Paste latest `Code.gs` + `appsscript.json` → Save  
-2. Services **+** → **Tasks API** → Add  
-3. Run **`testTodoTask`** → allow Tasks access if Google asks  
-4. **Web app → New version → Deploy** (Execute as Me, Anyone)  
+### 1. Allow the script to write into each person’s Tasks
+
+You must be a Google Workspace admin for **extendedwhanau.com**.
+
+1. Open Apps Script → **Project Settings** (gear) → **Script properties** → copy `CHAT_SERVICE_ACCOUNT` (the whole JSON).  
+   Find `"client_id": "1234…"` — that number is what Admin needs (not the `...@...iam.gserviceaccount.com` email).
+2. Open [Admin → Domain-wide delegation](https://admin.google.com/ac/owl/domainwidedelegation)
+3. **Add new**
+   - **Client ID:** the number from step 1  
+   - **OAuth scopes:**  
+     `https://www.googleapis.com/auth/tasks`
+4. **Authorise**
+
+If that Client ID is already listed (for Chat), open it and **add** the Tasks scope next to any existing ones, comma-separated.
+
+### 2. Update Apps Script
+
+1. Paste latest [`Code.gs`](Code.gs) → Save  
+2. **Deploy → New version** on the Web app (Execute as Me, Anyone)  
+3. Run **`testTodoTaskForTeammate`** (edit the email at the top to Mark’s).  
+   Success = a test task on **his** Calendar → Tasks (not yours).  
+4. Run **`clearOwnerPmsGoogleTasks`** — removes the old copies from **your** Tasks.  
+5. In the PMS, change a **date** on each dated to-do (or clear it and set it again). They recreate on the right person.
 
 ### Google Tasks → PMS (write-back)
 
@@ -165,8 +184,8 @@ Tasks are created on the Apps Script owner’s Google Tasks list (Execute as Me)
    - **`SUPABASE_URL`** — same Project URL as `.env.local` (`https://YOUR_PROJECT_REF.supabase.co`)  
    - **`SUPABASE_SERVICE_ROLE_KEY`** — Supabase **Project Settings → API → `service_role`** (secret).  
      Paste it **only** here. Do not put it in Netlify or `.env.local`.  
-3. Editor → function **`installTodoCompletionSync`** → **Run**. Allow access if Google asks (new ScriptApp scope).  
-4. Optional: **`showLastTodoPull`** shows the last sync result.
+3. Editor → function **`installTodoCompletionSync`** → **Run** (do this again after pasting new `Code.gs`). Allow access if Google asks.  
+4. Tick a Google Task, wait about a minute, then run **`showLastTodoPull`**. You should see `"changed": 1` (the red error box is just how Apps Script shows the result).
 
 After that, completing a task in Google ticks it off in the PMS on the next 1-minute check. Open tabs pick it up live.
 

@@ -2259,55 +2259,70 @@ function TodosView({
           </p>
         ) : null}
         <div className="todo-composer">
-          <TodoDesignerPicker
-            value={composerOwner}
-            onChange={setComposerOwner}
-            designers={designers}
-            ariaLabel="Assign to"
-            showName
-            avatarSize={20}
-          />
-          <TodoJobPicker
-            value={composerJob}
-            onChange={setComposerJob}
-            options={jobOptions}
-            project={composerJobProject}
-            ariaLabel="Link to job"
-          />
-          <input
-            className="todo-composer-input"
-            type="text"
-            value={draft}
-            placeholder="Add a to-do"
-            aria-label="Add a to-do"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+          <div className="todo-composer-meta">
+            <TodoDesignerPicker
+              value={composerOwner}
+              onChange={setComposerOwner}
+              designers={designers}
+              ariaLabel="Assign to"
+              showName
+              avatarSize={20}
+            />
+            <div className="todo-composer-meta-end">
+              <TodoJobPicker
+                value={composerJob}
+                onChange={setComposerJob}
+                options={jobOptions}
+                project={composerJobProject}
+                ariaLabel="Link to job"
+              />
+              <TodoDateField
+                date={composerDate}
+                onChange={setComposerDate}
+                className="todo-composer-date"
+                emptyLabel="Date"
+                ariaLabel="Due date for new to-dos"
+              />
+            </div>
+          </div>
+          <div className="todo-composer-main">
+            <input
+              className="todo-composer-input"
+              type="text"
+              value={draft}
+              placeholder="Add a to-do"
+              aria-label="Add a to-do"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  submitDraft();
+                }
+              }}
+              onPaste={(e) => {
+                const text = e.clipboardData?.getData('text') || '';
+                if (!text.includes('\n')) return;
                 e.preventDefault();
-                submitDraft();
-              }
-            }}
-            onPaste={(e) => {
-              const text = e.clipboardData?.getData('text') || '';
-              if (!text.includes('\n')) return;
-              e.preventDefault();
-              const combined = `${draft}${text}`;
-              if (addLines(combined)) setDraft('');
-            }}
-          />
-          <TodoDateField
-            date={composerDate}
-            onChange={setComposerDate}
-            className="todo-composer-date"
-            emptyLabel="Date"
-            ariaLabel="Due date for new to-dos"
-          />
+                const combined = `${draft}${text}`;
+                if (addLines(combined)) setDraft('');
+              }}
+            />
+            <button
+              type="button"
+              className="todo-composer-add"
+              onClick={submitDraft}
+              disabled={!draft.trim()}
+              aria-label="Add to-do"
+            >
+              Add
+            </button>
+          </div>
         </div>
       </div>
 
       {visibleTodos.length === 0 ? (
         <div className="empty-state">
-          Type a to-do and press Enter. Paste a list to add several at once.
+          Type a to-do and tap Add. Paste a list to add several at once.
         </div>
       ) : (
         <div className="todo-groups">

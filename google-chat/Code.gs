@@ -11,8 +11,9 @@
  *   SUPABASE_URL                — Project URL (for Google Tasks → PMS completions)
  *   SUPABASE_SERVICE_ROLE_KEY   — service_role key (Apps Script only, never the website)
  *
- * Calendar milestones need domain-wide delegation on that service account for
- * scope https://www.googleapis.com/auth/calendar (impersonate each designer).
+ * Dated to-dos write to each designer’s Google Tasks. That needs domain-wide
+ * delegation on the same service account for
+ * scope https://www.googleapis.com/auth/tasks (impersonate each designer).
  */
 
 function onMessage(event) {
@@ -77,6 +78,7 @@ function messageTextFromEvent(event) {
 
 function doPost(e) {
   try {
+    scriptOwnerEmail_();
     const secret = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET') || '';
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const querySecret = (e && e.parameter && e.parameter.secret)
@@ -744,19 +746,29 @@ function handleCalendarTodo_(record) {
   const todoId = String(payload.todo_id || '').trim();
   const date = String(payload.date || '').trim();
   const done = Boolean(payload.done);
+  const recipients = parseRecipients(record.recipients);
+  const email = String(payload.assignee_email || recipients[0] || '').trim().toLowerCase();
   if (!title || !todoId) {
     return { ok: false, error: 'todo missing title/id' };
   }
   if (action !== 'delete' && !date) {
     return { ok: false, error: 'todo missing date' };
   }
+  if (action !== 'delete' && !email) {
+    return {
+      ok: false,
+      error: 'todo missing assignee email',
+      hint: 'Team → that person → Google email, then change the to-do date to re-send.',
+    };
+  }
 
   removeTodoCalendarLeftover_(todoId);
 
-  const result = upsertGoogleTask_(todoId, title, date, done, action);
+  const result = upsertGoogleTask_(todoId, title, date, done, action, email);
   return {
     ok: Boolean(result && result.ok),
     kind: 'calendar_todo',
+    email: email,
     results: [result],
   };
 }
@@ -776,21 +788,49 @@ function removeTodoCalendarLeftover_(todoId) {
   props.setProperty('TODO_EVENT_IDS', JSON.stringify(ids));
 }
 
-function upsertGoogleTask_(todoId, title, date, done, action) {
+function scriptOwnerEmail_() {
+  const props = PropertiesService.getScriptProperties();
+  let email = '';
+  try {
+    email = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
+  } catch (err) { /* time trigger */ }
+  if (!email) {
+    try {
+      email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+    } catch (err) { /* ignore */ }
+  }
+  if (email) {
+    props.setProperty('SCRIPT_OWNER_EMAIL', email);
+    return email;
+  }
+  return String(props.getProperty('SCRIPT_OWNER_EMAIL') || '').trim().toLowerCase();
+}
+
+function normalizeTodoTaskEntry_(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'string') return { id: raw, email: '' };
+  if (typeof raw === 'object' && raw.id) {
+    return { id: String(raw.id), email: String(raw.email || '').trim().toLowerCase() };
+  }
+  return null;
+}
+
+function upsertGoogleTask_(todoId, title, date, done, action, email) {
   const props = PropertiesService.getScriptProperties();
   const ids = parseJsonMap_(props.getProperty('TODO_TASK_IDS'));
   const key = String(todoId);
-  const existingId = ids[key];
-  const listId = '@default';
+  const target = String(email || '').trim().toLowerCase();
+  const owner = scriptOwnerEmail_();
+  let existing = normalizeTodoTaskEntry_(ids[key]);
 
   try {
     if (action === 'delete') {
-      if (existingId) {
-        try { Tasks.Tasks.remove(listId, existingId); } catch (err) { /* already gone */ }
-        delete ids[key];
-        props.setProperty('TODO_TASK_IDS', JSON.stringify(ids));
+      if (existing && existing.id) {
+        removeGoogleTask_(existing.id, existing.email || target || owner);
       }
-      return { ok: true, via: 'tasks', action: 'delete', taskId: existingId || null };
+      delete ids[key];
+      props.setProperty('TODO_TASK_IDS', JSON.stringify(ids));
+      return { ok: true, via: 'tasks', action: 'delete', taskId: existing && existing.id || null, email: target };
     }
 
     const resource = {
@@ -800,34 +840,102 @@ function upsertGoogleTask_(todoId, title, date, done, action) {
     };
     if (date) resource.due = date + 'T12:00:00.000Z';
 
-    if (existingId) {
-      try {
-        Tasks.Tasks.patch(resource, listId, existingId);
-        return { ok: true, via: 'tasks', action: 'update', taskId: existingId };
-      } catch (err) {
-        /* recreate below */
+    const existingEmail = (existing && existing.email) || (existing && existing.id ? owner : '');
+    if (existing && existing.id && existingEmail && existingEmail !== target) {
+      try { removeGoogleTask_(existing.id, existingEmail); } catch (err) { /* already gone */ }
+      existing = null;
+    }
+
+    if (existing && existing.id) {
+      const patched = patchGoogleTask_(existing.id, target, resource);
+      if (patched && patched.id) {
+        ids[key] = { id: patched.id, email: target };
+        props.setProperty('TODO_TASK_IDS', JSON.stringify(ids));
+        return { ok: true, via: 'tasks', action: 'update', taskId: patched.id, email: target };
       }
     }
 
-    const created = Tasks.Tasks.insert(resource, listId);
+    const created = insertGoogleTask_(target, resource);
     const newId = created && created.id;
     if (newId) {
-      ids[key] = newId;
+      ids[key] = { id: newId, email: target };
       props.setProperty('TODO_TASK_IDS', JSON.stringify(ids));
     }
-    return { ok: true, via: 'tasks', action: 'create', taskId: newId || null };
+    return { ok: true, via: 'tasks', action: 'create', taskId: newId || null, email: target };
   } catch (err) {
+    const forOwner = Boolean(target && owner && target === owner);
     return {
       ok: false,
       via: 'tasks',
+      email: target,
       error: String(err && err.message ? err.message : err),
-      hint: 'Enable Tasks in Apps Script Services, then Run testTodoTask and allow access.',
+      hint: forOwner
+        ? 'Enable Tasks in Apps Script Services, then Run testTodoTask and allow access.'
+        : 'Admin → Security → API controls → Domain-wide delegation. Add the service account Client ID with scope https://www.googleapis.com/auth/tasks',
     };
   }
 }
 
+function insertGoogleTask_(email, resource) {
+  if (isScriptOwnerEmail_(email)) {
+    return Tasks.Tasks.insert(resource, '@default');
+  }
+  const token = getTasksToken_(email);
+  return tasksApi_('post', 'https://www.googleapis.com/tasks/v1/lists/@default/tasks', token, resource);
+}
+
+function patchGoogleTask_(taskId, email, resource) {
+  try {
+    if (isScriptOwnerEmail_(email)) {
+      Tasks.Tasks.patch(resource, '@default', taskId);
+      return { id: taskId };
+    }
+    const token = getTasksToken_(email);
+    const body = tasksApi_(
+      'patch',
+      'https://www.googleapis.com/tasks/v1/lists/@default/tasks/' + encodeURIComponent(taskId),
+      token,
+      resource
+    );
+    return body && body.id ? body : { id: taskId };
+  } catch (err) {
+    return null;
+  }
+}
+
+function removeGoogleTask_(taskId, email) {
+  if (!taskId) return;
+  if (!email || isScriptOwnerEmail_(email)) {
+    try { Tasks.Tasks.remove('@default', taskId); } catch (err) { /* already gone */ }
+    return;
+  }
+  try {
+    const token = getTasksToken_(email);
+    tasksApi_('delete', 'https://www.googleapis.com/tasks/v1/lists/@default/tasks/' + encodeURIComponent(taskId), token);
+  } catch (err) { /* already gone */ }
+}
+
+function isScriptOwnerEmail_(email) {
+  const owner = scriptOwnerEmail_();
+  const target = String(email || '').trim().toLowerCase();
+  return Boolean(owner && target && owner === target);
+}
+
 /** Run once in the editor — Google will ask for Tasks access. Then Deploy Web app → New version. */
 function testTodoTask() {
+  testTodoTaskForEmail_(Session.getActiveUser().getEmail(), 'pms-todo-test', 'Studio PMS to-do test');
+}
+
+/**
+ * After domain-wide delegation: put a test task on someone else’s Tasks.
+ * Edit TEAMMATE_EMAIL then Run.
+ */
+function testTodoTaskForTeammate() {
+  const TEAMMATE_EMAIL = 'mark@extendedwhanau.com';
+  testTodoTaskForEmail_(TEAMMATE_EMAIL, 'pms-todo-test-' + TEAMMATE_EMAIL, 'Studio PMS to-do test');
+}
+
+function testTodoTaskForEmail_(email, todoId, title) {
   const tomorrow = new Date();
   tomorrow.setHours(12, 0, 0, 0);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -836,20 +944,61 @@ function testTodoTask() {
   const d = ('0' + tomorrow.getDate()).slice(-2);
   const iso = y + '-' + m + '-' + d;
   const result = handleCalendarTodo_({
-    summary: 'Studio PMS to-do test',
-    recipients: [Session.getActiveUser().getEmail()],
+    summary: title,
+    recipients: [email],
     payload: {
       action: 'create',
-      todo_id: 'pms-todo-test',
+      todo_id: todoId,
+      assignee_email: String(email || '').trim().toLowerCase(),
       date: iso,
       done: false,
-      calendar_title: 'Studio PMS to-do test',
+      calendar_title: title,
     },
   });
   Logger.log(JSON.stringify(result));
   if (!result.ok) {
     throw new Error('To-do test failed: ' + JSON.stringify(result));
   }
+}
+
+/**
+ * Deletes Studio PMS copies on the script owner’s Tasks list (your Calendar).
+ * Run after domain-wide delegation, then change a date on each dated to-do in the PMS
+ * so they recreate on the right person.
+ */
+function clearOwnerPmsGoogleTasks() {
+  const props = PropertiesService.getScriptProperties();
+  const ids = parseJsonMap_(props.getProperty('TODO_TASK_IDS'));
+  const owner = scriptOwnerEmail_();
+  let deletedMapped = 0;
+  Object.keys(ids).forEach(function (todoId) {
+    const entry = normalizeTodoTaskEntry_(ids[todoId]);
+    if (!entry || !entry.id) return;
+    if (entry.email && owner && entry.email !== owner) return;
+    try { Tasks.Tasks.remove('@default', entry.id); } catch (err) { /* already gone */ }
+    delete ids[todoId];
+    deletedMapped += 1;
+  });
+  let deletedByNote = 0;
+  try {
+    let pageToken = '';
+    do {
+      const params = { showCompleted: true, showHidden: true, maxResults: 100 };
+      if (pageToken) params.pageToken = pageToken;
+      const resp = Tasks.Tasks.list('@default', params);
+      (resp.items || []).forEach(function (task) {
+        if (!task || !task.id) return;
+        if (String(task.notes || '').indexOf('From Studio PMS') < 0) return;
+        try { Tasks.Tasks.remove('@default', task.id); } catch (err) { /* already gone */ }
+        deletedByNote += 1;
+      });
+      pageToken = resp.nextPageToken || '';
+    } while (pageToken);
+  } catch (err) { /* Tasks service missing */ }
+  props.setProperty('TODO_TASK_IDS', JSON.stringify(ids));
+  const result = { ok: true, deletedMapped: deletedMapped, deletedByNote: deletedByNote };
+  Logger.log(JSON.stringify(result));
+  throw new Error(JSON.stringify(result));
 }
 
 /**
@@ -891,15 +1040,24 @@ function syncCompletedGoogleTasks() {
 }
 
 function syncCompletedGoogleTasks_() {
-  const completedIds = listCompletedPmsTodoIds_();
+  const listed = listCompletedPmsTodoIds_();
+  const completedIds = listed.ids || [];
   if (!completedIds.length) {
-    return { ok: true, completed: 0, changed: 0 };
+    return {
+      ok: true,
+      completed: 0,
+      changed: 0,
+      mapped: listed.mapped,
+      errors: listed.errors,
+    };
   }
   const marked = markTodosDoneInSupabase_(completedIds);
   return {
     ok: Boolean(marked && marked.ok),
     completed: completedIds.length,
     ids: completedIds,
+    mapped: listed.mapped,
+    errors: listed.errors,
     supabase: marked,
     changed: marked && marked.changed,
     error: marked && marked.error,
@@ -909,47 +1067,115 @@ function syncCompletedGoogleTasks_() {
 function listCompletedPmsTodoIds_() {
   const props = PropertiesService.getScriptProperties();
   const ids = parseJsonMap_(props.getProperty('TODO_TASK_IDS'));
+  const owner = scriptOwnerEmail_();
   const todoByTask = {};
+  const emails = {};
   Object.keys(ids).forEach(function (todoId) {
-    const taskId = ids[todoId];
-    if (taskId) todoByTask[taskId] = todoId;
+    const entry = normalizeTodoTaskEntry_(ids[todoId]);
+    if (!entry || !entry.id) return;
+    todoByTask[entry.id] = todoId;
+    const email = entry.email || owner;
+    if (email) emails[email] = true;
   });
-  const mapped = Object.keys(todoByTask);
-  if (!mapped.length) return [];
 
-  const seen = {};
   const completed = [];
-  let pageToken = '';
-  do {
-    const params = {
-      showCompleted: true,
-      showHidden: true,
-      maxResults: 100
-    };
-    if (pageToken) params.pageToken = pageToken;
-    const resp = Tasks.Tasks.list('@default', params);
-    (resp.items || []).forEach(function (task) {
+  const seen = {};
+  const errors = [];
+
+  try {
+    listOwnerGoogleTasks_().forEach(function (task) {
       if (!task || !task.id) return;
       seen[task.id] = true;
-      const todoId = todoByTask[task.id];
-      if (todoId && task.status === 'completed') completed.push(todoId);
-    });
-    pageToken = resp.nextPageToken || '';
-  } while (pageToken);
-
-  mapped.forEach(function (taskId) {
-    if (seen[taskId]) return;
-    try {
-      const task = Tasks.Tasks.get('@default', taskId);
-      if (task && task.status === 'completed' && todoByTask[task.id]) {
+      if (todoByTask[task.id] && task.status === 'completed') {
         completed.push(todoByTask[task.id]);
       }
-    } catch (err) { /* task gone */ }
+    });
+  } catch (err) {
+    errors.push('owner-list: ' + String(err && err.message ? err.message : err));
+  }
+
+  Object.keys(emails).forEach(function (email) {
+    if (isScriptOwnerEmail_(email)) return;
+    try {
+      listGoogleTasksForEmail_(email).forEach(function (task) {
+        if (!task || !task.id) return;
+        seen[task.id] = true;
+        if (todoByTask[task.id] && task.status === 'completed') {
+          completed.push(todoByTask[task.id]);
+        }
+      });
+    } catch (err) {
+      errors.push(email + ': ' + String(err && err.message ? err.message : err));
+    }
+  });
+
+  Object.keys(todoByTask).forEach(function (taskId) {
+    if (seen[taskId]) return;
+    const entryEmail = emailsForTaskId_(ids, taskId) || owner;
+    const task = getGoogleTask_(taskId, entryEmail);
+    if (task && task.status === 'completed') completed.push(todoByTask[taskId]);
   });
 
   const unique = {};
   completed.forEach(function (id) { unique[id] = true; });
-  return Object.keys(unique);
+  return {
+    ids: Object.keys(unique),
+    mapped: Object.keys(todoByTask).length,
+    errors: errors,
+  };
+}
+
+function emailsForTaskId_(ids, taskId) {
+  const keys = Object.keys(ids || {});
+  for (let i = 0; i < keys.length; i += 1) {
+    const entry = normalizeTodoTaskEntry_(ids[keys[i]]);
+    if (entry && entry.id === taskId && entry.email) return entry.email;
+  }
+  return '';
+}
+
+function listOwnerGoogleTasks_() {
+  const items = [];
+  let pageToken = '';
+  do {
+    const params = { showCompleted: true, showHidden: true, maxResults: 100 };
+    if (pageToken) params.pageToken = pageToken;
+    const resp = Tasks.Tasks.list('@default', params);
+    (resp.items || []).forEach(function (task) { items.push(task); });
+    pageToken = resp.nextPageToken || '';
+  } while (pageToken);
+  return items;
+}
+
+function listGoogleTasksForEmail_(email) {
+  if (!email || isScriptOwnerEmail_(email)) return listOwnerGoogleTasks_();
+  const items = [];
+  const token = getTasksToken_(email);
+  let pageToken = '';
+  do {
+    let url = 'https://www.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=true&showHidden=true&maxResults=100';
+    if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+    const resp = tasksApi_('get', url, token);
+    (resp.items || []).forEach(function (task) { items.push(task); });
+    pageToken = resp.nextPageToken || '';
+  } while (pageToken);
+  return items;
+}
+
+function getGoogleTask_(taskId, email) {
+  try {
+    if (isScriptOwnerEmail_(email)) {
+      return Tasks.Tasks.get('@default', taskId);
+    }
+    const token = getTasksToken_(email);
+    return tasksApi_(
+      'get',
+      'https://www.googleapis.com/tasks/v1/lists/@default/tasks/' + encodeURIComponent(taskId),
+      token
+    );
+  } catch (err) {
+    return null;
+  }
 }
 
 function markTodosDoneInSupabase_(todoIds) {
@@ -998,12 +1224,42 @@ function showLastTodoPull() {
   throw new Error(raw);
 }
 
-/** Impersonate a Workspace user — only if domain-wide delegation is set up. Unused by default. */
+/** Impersonate a Workspace user — needs domain-wide delegation. */
 function getCalendarToken_(email) {
   return getServiceAccountToken_(
     'https://www.googleapis.com/auth/calendar',
     String(email || '').trim().toLowerCase()
   );
+}
+
+function getTasksToken_(email) {
+  return getServiceAccountToken_(
+    'https://www.googleapis.com/auth/tasks',
+    String(email || '').trim().toLowerCase()
+  );
+}
+
+function tasksApi_(method, url, token, payload) {
+  const options = {
+    method: String(method || 'get').toUpperCase(),
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  };
+  if (payload) {
+    options.contentType = 'application/json';
+    options.payload = JSON.stringify(payload);
+  }
+  const resp = UrlFetchApp.fetch(url, options);
+  const raw = resp.getContentText() || '';
+  if (resp.getResponseCode() >= 400) {
+    throw new Error(raw.slice(0, 400) || ('Tasks HTTP ' + resp.getResponseCode()));
+  }
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    return { raw: raw };
+  }
 }
 
 function getServiceAccountToken_(scope, subject) {

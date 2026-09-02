@@ -270,7 +270,7 @@ export function buildCalendarResetEvent({ actorEmail }) {
  *
  * Calendar (via same webhook queue):
  * New / updated check-in milestones → each assignee’s Google Calendar
- * Dated to-dos → Google Task (script owner) or calendar invite (everyone else)
+ * Dated to-dos → that designer’s Google Tasks (domain-wide delegation)
  */
 export function buildNotifyEvents({
   prevProjects,
@@ -476,6 +476,7 @@ function syncTodoCalendars({
         done: Boolean(todo.done),
         calendar_title: title,
         designer_id: todo.designerId || '',
+        assignee_email: email,
       },
       { includeActor: true },
     );

@@ -114,7 +114,9 @@ begin
   end if;
 
   update public.studio_workspace
-  set payload = jsonb_set(coalesce(payload, '{}'::jsonb), '{todos}', v_after, true)
+  set
+    payload = jsonb_set(coalesce(payload, '{}'::jsonb), '{todos}', v_after, true),
+    updated_at = timezone('utc', now())
   where id = 'main';
 
   return jsonb_build_object('ok', true, 'changed', v_changed);
