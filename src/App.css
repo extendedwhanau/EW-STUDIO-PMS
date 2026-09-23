@@ -585,6 +585,20 @@ html, body, #root {
   flex-wrap: wrap;
 }
 
+.page-title-with-archive {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page-title-archive .icon-bubble-glyph {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .page-title {
   font-size: var(--app-wordmark-size);
   font-weight: var(--app-wordmark-weight);

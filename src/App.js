@@ -1026,18 +1026,76 @@ function addDays(str, n) {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
-/** Studio calendar “today” in NZ — keeps the today line correct regardless of browser TZ. */
-function today() {
+
+function aucklandDateString(date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Pacific/Auckland',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   const y = parts.find((p) => p.type === 'year')?.value;
   const m = parts.find((p) => p.type === 'month')?.value;
   const day = parts.find((p) => p.type === 'day')?.value;
   return `${y}-${m}-${day}`;
+}
+
+function aucklandWeekdayIndex(date) {
+  const wd = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Pacific/Auckland',
+    weekday: 'short',
+  }).format(date);
+  const key = String(wd || '').slice(0, 3);
+  return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[key];
+}
+
+/** Studio calendar “today” in NZ — keeps the today line correct regardless of browser TZ. */
+function today() {
+  return aucklandDateString(new Date());
+}
+
+/** Friday a fully ticked job leaves the live list. Mon–Thu finish that week's Friday; Fri–Sun wait until the next one. */
+function todoArchiveFriday(doneAtIso) {
+  const done = new Date(doneAtIso);
+  if (Number.isNaN(done.getTime())) return '';
+  const weekday = aucklandWeekdayIndex(done);
+  if (weekday == null) return '';
+  const daysUntil = weekday >= 1 && weekday <= 4
+    ? 5 - weekday
+    : weekday === 5
+      ? 7
+      : weekday === 6
+        ? 6
+        : 5;
+  return addDays(aucklandDateString(done), daysUntil);
+}
+
+function jobCompletedAt(items) {
+  if (!items?.length || items.some((item) => !item.done)) return '';
+  let latest = '';
+  items.forEach((item) => {
+    const stamp = item.doneAt || item.createdAt || '';
+    if (stamp > latest) latest = stamp;
+  });
+  return latest;
+}
+
+function archivedProjectIds(todos, todayStr) {
+  const byProject = new Map();
+  (todos || []).forEach((item) => {
+    const id = item?.projectId;
+    if (!id) return;
+    if (!byProject.has(id)) byProject.set(id, []);
+    byProject.get(id).push(item);
+  });
+  const archived = new Set();
+  byProject.forEach((items, id) => {
+    const completedAt = jobCompletedAt(items);
+    if (!completedAt) return;
+    const friday = todoArchiveFriday(completedAt);
+    if (friday && todayStr >= friday) archived.add(id);
+  });
+  return archived;
 }
 
 function normalizeTodo(item) {
@@ -2123,6 +2181,7 @@ function TodosView({
   filterDesigner,
   sessionUser,
   onSignIn,
+  showArchive,
 }) {
   const [draft, setDraft] = useState('');
   const [composerJob, setComposerJob] = useState('');
@@ -2164,12 +2223,22 @@ function TodosView({
   const composerJobProject = composerJob ? projectById.get(composerJob) : null;
   const canSyncTasks = Boolean(sessionUser?.email);
 
+  const todayStr = today();
+  const archivedIds = useMemo(
+    () => archivedProjectIds(todos, todayStr),
+    [todos, todayStr],
+  );
+
   const visibleTodos = useMemo(() => {
     const scoped = filterDesigner === 'all'
       ? todos
       : todos.filter((t) => t.designerId === filterDesigner);
-    return sortTodos(scoped);
-  }, [todos, filterDesigner]);
+    const listed = scoped.filter((item) => {
+      const archived = Boolean(item.projectId) && archivedIds.has(item.projectId);
+      return showArchive ? archived : !archived;
+    });
+    return sortTodos(listed);
+  }, [todos, filterDesigner, archivedIds, showArchive]);
 
   const designerGroups = useMemo(() => {
     if (filterDesigner !== 'all') {
@@ -2244,6 +2313,7 @@ function TodosView({
 
   return (
     <div className="todo-page">
+      {!showArchive ? (
       <div className="todo-composer-sticky">
         {!canSyncTasks ? (
           <p className="todo-sync-hint">
@@ -2313,10 +2383,13 @@ function TodosView({
           </button>
         </div>
       </div>
+      ) : null}
 
       {visibleTodos.length === 0 ? (
         <div className="empty-state">
-          Type a to-do and tap Add. Paste a list to add several at once.
+          {showArchive
+            ? 'Finished jobs move here on Friday.'
+            : 'Type a to-do and tap Add. Paste a list to add several at once.'}
         </div>
       ) : (
         <div className="todo-groups">
@@ -6999,6 +7072,7 @@ export default function App() {
   const [designerModalOpen, setDesignerModalOpen] = useState(false);
   const [designerBeingEdited, setDesignerBeingEdited] = useState(null);
   const [todos, setTodos] = useState(loadTodosFromStorage);
+  const [todoArchiveOpen, setTodoArchiveOpen] = useState(false);
   const [filterDesigner, setFilterDesigner] = useState('all');
   const [teamOpen, setTeamOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -7583,6 +7657,26 @@ export default function App() {
     ? todos
     : todos.filter((item) => item.designerId === filterDesigner);
   const openTodoCount = visibleTodos.filter((item) => !item.done).length;
+  const todayStr = today();
+  const archivedTodoProjectIds = useMemo(
+    () => archivedProjectIds(todos, todayStr),
+    [todos, todayStr],
+  );
+  const archivedTodoJobCount = useMemo(() => {
+    if (filterDesigner === 'all') return archivedTodoProjectIds.size;
+    const ids = new Set();
+    todos.forEach((item) => {
+      if (item.designerId === filterDesigner && archivedTodoProjectIds.has(item.projectId)) {
+        ids.add(item.projectId);
+      }
+    });
+    return ids.size;
+  }, [todos, filterDesigner, archivedTodoProjectIds]);
+  const showTodoArchive = todoArchiveOpen && archivedTodoJobCount > 0;
+
+  useEffect(() => {
+    if (todoArchiveOpen && archivedTodoJobCount === 0) setTodoArchiveOpen(false);
+  }, [todoArchiveOpen, archivedTodoJobCount]);
 
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
   const inStudioProjects = activeProjects.filter((p) => (
@@ -7873,15 +7967,35 @@ export default function App() {
               <span className="mobile-nav-bars" aria-hidden />
             </button>
             <div className="page-title-cluster">
-              <h1 className="page-title">
-                {view === 'overview'
-                  ? 'Projects'
-                  : view === 'archive'
-                    ? 'Archive'
-                    : view === 'todos'
-                      ? 'To-Do'
+              {view === 'todos' ? (
+                <div className="page-title-with-archive">
+                  <h1 className="page-title">To-Do</h1>
+                  {archivedTodoJobCount > 0 ? (
+                    <button
+                      type="button"
+                      className={`icon-bubble icon-bubble--sm page-title-archive${showTodoArchive ? ' icon-bubble--open' : ''}`}
+                      aria-pressed={showTodoArchive}
+                      aria-label={
+                        showTodoArchive
+                          ? 'Show this week’s to-dos'
+                          : `${archivedTodoJobCount} finished ${archivedTodoJobCount === 1 ? 'job' : 'jobs'}`
+                      }
+                      onClick={() => setTodoArchiveOpen((open) => !open)}
+                    >
+                      <span className="icon-bubble-glyph" aria-hidden>{archivedTodoJobCount}</span>
+                      <span className="icon-bubble-text">Archive</span>
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <h1 className="page-title">
+                  {view === 'overview'
+                    ? 'Projects'
+                    : view === 'archive'
+                      ? 'Archive'
                       : 'Timeline'}
-              </h1>
+                </h1>
+              )}
               {view === 'gantt' && ganttFocusMeta ? (
                 <button
                   type="button"
@@ -8123,6 +8237,7 @@ export default function App() {
               filterDesigner={filterDesigner}
               sessionUser={sessionUser}
               onSignIn={signInWithGoogle}
+              showArchive={showTodoArchive}
             />
           )}
 
