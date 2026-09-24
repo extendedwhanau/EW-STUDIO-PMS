@@ -2388,7 +2388,7 @@ function TodosView({
       {visibleTodos.length === 0 ? (
         <div className="empty-state">
           {showArchive
-            ? 'Finished jobs move here on Friday.'
+            ? 'Nothing archived yet. When every to-do on a job is ticked, it moves here on the Friday after.'
             : 'Type a to-do and tap Add. Paste a list to add several at once.'}
         </div>
       ) : (
@@ -7672,11 +7672,7 @@ export default function App() {
     });
     return ids.size;
   }, [todos, filterDesigner, archivedTodoProjectIds]);
-  const showTodoArchive = todoArchiveOpen && archivedTodoJobCount > 0;
-
-  useEffect(() => {
-    if (todoArchiveOpen && archivedTodoJobCount === 0) setTodoArchiveOpen(false);
-  }, [todoArchiveOpen, archivedTodoJobCount]);
+  const showTodoArchive = todoArchiveOpen;
 
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
   const inStudioProjects = activeProjects.filter((p) => (
@@ -7970,22 +7966,22 @@ export default function App() {
               {view === 'todos' ? (
                 <div className="page-title-with-archive">
                   <h1 className="page-title">To-Do</h1>
-                  {archivedTodoJobCount > 0 ? (
-                    <button
-                      type="button"
-                      className={`icon-bubble icon-bubble--sm page-title-archive${showTodoArchive ? ' icon-bubble--open' : ''}`}
-                      aria-pressed={showTodoArchive}
-                      aria-label={
-                        showTodoArchive
-                          ? 'Show this week’s to-dos'
-                          : `${archivedTodoJobCount} finished ${archivedTodoJobCount === 1 ? 'job' : 'jobs'}`
-                      }
-                      onClick={() => setTodoArchiveOpen((open) => !open)}
-                    >
-                      <span className="icon-bubble-glyph" aria-hidden>{archivedTodoJobCount}</span>
-                      <span className="icon-bubble-text">Archive</span>
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className={`icon-bubble icon-bubble--sm page-title-archive${showTodoArchive ? ' icon-bubble--on' : ''}`}
+                    aria-pressed={showTodoArchive}
+                    aria-label={
+                      showTodoArchive
+                        ? 'Show this week’s to-dos'
+                        : `Archive, ${archivedTodoJobCount} finished ${archivedTodoJobCount === 1 ? 'job' : 'jobs'}`
+                    }
+                    onClick={() => setTodoArchiveOpen((open) => !open)}
+                  >
+                    <span className="page-title-archive-label">Archive</span>
+                    {archivedTodoJobCount > 0 ? (
+                      <span className="page-title-archive-count" aria-hidden>{archivedTodoJobCount}</span>
+                    ) : null}
+                  </button>
                 </div>
               ) : (
                 <h1 className="page-title">

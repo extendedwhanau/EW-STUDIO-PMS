@@ -593,10 +593,21 @@ html, body, #root {
   max-width: 100%;
 }
 
-.page-title-archive .icon-bubble-glyph {
-  font-variant-numeric: tabular-nums;
+.page-title-archive {
+  gap: 5px;
+}
+
+.page-title-archive-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.page-title-archive-count {
   font-size: 11px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
 }
 
 .page-title {
