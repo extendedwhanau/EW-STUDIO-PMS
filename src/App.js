@@ -1054,7 +1054,7 @@ function today() {
   return aucklandDateString(new Date());
 }
 
-/** Friday a fully ticked job leaves the live list. Mon–Thu finish that week's Friday; Fri–Sun wait until the next one. */
+/** Friday a ticked to-do leaves the live list. Mon–Thu ticks go that week's Friday; Fri–Sun wait until the next one. */
 function todoArchiveFriday(doneAtIso) {
   const done = new Date(doneAtIso);
   if (Number.isNaN(done.getTime())) return '';
@@ -1070,32 +1070,35 @@ function todoArchiveFriday(doneAtIso) {
   return addDays(aucklandDateString(done), daysUntil);
 }
 
-function jobCompletedAt(items) {
-  if (!items?.length || items.some((item) => !item.done)) return '';
-  let latest = '';
-  items.forEach((item) => {
-    const stamp = item.doneAt || item.createdAt || '';
-    if (stamp > latest) latest = stamp;
-  });
-  return latest;
+function todoIsArchived(item, todayStr) {
+  if (!item?.done) return false;
+  const friday = todoArchiveFriday(item.doneAt || item.createdAt || '');
+  return Boolean(friday) && todayStr >= friday;
 }
 
-function archivedProjectIds(todos, todayStr) {
-  const byProject = new Map();
+/** Ticked to-dos past their Friday, plus ticked ones removed earlier and kept on each job's history. */
+function archivedTodoEntries(todos, projects, todayStr) {
+  const seen = new Set();
+  const out = [];
   (todos || []).forEach((item) => {
-    const id = item?.projectId;
-    if (!id) return;
-    if (!byProject.has(id)) byProject.set(id, []);
-    byProject.get(id).push(item);
+    if (!todoIsArchived(item, todayStr)) return;
+    seen.add(item.id);
+    out.push(item);
   });
-  const archived = new Set();
-  byProject.forEach((items, id) => {
-    const completedAt = jobCompletedAt(items);
-    if (!completedAt) return;
-    const friday = todoArchiveFriday(completedAt);
-    if (friday && todayStr >= friday) archived.add(id);
+  (projects || []).forEach((p) => {
+    (Array.isArray(p.todoHistory) ? p.todoHistory : []).forEach((entry) => {
+      if (!entry?.done || seen.has(entry.id)) return;
+      seen.add(entry.id);
+      out.push({ ...entry, projectId: p.id, fromHistory: true });
+    });
   });
-  return archived;
+  return out;
+}
+
+function sortArchivedTodos(list) {
+  return (list || []).slice().sort((a, b) => (
+    String(b.doneAt || b.archivedAt || '').localeCompare(String(a.doneAt || a.archivedAt || ''))
+  ));
 }
 
 function normalizeTodo(item) {
@@ -1193,7 +1196,7 @@ function archiveTodoOntoProjects(todo, setProjects) {
   }));
 }
 
-function jobGroupsFromTodos(items, projectById) {
+function jobGroupsFromTodos(items, projectById, sortItems = sortTodos) {
   const byJob = new Map();
   (items || []).forEach((item) => {
     const key = item.projectId || '_none';
@@ -1211,13 +1214,13 @@ function jobGroupsFromTodos(items, projectById) {
     .map((id) => ({
       projectId: id,
       project: projectById.get(id) || null,
-      items: sortTodos(byJob.get(id)),
+      items: sortItems(byJob.get(id)),
     }));
   if (none.length) {
     groups.push({
       projectId: '',
       project: null,
-      items: sortTodos(none),
+      items: sortItems(none),
     });
   }
   return groups;
@@ -2224,46 +2227,43 @@ function TodosView({
   const canSyncTasks = Boolean(sessionUser?.email);
 
   const todayStr = today();
-  const archivedIds = useMemo(
-    () => archivedProjectIds(todos, todayStr),
-    [todos, todayStr],
-  );
+  const sortItems = showArchive ? sortArchivedTodos : sortTodos;
 
   const visibleTodos = useMemo(() => {
+    const source = showArchive
+      ? archivedTodoEntries(todos, projects, todayStr)
+      : todos.filter((item) => !todoIsArchived(item, todayStr));
     const scoped = filterDesigner === 'all'
-      ? todos
-      : todos.filter((t) => t.designerId === filterDesigner);
-    const listed = scoped.filter((item) => {
-      const archived = Boolean(item.projectId) && archivedIds.has(item.projectId);
-      return showArchive ? archived : !archived;
-    });
-    return sortTodos(listed);
-  }, [todos, filterDesigner, archivedIds, showArchive]);
+      ? source
+      : source.filter((t) => t.designerId === filterDesigner);
+    return sortItems(scoped);
+  }, [todos, projects, filterDesigner, todayStr, showArchive, sortItems]);
 
   const designerGroups = useMemo(() => {
     if (filterDesigner !== 'all') {
       const owner = designers.find((d) => d.id === filterDesigner);
       const items = visibleTodos.filter((item) => item.designerId === filterDesigner);
       return items.length
-        ? [{ designer: owner || null, jobGroups: jobGroupsFromTodos(items, projectById) }]
+        ? [{ designer: owner || null, jobGroups: jobGroupsFromTodos(items, projectById, sortItems) }]
         : [];
     }
     return designers
       .map((d) => {
         const items = visibleTodos.filter((item) => item.designerId === d.id);
         if (!items.length) return null;
-        return { designer: d, jobGroups: jobGroupsFromTodos(items, projectById) };
+        return { designer: d, jobGroups: jobGroupsFromTodos(items, projectById, sortItems) };
       })
       .filter(Boolean);
-  }, [visibleTodos, filterDesigner, designers, projectById]);
+  }, [visibleTodos, filterDesigner, designers, projectById, sortItems]);
 
   const jobOnlyGroups = useMemo(() => {
     if (filterDesigner !== 'all') return [];
     return jobGroupsFromTodos(
       visibleTodos.filter((item) => !item.designerId),
       projectById,
+      sortItems,
     );
-  }, [visibleTodos, filterDesigner, projectById]);
+  }, [visibleTodos, filterDesigner, projectById, sortItems]);
 
   const addLines = (raw) => {
     const lines = splitTodoLines(raw);
@@ -2310,6 +2310,21 @@ function TodosView({
       doneAt: item.done ? '' : new Date().toISOString(),
     });
   };
+
+  const renderRow = (item) => (item.fromHistory ? (
+    <TodoHistoryRow key={item.id} item={item} />
+  ) : (
+    <TodoRow
+      key={item.id}
+      item={item}
+      designers={designers}
+      projectById={projectById}
+      jobOptions={jobOptions}
+      onToggle={() => toggleDone(item)}
+      onPatch={(patch) => patchTodo(item.id, patch)}
+      onRemove={() => removeTodo(item.id)}
+    />
+  ));
 
   return (
     <div className="todo-page">
@@ -2388,7 +2403,7 @@ function TodosView({
       {visibleTodos.length === 0 ? (
         <div className="empty-state">
           {showArchive
-            ? 'Nothing archived yet. When every to-do on a job is ticked, it moves here on the Friday after.'
+            ? 'Nothing archived yet. Ticked to-dos move here on the Friday after they’re done.'
             : 'Type a to-do and tap Add. Paste a list to add several at once.'}
         </div>
       ) : (
@@ -2404,18 +2419,7 @@ function TodosView({
                     <h3 className="todo-job-heading">{todoClientName(job.project)}</h3>
                   ) : null}
                   <div className="todo-list">
-                    {job.items.map((item) => (
-                      <TodoRow
-                        key={item.id}
-                        item={item}
-                        designers={designers}
-                        projectById={projectById}
-                        jobOptions={jobOptions}
-                        onToggle={() => toggleDone(item)}
-                        onPatch={(patch) => patchTodo(item.id, patch)}
-                        onRemove={() => removeTodo(item.id)}
-                      />
-                    ))}
+                    {job.items.map(renderRow)}
                   </div>
                 </div>
               ))}
@@ -2427,23 +2431,40 @@ function TodosView({
                 <h2 className="todo-job-heading">{todoClientName(job.project)}</h2>
               ) : null}
               <div className="todo-list">
-                {job.items.map((item) => (
-                  <TodoRow
-                    key={item.id}
-                    item={item}
-                    designers={designers}
-                    projectById={projectById}
-                    jobOptions={jobOptions}
-                    onToggle={() => toggleDone(item)}
-                    onPatch={(patch) => patchTodo(item.id, patch)}
-                    onRemove={() => removeTodo(item.id)}
-                  />
-                ))}
+                {job.items.map(renderRow)}
               </div>
             </section>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function TodoHistoryRow({ item }) {
+  const doneOn = item.doneAt ? aucklandDateString(new Date(item.doneAt)) : '';
+  return (
+    <div className="todo-row todo-row--done todo-row--history">
+      <div className="todo-row-top">
+        <span className="todo-check todo-check--done" aria-hidden>
+          <svg viewBox="0 0 16 16">
+            <path
+              d="M3.5 8.2l3 3.1 6-6.4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+        <span className="todo-row-title">{item.title}</span>
+      </div>
+      {doneOn ? (
+        <div className="todo-row-meta">
+          <span className="todo-row-done-date">{formatMilestoneDateShort(doneOn)}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -7658,20 +7679,12 @@ export default function App() {
     : todos.filter((item) => item.designerId === filterDesigner);
   const openTodoCount = visibleTodos.filter((item) => !item.done).length;
   const todayStr = today();
-  const archivedTodoProjectIds = useMemo(
-    () => archivedProjectIds(todos, todayStr),
-    [todos, todayStr],
-  );
-  const archivedTodoJobCount = useMemo(() => {
-    if (filterDesigner === 'all') return archivedTodoProjectIds.size;
-    const ids = new Set();
-    todos.forEach((item) => {
-      if (item.designerId === filterDesigner && archivedTodoProjectIds.has(item.projectId)) {
-        ids.add(item.projectId);
-      }
-    });
-    return ids.size;
-  }, [todos, filterDesigner, archivedTodoProjectIds]);
+  const archivedTodoCount = useMemo(() => {
+    const entries = archivedTodoEntries(todos, projects, todayStr);
+    return filterDesigner === 'all'
+      ? entries.length
+      : entries.filter((item) => item.designerId === filterDesigner).length;
+  }, [todos, projects, filterDesigner, todayStr]);
   const showTodoArchive = todoArchiveOpen;
 
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
@@ -7973,13 +7986,13 @@ export default function App() {
                     aria-label={
                       showTodoArchive
                         ? 'Show this week’s to-dos'
-                        : `Archive, ${archivedTodoJobCount} finished ${archivedTodoJobCount === 1 ? 'job' : 'jobs'}`
+                        : `Archive, ${archivedTodoCount} done ${archivedTodoCount === 1 ? 'to-do' : 'to-dos'}`
                     }
                     onClick={() => setTodoArchiveOpen((open) => !open)}
                   >
                     <span className="page-title-archive-label">Archive</span>
-                    {archivedTodoJobCount > 0 ? (
-                      <span className="page-title-archive-count" aria-hidden>{archivedTodoJobCount}</span>
+                    {archivedTodoCount > 0 ? (
+                      <span className="page-title-archive-count" aria-hidden>{archivedTodoCount}</span>
                     ) : null}
                   </button>
                 </div>
