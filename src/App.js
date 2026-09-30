@@ -2239,31 +2239,31 @@ function TodosView({
     return sortItems(scoped);
   }, [todos, projects, filterDesigner, todayStr, showArchive, sortItems]);
 
-  const designerGroups = useMemo(() => {
+  const columns = useMemo(() => {
+    const column = (id, title, items) => ({
+      id,
+      title,
+      count: showArchive ? items.length : items.filter((item) => !item.done).length,
+      jobGroups: jobGroupsFromTodos(items, projectById, sortItems),
+    });
     if (filterDesigner !== 'all') {
       const owner = designers.find((d) => d.id === filterDesigner);
-      const items = visibleTodos.filter((item) => item.designerId === filterDesigner);
-      return items.length
-        ? [{ designer: owner || null, jobGroups: jobGroupsFromTodos(items, projectById, sortItems) }]
-        : [];
+      return [column(
+        filterDesigner,
+        owner?.name || 'Designer',
+        visibleTodos.filter((item) => item.designerId === filterDesigner),
+      )];
     }
-    return designers
-      .map((d) => {
-        const items = visibleTodos.filter((item) => item.designerId === d.id);
-        if (!items.length) return null;
-        return { designer: d, jobGroups: jobGroupsFromTodos(items, projectById, sortItems) };
-      })
-      .filter(Boolean);
-  }, [visibleTodos, filterDesigner, designers, projectById, sortItems]);
-
-  const jobOnlyGroups = useMemo(() => {
-    if (filterDesigner !== 'all') return [];
-    return jobGroupsFromTodos(
-      visibleTodos.filter((item) => !item.designerId),
-      projectById,
-      sortItems,
-    );
-  }, [visibleTodos, filterDesigner, projectById, sortItems]);
+    const cols = designers.map((d) => column(
+      d.id,
+      d.name,
+      visibleTodos.filter((item) => item.designerId === d.id),
+    ));
+    const knownIds = new Set(designers.map((d) => d.id));
+    const unassigned = visibleTodos.filter((item) => !knownIds.has(item.designerId));
+    if (unassigned.length) cols.push(column('_none', 'Unassigned', unassigned));
+    return cols;
+  }, [visibleTodos, filterDesigner, designers, projectById, sortItems, showArchive]);
 
   const addLines = (raw) => {
     const lines = splitTodoLines(raw);
@@ -2407,31 +2407,28 @@ function TodosView({
             : 'Type a to-do and tap Add. Paste a list to add several at once.'}
         </div>
       ) : (
-        <div className="todo-groups">
-          {designerGroups.map((group) => (
-            <section key={group.designer?.id || 'designer'} className="todo-group">
-              {filterDesigner === 'all' && group.designer ? (
-                <h2 className="todo-heading">{group.designer.name}</h2>
-              ) : null}
-              {group.jobGroups.map((job) => (
-                <div key={job.projectId || 'no-job'} className="todo-job">
-                  {job.project ? (
-                    <h3 className="todo-job-heading">{todoClientName(job.project)}</h3>
-                  ) : null}
-                  <div className="todo-list">
-                    {job.items.map(renderRow)}
+        <div className="todo-board">
+          {columns.map((col) => (
+            <section key={col.id} className="overview-col todo-col" aria-label={col.title}>
+              <header className="overview-col-header">
+                <h2 className="project-feed-heading">{col.title}</h2>
+                <span className="overview-col-count">{col.count}</span>
+              </header>
+              <div className="todo-col-list">
+                {col.jobGroups.length === 0 ? (
+                  <p className="overview-col-empty">
+                    {showArchive ? 'Nothing archived yet.' : 'Nothing on.'}
+                  </p>
+                ) : col.jobGroups.map((job) => (
+                  <div key={job.projectId || 'no-job'} className="todo-job">
+                    {job.project ? (
+                      <h3 className="todo-job-heading">{todoClientName(job.project)}</h3>
+                    ) : null}
+                    <div className="todo-list">
+                      {job.items.map(renderRow)}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </section>
-          ))}
-          {jobOnlyGroups.map((job) => (
-            <section key={`job-${job.projectId || 'none'}`} className="todo-group">
-              {job.project ? (
-                <h2 className="todo-job-heading">{todoClientName(job.project)}</h2>
-              ) : null}
-              <div className="todo-list">
-                {job.items.map(renderRow)}
+                ))}
               </div>
             </section>
           ))}
