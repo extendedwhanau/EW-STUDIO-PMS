@@ -227,10 +227,6 @@ function normalizeProjectCategory(category) {
   return 'studio';
 }
 
-function formatCategoryForDisplay(category) {
-  return CATEGORY_LABELS[normalizeProjectCategory(category)] || CATEGORY_LABELS.studio;
-}
-
 function getProjectCategory(project) {
   return normalizeProjectCategory(project?.priority);
 }
@@ -460,6 +456,19 @@ function formatMarkerDateLabel(str) {
   const d = new Date(`${str}T12:00:00Z`);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${d.getUTCDate()} ${months[d.getUTCMonth()]}`;
+}
+
+function formatCommentWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-NZ', {
+    timeZone: 'Pacific/Auckland',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 /** Short date for compact UI, e.g. "7 Jul 26". */
@@ -986,6 +995,111 @@ function normalizeProjectMarkers(markers, options = {}) {
   );
 }
 
+function normalizeProjectComments(comments) {
+  return (Array.isArray(comments) ? comments : [])
+    .map((raw) => {
+      if (!raw || typeof raw !== 'object') return null;
+      const body = String(raw.body || '').trim();
+      if (!body) return null;
+      return {
+        id: String(raw.id || uuidv4()),
+        body,
+        authorId: String(raw.authorId || ''),
+        authorName: String(raw.authorName || '').trim(),
+        createdAt: raw.createdAt || new Date().toISOString(),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+}
+
+function normalizeFigmaUrl(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    if (url.protocol === 'figma:') return url.toString();
+    const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+    if (host === 'figma.com') return url.toString();
+    if (url.protocol === 'http:' || url.protocol === 'https:') return '';
+    return text;
+  } catch {
+    return text;
+  }
+}
+
+/** Desktop-app URL. File links use figma://file/{key}. Folder links are a best-effort rewrite. */
+function figmaDesktopUrl(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    return '';
+  }
+  if (url.protocol === 'figma:') return url.toString();
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+  if (host !== 'figma.com') return '';
+  const file = url.pathname.match(/^\/(design|file|proto|board|slides|deck|site|buzz|make)\/([^/]+)/i);
+  if (file) {
+    const key = file[2];
+    const node = url.searchParams.get('node-id');
+    return node ? `figma://file/${key}?node-id=${encodeURIComponent(node)}` : `figma://file/${key}`;
+  }
+  const path = url.pathname.replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!path) return '';
+  return `figma://${path}`;
+}
+
+function dropboxOpenHref(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  if (text.startsWith('file:')) return text;
+  if (text.startsWith('/')) {
+    const encoded = text.split('/').map((part, index) => (
+      index === 0 ? '' : encodeURIComponent(part)
+    )).join('/');
+    return `file://${encoded}`;
+  }
+  try {
+    const url = new URL(text);
+    if (url.protocol === 'file:') return url.toString();
+    const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+    if (host === 'dropbox.com' || host.endsWith('.dropbox.com')) return url.toString();
+  } catch {
+    return '';
+  }
+  return '';
+}
+
+function linkOpenHref(link) {
+  if (!link) return '';
+  if (link.kind === 'figma') return figmaDesktopUrl(link.url);
+  if (link.kind === 'dropbox') return dropboxOpenHref(link.url);
+  return '';
+}
+
+function normalizeProjectLinks(p) {
+  const seen = new Set();
+  const links = [];
+  (Array.isArray(p?.links) ? p.links : []).forEach((raw) => {
+    if (!raw || typeof raw !== 'object') return;
+    const kind = raw.kind === 'dropbox' || raw.kind === 'figma' ? raw.kind : '';
+    const url = String(raw.url || '').trim();
+    if (!kind || !url || seen.has(kind) || !linkOpenHref({ kind, url })) return;
+    seen.add(kind);
+    links.push({ id: String(raw.id || uuidv4()), kind, url });
+  });
+  if (!seen.has('figma')) {
+    const legacy = normalizeFigmaUrl(p?.figmaUrl);
+    if (legacy && figmaDesktopUrl(legacy)) {
+      links.unshift({ id: 'legacy-figma', kind: 'figma', url: legacy });
+    }
+  }
+  return links;
+}
+
 function normalizeProjectMilestones(p) {
   const raw = Array.isArray(p.milestones) ? p.milestones : [];
   const milestones = sortPhasesByCatalog(
@@ -993,15 +1107,19 @@ function normalizeProjectMilestones(p) {
   );
   const markers = normalizeProjectMarkers(p.markers);
   const linkedSchedule = Boolean(p.linkedSchedule);
+  const comments = normalizeProjectComments(p.comments);
+  const links = normalizeProjectLinks(p);
+  const figmaUrl = links.find((link) => link.kind === 'figma')?.url || '';
   const { milestonesEnabled, ...rest } = p;
+  const extras = { comments, links, figmaUrl };
   if (!milestones.length) {
-    return { ...rest, milestones, markers, linkedSchedule };
+    return { ...rest, milestones, markers, linkedSchedule, ...extras };
   }
   const kickoff = rest.startDate || today();
   const savedEnd = rest.endDate || '';
   const { phases, startDate, endDate: resolvedEnd } = resolveMilestoneSchedule(kickoff, milestones);
   const endDate = pickProjectEndDate('', savedEnd, resolvedEnd);
-  return { ...rest, milestones: phases, markers, linkedSchedule, startDate, endDate };
+  return { ...rest, milestones: phases, markers, linkedSchedule, startDate, endDate, ...extras };
 }
 
 function projectHasMilestones(project) {
@@ -1101,6 +1219,21 @@ function sortArchivedTodos(list) {
   ));
 }
 
+function normalizeTodoSubtasks(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((raw) => {
+      if (!raw || typeof raw !== 'object') return null;
+      const title = String(raw.title || '').trim();
+      if (!title) return null;
+      return {
+        id: String(raw.id || uuidv4()),
+        title,
+        done: Boolean(raw.done),
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeTodo(item) {
   if (!item) return null;
   const title = String(item.title || '').trim();
@@ -1117,6 +1250,7 @@ function normalizeTodo(item) {
     done,
     createdAt: item.createdAt || new Date().toISOString(),
     doneAt: done ? (item.doneAt || new Date().toISOString()) : '',
+    subtasks: normalizeTodoSubtasks(item.subtasks),
   };
 }
 
@@ -1145,11 +1279,6 @@ function sortTodos(list) {
 function todoProjectName(project) {
   if (!project) return '';
   return String(project.name || '').trim() || 'Untitled';
-}
-
-function todoClientName(project) {
-  if (!project) return '';
-  return String(project.client || '').trim() || todoProjectName(project);
 }
 
 function todoJobLabel(project) {
@@ -2175,6 +2304,239 @@ function TodoDesignerPicker({
   );
 }
 
+function TodoProjectCard({
+  item,
+  project,
+  designers,
+  onOpen,
+  onToggle,
+}) {
+  const designer = (designers || []).find((d) => d.id === item.designerId);
+  const dateLabel = formatTaskDateShort(item.date);
+  const subtaskCount = (item.subtasks || []).length;
+
+  return (
+    <div
+      className={`project-row project-row--board todo-project-card${item.done ? ' todo-project-card--done' : ''}`}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="project-row-inner project-row-inner--board">
+        {project.client ? (
+          <span className="project-client">{project.client}</span>
+        ) : null}
+        <span className="project-name">{item.title}</span>
+        {subtaskCount > 0 ? (
+          <span className="todo-project-card-more">
+            {subtaskCount === 1 ? '1 task' : `${subtaskCount} tasks`}
+          </span>
+        ) : null}
+        <div className="project-row-col project-row-col--trail">
+          <button
+            type="button"
+            className={`todo-check${item.done ? ' todo-check--done' : ''}`}
+            aria-label={item.done ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
+            aria-pressed={item.done}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+          >
+            {item.done ? (
+              <svg viewBox="0 0 16 16" aria-hidden>
+                <path
+                  d="M3.5 8.2l3 3.1 6-6.4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : null}
+          </button>
+          {dateLabel ? (
+            <span className="project-row-board-date">{dateLabel}</span>
+          ) : null}
+          {designer ? <Avatar designer={designer} size={22} /> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TodoSubtaskRow({ subtask, onCommit, onToggle, onRemove }) {
+  const [title, setTitle] = useState(subtask.title);
+
+  useEffect(() => {
+    setTitle(subtask.title);
+  }, [subtask.title]);
+
+  const commit = () => {
+    const next = title.trim();
+    if (!next) {
+      setTitle(subtask.title);
+      return;
+    }
+    if (next !== subtask.title) onCommit(next);
+  };
+
+  return (
+    <li className={`todo-subtask-row${subtask.done ? ' todo-subtask--done' : ''}`}>
+      <button
+        type="button"
+        className={`todo-check${subtask.done ? ' todo-check--done' : ''}`}
+        aria-label={subtask.done ? `Mark ${subtask.title} as not done` : `Mark ${subtask.title} as done`}
+        aria-pressed={subtask.done}
+        onClick={onToggle}
+      >
+        {subtask.done ? (
+          <svg viewBox="0 0 16 16" aria-hidden>
+            <path
+              d="M3.5 8.2l3 3.1 6-6.4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : null}
+      </button>
+      <input
+        className="todo-subtask-title"
+        type="text"
+        value={title}
+        aria-label="Task"
+        onChange={(e) => setTitle(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="todo-subtask-remove"
+        onClick={onRemove}
+        aria-label={`Remove ${subtask.title}`}
+      >
+        ×
+      </button>
+    </li>
+  );
+}
+
+function TodoDetailModal({
+  item,
+  onClose,
+  onPatch,
+  onRemove,
+}) {
+  const [draft, setDraft] = useState('');
+  const subtasks = item.subtasks || [];
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const addSubtask = () => {
+    const title = draft.trim();
+    if (!title) return;
+    onPatch({
+      subtasks: [...subtasks, { id: uuidv4(), title, done: false }],
+    });
+    setDraft('');
+  };
+
+  const patchSubtask = (id, patch) => {
+    onPatch({
+      subtasks: subtasks.map((subtask) => (
+        subtask.id === id ? { ...subtask, ...patch } : subtask
+      )),
+    });
+  };
+
+  return createPortal(
+    <div
+      className="modal-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="modal todo-detail-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={item.title}
+      >
+        <div className="modal-header">
+          <div className="todo-detail-lead">
+            <h2 className="todo-detail-title">{item.title}</h2>
+          </div>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="modal-body todo-detail-body">
+          {subtasks.length > 0 ? (
+            <ul className="todo-subtask-list">
+              {subtasks.map((subtask) => (
+                <TodoSubtaskRow
+                  key={subtask.id}
+                  subtask={subtask}
+                  onCommit={(title) => patchSubtask(subtask.id, { title })}
+                  onToggle={() => patchSubtask(subtask.id, { done: !subtask.done })}
+                  onRemove={() => onPatch({
+                    subtasks: subtasks.filter((entry) => entry.id !== subtask.id),
+                  })}
+                />
+              ))}
+            </ul>
+          ) : null}
+          <div className="todo-subtask-row todo-subtask-row--new">
+            <input
+              className="todo-subtask-draft"
+              type="text"
+              value={draft}
+              placeholder="New"
+              aria-label="New"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                addSubtask();
+              }}
+            />
+          </div>
+        </div>
+        <div className="modal-footer modal-footer--project">
+          <button type="button" className="btn-delete" onClick={onRemove}>
+            Delete
+          </button>
+          <div className="modal-footer-actions">
+            <button type="button" className="modal-btn-close" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function TodosView({
   todos,
   setTodos,
@@ -2192,6 +2554,7 @@ function TodosView({
   const [composerOwner, setComposerOwner] = useState(() => (
     filterDesigner !== 'all' ? filterDesigner : ''
   ));
+  const [openTodoId, setOpenTodoId] = useState(null);
 
   useEffect(() => {
     if (filterDesigner !== 'all') {
@@ -2289,6 +2652,9 @@ function TodosView({
   const patchTodo = (id, patch) => {
     setTodos((prev) => prev.map((item) => {
       if (item.id !== id) return item;
+      if (Object.prototype.hasOwnProperty.call(patch, 'subtasks')) {
+        return { ...item, subtasks: normalizeTodoSubtasks(patch.subtasks) };
+      }
       if (Object.prototype.hasOwnProperty.call(patch, 'title')) {
         return { ...item, title: patch.title };
       }
@@ -2311,20 +2677,39 @@ function TodosView({
     });
   };
 
-  const renderRow = (item) => (item.fromHistory ? (
-    <TodoHistoryRow key={item.id} item={item} />
-  ) : (
-    <TodoRow
-      key={item.id}
-      item={item}
-      designers={designers}
-      projectById={projectById}
-      jobOptions={jobOptions}
-      onToggle={() => toggleDone(item)}
-      onPatch={(patch) => patchTodo(item.id, patch)}
-      onRemove={() => removeTodo(item.id)}
-    />
-  ));
+  const renderRow = (item) => {
+    if (item.fromHistory) return <TodoHistoryRow key={item.id} item={item} />;
+    const project = item.projectId ? projectById.get(item.projectId) : null;
+    if (project) {
+      return (
+        <TodoProjectCard
+          key={item.id}
+          item={item}
+          project={project}
+          designers={designers}
+          onOpen={() => setOpenTodoId(item.id)}
+          onToggle={() => toggleDone(item)}
+        />
+      );
+    }
+    return (
+      <TodoRow
+        key={item.id}
+        item={item}
+        designers={designers}
+        projectById={projectById}
+        jobOptions={jobOptions}
+        onToggle={() => toggleDone(item)}
+        onPatch={(patch) => patchTodo(item.id, patch)}
+        onRemove={() => removeTodo(item.id)}
+      />
+    );
+  };
+
+  const openTodo = openTodoId
+    ? (todos || []).find((item) => item.id === openTodoId) || null
+    : null;
+  const openTodoProject = openTodo?.projectId ? projectById.get(openTodo.projectId) : null;
 
   return (
     <div className="todo-page">
@@ -2420,10 +2805,7 @@ function TodosView({
                     {showArchive ? 'Nothing archived yet.' : 'Nothing on.'}
                   </p>
                 ) : col.jobGroups.map((job) => (
-                  <div key={job.projectId || 'no-job'} className="todo-job">
-                    {job.project ? (
-                      <h3 className="todo-job-heading">{todoClientName(job.project)}</h3>
-                    ) : null}
+                  <div key={job.projectId || 'no-job'} className={`todo-job${job.project ? ' todo-job--cards' : ''}`}>
                     <div className="todo-list">
                       {job.items.map(renderRow)}
                     </div>
@@ -2434,6 +2816,17 @@ function TodosView({
           ))}
         </div>
       )}
+      {openTodo && openTodoProject ? (
+        <TodoDetailModal
+          item={openTodo}
+          onClose={() => setOpenTodoId(null)}
+          onPatch={(patch) => patchTodo(openTodo.id, patch)}
+          onRemove={() => {
+            removeTodo(openTodo.id);
+            setOpenTodoId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -3339,6 +3732,68 @@ function ProjectDetailsPanel({
 }) {
   const projectNameSize = Math.max(7, (form.name.trim() || 'Project').length + 1);
   const clientSize = Math.max(6, (form.client.trim() || 'Client').length + 1);
+  const [linkMenuOpen, setLinkMenuOpen] = useState(false);
+  const [linkKind, setLinkKind] = useState('');
+  const [linkDraft, setLinkDraft] = useState('');
+  const linkMenuRef = useRef(null);
+  const linkCommitLock = useRef(false);
+  const links = Array.isArray(form.links) ? form.links : [];
+  const linkKindsLeft = [
+    { kind: 'figma', label: 'Figma' },
+    { kind: 'dropbox', label: 'Dropbox' },
+  ].filter((option) => !links.some((link) => link.kind === option.kind));
+
+  useEffect(() => {
+    if (!linkMenuOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (linkMenuRef.current?.contains(event.target)) return;
+      setLinkMenuOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setLinkMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [linkMenuOpen]);
+
+  const beginLink = (kind) => {
+    linkCommitLock.current = false;
+    setLinkMenuOpen(false);
+    setLinkKind(kind);
+    setLinkDraft('');
+  };
+
+  const cancelLink = () => {
+    setLinkKind('');
+    setLinkDraft('');
+  };
+
+  const commitLink = () => {
+    if (linkCommitLock.current) return;
+    const url = linkDraft.trim();
+    const href = linkOpenHref({ kind: linkKind, url });
+    if (!linkKind || !href) return;
+    linkCommitLock.current = true;
+    setForm((current) => ({
+      ...current,
+      links: [
+        ...(Array.isArray(current.links) ? current.links : []),
+        { id: uuidv4(), kind: linkKind, url },
+      ],
+    }));
+    cancelLink();
+  };
+
+  const removeLink = (id) => {
+    setForm((current) => ({
+      ...current,
+      links: (Array.isArray(current.links) ? current.links : []).filter((link) => link.id !== id),
+    }));
+  };
 
   return (
     <>
@@ -3470,60 +3925,121 @@ function ProjectDetailsPanel({
         </div>
       </div>
 
-      <div className="sheet-project-split-row">
-        <div className="sheet-modal-section sheet-modal-section--project-meta">
-          <div className="sheet-project-meta-group">
-            <label htmlFor="project-modal-category" className="sheet-modal-section-sublabel">
-              Focus
-            </label>
-            <div className="sheet-select-hit sheet-select-hit--meta">
-              <span className="sheet-select-visual" aria-hidden>
-                <span className="sheet-value sheet-value--nowrap">
-                  {formatCategoryForDisplay(form.priority)}
-                </span>
+      <div className="sheet-modal-section sheet-modal-section--project-meta">
+        <div className="sheet-project-designers-row">
+          <div className="sheet-modal-section-label sheet-project-designers-label">Status</div>
+          <div className="sheet-select-hit sheet-select-hit--meta">
+            <span className="sheet-select-visual sheet-select-visual--status" aria-hidden>
+              <span
+                className="sheet-status-dot"
+                style={{
+                  backgroundColor: statusAccent(form.status),
+                  boxShadow: `0 0 0 2px ${statusAccent(form.status)}22`,
+                }}
+              />
+              <span className="sheet-value sheet-value--nowrap">
+                {formatStatusForDisplay(form.status)}
               </span>
-              <select
-                id="project-modal-category"
-                className="sheet-select-native"
-                value={normalizeProjectCategory(form.priority)}
-                onChange={(e) => set('priority', e.target.value)}
-              >
-                {CATEGORY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
-                ))}
-              </select>
-            </div>
+            </span>
+            <select
+              id="project-modal-status"
+              className="sheet-select-native"
+              value={form.status}
+              onChange={(e) => set('status', e.target.value)}
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
         </div>
-        <div className="sheet-modal-section sheet-modal-section--project-meta">
-          <div className="sheet-project-meta-group">
-            <label htmlFor="project-modal-status" className="sheet-modal-section-sublabel">
-              Status
-            </label>
-            <div className="sheet-select-hit sheet-select-hit--meta">
-              <span className="sheet-select-visual sheet-select-visual--status" aria-hidden>
-                <span
-                  className="sheet-status-dot"
-                  style={{
-                    backgroundColor: statusAccent(form.status),
-                    boxShadow: `0 0 0 2px ${statusAccent(form.status)}22`,
-                  }}
-                />
-                <span className="sheet-value sheet-value--nowrap">
-                  {formatStatusForDisplay(form.status)}
-                </span>
-              </span>
-              <select
-                id="project-modal-status"
-                className="sheet-select-native"
-                value={form.status}
-                onChange={(e) => set('status', e.target.value)}
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
+      </div>
+
+      <div className="sheet-modal-section sheet-modal-section--project-links">
+        <div className="sheet-project-designers-row">
+          <div className="sheet-modal-section-label sheet-project-designers-label">Links</div>
+          <div className="sheet-designer-chips-row">
+            {links.map((link) => {
+              const href = linkOpenHref(link);
+              const label = link.kind === 'dropbox' ? 'Dropbox' : 'Figma';
+              if (!href) return null;
+              return (
+                <div key={link.id} className="sheet-designer-chip sheet-link-chip">
+                  <a
+                    className="sheet-link-chip-open"
+                    href={href}
+                    title={link.url}
+                    aria-label={`Open ${label}`}
+                  >
+                    {label}
+                  </a>
+                  <button
+                    type="button"
+                    className="sheet-designer-chip-remove"
+                    onClick={() => removeLink(link.id)}
+                    aria-label={`Remove ${label}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+            {linkKind ? (
+              <input
+                className="sheet-link-draft"
+                type="text"
+                autoFocus
+                placeholder={linkKind === 'dropbox' ? 'Dropbox folder' : 'Figma link'}
+                aria-label={linkKind === 'dropbox' ? 'Dropbox folder' : 'Figma link'}
+                value={linkDraft}
+                onChange={(e) => setLinkDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cancelLink();
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    commitLink();
+                  }
+                }}
+                onBlur={() => {
+                  if (linkDraft.trim()) commitLink();
+                  else cancelLink();
+                }}
+              />
+            ) : null}
+            {!linkKind && linkKindsLeft.length > 0 ? (
+              <div className="sheet-designer-add-wrap" ref={linkMenuRef}>
+                <button
+                  type="button"
+                  className={`sheet-milestone-add-task icon-bubble icon-bubble--sm${linkMenuOpen ? ' icon-bubble--open' : ''}`}
+                  aria-label="Add link"
+                  aria-expanded={linkMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setLinkMenuOpen((open) => !open)}
+                >
+                  <span className="icon-bubble-glyph" aria-hidden>+</span>
+                  <span className="icon-bubble-text">Add</span>
+                </button>
+                {linkMenuOpen ? (
+                  <div className="sheet-link-menu" role="menu" aria-label="Add link">
+                    {linkKindsLeft.map((option) => (
+                      <button
+                        key={option.kind}
+                        type="button"
+                        role="menuitem"
+                        className="sheet-link-menu-option"
+                        onClick={() => beginLink(option.kind)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -3792,6 +4308,7 @@ function ProjectModal({
   designers,
   existingClients = [],
   initialTab = 'details',
+  sessionUser = null,
   onClose,
   onSave,
   onDelete,
@@ -3799,6 +4316,7 @@ function ProjectModal({
 }) {
   const [showOverview, setShowOverview] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
   const phasesAnchorRef = useRef(null);
   const isEditing = Boolean(project);
 
@@ -3827,6 +4345,8 @@ function ProjectModal({
       designerId: firstId,
       status: 'Scheduled', startDate: '', endDate: '',
       notes: '', priority: 'studio',
+      comments: [],
+      links: [],
       milestones: [],
       markers: [],
       linkedSchedule: false,
@@ -3871,6 +4391,7 @@ function ProjectModal({
       const target = e.target;
       const tag = target?.tagName;
       if (tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.classList?.contains('sheet-link-draft')) return;
       if (target?.isContentEditable) return;
       if (!form.name.trim()) return;
       e.preventDefault();
@@ -3891,6 +4412,42 @@ function ProjectModal({
   const openTimelineView = () => {
     if (!showTimelineLink || !form.name.trim()) return;
     onOpenTimeline(normalizeProjectMilestones(form));
+  };
+
+  const commentAuthorId = designerIdForSession(designers, sessionUser);
+
+  const persistForm = (next) => {
+    const normalized = normalizeProjectMilestones(next);
+    setForm(normalized);
+    if (normalized.name.trim()) onSave(normalized);
+    return normalized;
+  };
+
+  const postComment = () => {
+    const body = commentDraft.trim();
+    if (!body || !form.name.trim()) return;
+    const author = (designers || []).find((d) => d.id === commentAuthorId);
+    persistForm({
+      ...form,
+      comments: [
+        ...(form.comments || []),
+        {
+          id: uuidv4(),
+          body,
+          authorId: commentAuthorId,
+          authorName: author?.name || '',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+    setCommentDraft('');
+  };
+
+  const deleteComment = (id) => {
+    persistForm({
+      ...form,
+      comments: (form.comments || []).filter((comment) => comment.id !== id),
+    });
   };
 
   const overviewProject = useMemo(
@@ -3956,6 +4513,50 @@ function ProjectModal({
             existingClients={existingClients}
             isEditing={isEditing}
           />
+          <div className="sheet-comments">
+            {(form.comments || []).length > 0 ? (
+              <ul className="sheet-comment-list">
+                {form.comments.map((comment) => (
+                  <li key={comment.id} className="sheet-comment-item">
+                    <div className="sheet-comment-meta">
+                      <span className="sheet-comment-author">{comment.authorName || 'Studio'}</span>
+                      {comment.createdAt ? (
+                        <time className="sheet-comment-when" dateTime={comment.createdAt}>
+                          {formatCommentWhen(comment.createdAt)}
+                        </time>
+                      ) : null}
+                      {comment.authorId && comment.authorId === commentAuthorId ? (
+                        <button
+                          type="button"
+                          className="sheet-comment-delete"
+                          onClick={() => deleteComment(comment.id)}
+                          aria-label="Delete comment"
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="sheet-comment-body">{comment.body}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="sheet-modal-section sheet-comment-composer-box">
+              <textarea
+                className="sheet-notes--section sheet-comment-composer"
+                placeholder="Add a comment"
+                aria-label="Add a comment"
+                value={commentDraft}
+                rows={2}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || e.shiftKey || e.repeat || e.isComposing) return;
+                  e.preventDefault();
+                  postComment();
+                }}
+              />
+            </div>
+          </div>
           <div ref={phasesAnchorRef} className="sheet-project-phases-anchor">
             <MilestonesPanel
               form={form}
@@ -8286,6 +8887,7 @@ export default function App() {
           project={null}
           designers={designers}
           existingClients={existingClientNames}
+          sessionUser={sessionUser}
           onClose={() => setShowNewProject(false)}
           onSave={saveProject}
           onDelete={deleteProject}
@@ -8297,6 +8899,7 @@ export default function App() {
           project={editingProject}
           designers={designers}
           existingClients={existingClientNames}
+          sessionUser={sessionUser}
           initialTab={editingProjectTab}
           onClose={() => {
             setEditingProject(null);
