@@ -2915,6 +2915,18 @@ a.modal-project-timeline-link {
   flex-shrink: 0;
 }
 
+.modal--project .sheet-modal-section--project-links .sheet-link-chip {
+  position: relative;
+  padding: 7px 14px;
+  gap: 0;
+  transition: padding 0.12s ease;
+}
+
+.modal--project .sheet-modal-section--project-links .sheet-link-chip:hover,
+.modal--project .sheet-modal-section--project-links .sheet-link-chip:focus-within {
+  padding-right: 28px;
+}
+
 .modal--project .sheet-modal-section--project-designers .sheet-designer-chip-name,
 .modal--project .sheet-modal-section--project-links .sheet-link-chip-open {
   font-size: calc(var(--sheet-pt) * 0.9);
@@ -3178,7 +3190,24 @@ a.modal-project-timeline-link {
 .sheet-link-chip-open {
   color: var(--text-primary);
   text-decoration: none;
-  padding-left: 6px;
+  padding: 0;
+  max-width: none;
+}
+
+.modal--project .sheet-modal-section--project-links .sheet-link-chip .sheet-designer-chip-remove {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.modal--project .sheet-modal-section--project-links .sheet-link-chip:hover .sheet-designer-chip-remove,
+.modal--project .sheet-modal-section--project-links .sheet-link-chip:focus-within .sheet-designer-chip-remove {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sheet-link-draft {
@@ -5165,9 +5194,15 @@ body.client-overview-open {
   background: var(--project-card-fill);
 }
 
+.todo-composer > :not(.todo-composer-input):not(.todo-composer-add) {
+  order: 3;
+}
+
 .todo-composer-input {
-  flex: 1 1 120px;
-  min-width: 80px;
+  order: 1;
+  flex: 1 1 140px;
+  min-width: 120px;
+  text-align: right;
   border: none;
   background: transparent;
   font-family: inherit;
@@ -5179,8 +5214,9 @@ body.client-overview-open {
 }
 
 .todo-composer-add {
+  order: 2;
   flex-shrink: 0;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .todo-composer-add:disabled {

@@ -2463,6 +2463,27 @@ function TodosView({
           </p>
         ) : null}
         <div className="todo-composer">
+          <input
+            className="todo-composer-input"
+            type="text"
+            value={draft}
+            placeholder="Add a to-do"
+            aria-label="Add a to-do"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitDraft();
+              }
+            }}
+            onPaste={(e) => {
+              const text = e.clipboardData?.getData('text') || '';
+              if (!text.includes('\n')) return;
+              e.preventDefault();
+              const combined = `${draft}${text}`;
+              if (addLines(combined)) setDraft('');
+            }}
+          />
           <TodoDesignerPicker
             value={composerOwner}
             onChange={setComposerOwner}
@@ -2484,27 +2505,6 @@ function TodosView({
             className="todo-composer-date"
             emptyLabel="Date"
             ariaLabel="Due date for new to-dos"
-          />
-          <input
-            className="todo-composer-input"
-            type="text"
-            value={draft}
-            placeholder="Add a to-do"
-            aria-label="Add a to-do"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                submitDraft();
-              }
-            }}
-            onPaste={(e) => {
-              const text = e.clipboardData?.getData('text') || '';
-              if (!text.includes('\n')) return;
-              e.preventDefault();
-              const combined = `${draft}${text}`;
-              if (addLines(combined)) setDraft('');
-            }}
           />
           <button
             type="button"
