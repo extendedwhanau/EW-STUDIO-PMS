@@ -1219,21 +1219,6 @@ function sortArchivedTodos(list) {
   ));
 }
 
-function normalizeTodoSubtasks(list) {
-  return (Array.isArray(list) ? list : [])
-    .map((raw) => {
-      if (!raw || typeof raw !== 'object') return null;
-      const title = String(raw.title || '').trim();
-      if (!title) return null;
-      return {
-        id: String(raw.id || uuidv4()),
-        title,
-        done: Boolean(raw.done),
-      };
-    })
-    .filter(Boolean);
-}
-
 function normalizeTodo(item) {
   if (!item) return null;
   const title = String(item.title || '').trim();
@@ -1250,7 +1235,6 @@ function normalizeTodo(item) {
     done,
     createdAt: item.createdAt || new Date().toISOString(),
     doneAt: done ? (item.doneAt || new Date().toISOString()) : '',
-    subtasks: normalizeTodoSubtasks(item.subtasks),
   };
 }
 
@@ -1279,6 +1263,11 @@ function sortTodos(list) {
 function todoProjectName(project) {
   if (!project) return '';
   return String(project.name || '').trim() || 'Untitled';
+}
+
+function todoClientName(project) {
+  if (!project) return '';
+  return String(project.client || '').trim() || todoProjectName(project);
 }
 
 function todoJobLabel(project) {
@@ -2304,238 +2293,6 @@ function TodoDesignerPicker({
   );
 }
 
-function TodoProjectCard({
-  item,
-  project,
-  designers,
-  onOpen,
-  onToggle,
-}) {
-  const designer = (designers || []).find((d) => d.id === item.designerId);
-  const dateLabel = formatTaskDateShort(item.date);
-  const subtaskCount = (item.subtasks || []).length;
-
-  return (
-    <div
-      className={`project-row project-row--board todo-project-card${item.done ? ' todo-project-card--done' : ''}`}
-      onClick={onOpen}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-    >
-      <div className="project-row-inner project-row-inner--board">
-        {project.client ? (
-          <span className="project-client">{project.client}</span>
-        ) : null}
-        <span className="project-name">{item.title}</span>
-        {subtaskCount > 0 ? (
-          <span className="todo-project-card-more">
-            {subtaskCount === 1 ? '1 task' : `${subtaskCount} tasks`}
-          </span>
-        ) : null}
-        <div className="project-row-col project-row-col--trail">
-          <button
-            type="button"
-            className={`todo-check${item.done ? ' todo-check--done' : ''}`}
-            aria-label={item.done ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
-            aria-pressed={item.done}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle();
-            }}
-          >
-            {item.done ? (
-              <svg viewBox="0 0 16 16" aria-hidden>
-                <path
-                  d="M3.5 8.2l3 3.1 6-6.4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            ) : null}
-          </button>
-          {dateLabel ? (
-            <span className="project-row-board-date">{dateLabel}</span>
-          ) : null}
-          {designer ? <Avatar designer={designer} size={22} /> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TodoSubtaskRow({ subtask, onCommit, onToggle, onRemove }) {
-  const [title, setTitle] = useState(subtask.title);
-
-  useEffect(() => {
-    setTitle(subtask.title);
-  }, [subtask.title]);
-
-  const commit = () => {
-    const next = title.trim();
-    if (!next) {
-      setTitle(subtask.title);
-      return;
-    }
-    if (next !== subtask.title) onCommit(next);
-  };
-
-  return (
-    <li className={`todo-subtask-row${subtask.done ? ' todo-subtask--done' : ''}`}>
-      <button
-        type="button"
-        className={`todo-check${subtask.done ? ' todo-check--done' : ''}`}
-        aria-label={subtask.done ? `Mark ${subtask.title} as not done` : `Mark ${subtask.title} as done`}
-        aria-pressed={subtask.done}
-        onClick={onToggle}
-      >
-        {subtask.done ? (
-          <svg viewBox="0 0 16 16" aria-hidden>
-            <path
-              d="M3.5 8.2l3 3.1 6-6.4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : null}
-      </button>
-      <input
-        className="todo-subtask-title"
-        type="text"
-        value={title}
-        aria-label="Task"
-        onChange={(e) => setTitle(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            e.currentTarget.blur();
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="todo-subtask-remove"
-        onClick={onRemove}
-        aria-label={`Remove ${subtask.title}`}
-      >
-        ×
-      </button>
-    </li>
-  );
-}
-
-function TodoDetailModal({
-  item,
-  onClose,
-  onPatch,
-  onRemove,
-}) {
-  const [draft, setDraft] = useState('');
-  const subtasks = item.subtasks || [];
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const addSubtask = () => {
-    const title = draft.trim();
-    if (!title) return;
-    onPatch({
-      subtasks: [...subtasks, { id: uuidv4(), title, done: false }],
-    });
-    setDraft('');
-  };
-
-  const patchSubtask = (id, patch) => {
-    onPatch({
-      subtasks: subtasks.map((subtask) => (
-        subtask.id === id ? { ...subtask, ...patch } : subtask
-      )),
-    });
-  };
-
-  return createPortal(
-    <div
-      className="modal-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="modal todo-detail-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={item.title}
-      >
-        <div className="modal-header">
-          <div className="todo-detail-lead">
-            <h2 className="todo-detail-title">{item.title}</h2>
-          </div>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="modal-body todo-detail-body">
-          {subtasks.length > 0 ? (
-            <ul className="todo-subtask-list">
-              {subtasks.map((subtask) => (
-                <TodoSubtaskRow
-                  key={subtask.id}
-                  subtask={subtask}
-                  onCommit={(title) => patchSubtask(subtask.id, { title })}
-                  onToggle={() => patchSubtask(subtask.id, { done: !subtask.done })}
-                  onRemove={() => onPatch({
-                    subtasks: subtasks.filter((entry) => entry.id !== subtask.id),
-                  })}
-                />
-              ))}
-            </ul>
-          ) : null}
-          <div className="todo-subtask-row todo-subtask-row--new">
-            <input
-              className="todo-subtask-draft"
-              type="text"
-              value={draft}
-              placeholder="New"
-              aria-label="New"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                addSubtask();
-              }}
-            />
-          </div>
-        </div>
-        <div className="modal-footer modal-footer--project">
-          <button type="button" className="btn-delete" onClick={onRemove}>
-            Delete
-          </button>
-          <div className="modal-footer-actions">
-            <button type="button" className="modal-btn-close" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
 
 function TodosView({
   todos,
@@ -2554,7 +2311,6 @@ function TodosView({
   const [composerOwner, setComposerOwner] = useState(() => (
     filterDesigner !== 'all' ? filterDesigner : ''
   ));
-  const [openTodoId, setOpenTodoId] = useState(null);
 
   useEffect(() => {
     if (filterDesigner !== 'all') {
@@ -2652,9 +2408,6 @@ function TodosView({
   const patchTodo = (id, patch) => {
     setTodos((prev) => prev.map((item) => {
       if (item.id !== id) return item;
-      if (Object.prototype.hasOwnProperty.call(patch, 'subtasks')) {
-        return { ...item, subtasks: normalizeTodoSubtasks(patch.subtasks) };
-      }
       if (Object.prototype.hasOwnProperty.call(patch, 'title')) {
         return { ...item, title: patch.title };
       }
@@ -2677,39 +2430,20 @@ function TodosView({
     });
   };
 
-  const renderRow = (item) => {
-    if (item.fromHistory) return <TodoHistoryRow key={item.id} item={item} />;
-    const project = item.projectId ? projectById.get(item.projectId) : null;
-    if (project) {
-      return (
-        <TodoProjectCard
-          key={item.id}
-          item={item}
-          project={project}
-          designers={designers}
-          onOpen={() => setOpenTodoId(item.id)}
-          onToggle={() => toggleDone(item)}
-        />
-      );
-    }
-    return (
-      <TodoRow
-        key={item.id}
-        item={item}
-        designers={designers}
-        projectById={projectById}
-        jobOptions={jobOptions}
-        onToggle={() => toggleDone(item)}
-        onPatch={(patch) => patchTodo(item.id, patch)}
-        onRemove={() => removeTodo(item.id)}
-      />
-    );
-  };
-
-  const openTodo = openTodoId
-    ? (todos || []).find((item) => item.id === openTodoId) || null
-    : null;
-  const openTodoProject = openTodo?.projectId ? projectById.get(openTodo.projectId) : null;
+  const renderRow = (item) => (item.fromHistory ? (
+    <TodoHistoryRow key={item.id} item={item} />
+  ) : (
+    <TodoRow
+      key={item.id}
+      item={item}
+      designers={designers}
+      projectById={projectById}
+      jobOptions={jobOptions}
+      onToggle={() => toggleDone(item)}
+      onPatch={(patch) => patchTodo(item.id, patch)}
+      onRemove={() => removeTodo(item.id)}
+    />
+  ));
 
   return (
     <div className="todo-page">
@@ -2805,7 +2539,10 @@ function TodosView({
                     {showArchive ? 'Nothing archived yet.' : 'Nothing on.'}
                   </p>
                 ) : col.jobGroups.map((job) => (
-                  <div key={job.projectId || 'no-job'} className={`todo-job${job.project ? ' todo-job--cards' : ''}`}>
+                  <div key={job.projectId || 'no-job'} className="todo-job">
+                    {job.project ? (
+                      <h3 className="todo-job-heading">{todoClientName(job.project)}</h3>
+                    ) : null}
                     <div className="todo-list">
                       {job.items.map(renderRow)}
                     </div>
@@ -2816,17 +2553,6 @@ function TodosView({
           ))}
         </div>
       )}
-      {openTodo && openTodoProject ? (
-        <TodoDetailModal
-          item={openTodo}
-          onClose={() => setOpenTodoId(null)}
-          onPatch={(patch) => patchTodo(openTodo.id, patch)}
-          onRemove={() => {
-            removeTodo(openTodo.id);
-            setOpenTodoId(null);
-          }}
-        />
-      ) : null}
     </div>
   );
 }
