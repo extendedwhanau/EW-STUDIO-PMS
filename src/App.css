@@ -5422,7 +5422,7 @@ body.client-overview-open {
 .todo-job-heading {
   margin: 0;
   padding: 0 4px;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--text-primary);
