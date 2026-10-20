@@ -2405,28 +2405,28 @@ function TodoJobCard({
     setDraftDate('');
   };
 
+  const heading = !title ? null : (showArchive || !onChangeJob) ? (
+    <h3 className="todo-job-heading">{title}</h3>
+  ) : (
+    <div className="todo-job-heading-wrap">
+      <h3 className="todo-job-heading">{title}</h3>
+      <select
+        className="todo-job-heading-select"
+        value={job.projectId || ''}
+        aria-label={`Change job for ${title}`}
+        onChange={(e) => onChangeJob(job, e.target.value)}
+      >
+        {headingOptions.map((opt) => (
+          <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+
   return (
     <div className="todo-job">
-      {title ? (
-        showArchive || !onChangeJob ? (
-          <h3 className="todo-job-heading">{title}</h3>
-        ) : (
-          <div className="todo-job-heading-wrap">
-            <h3 className="todo-job-heading">{title}</h3>
-            <select
-              className="todo-job-heading-select"
-              value={job.projectId || ''}
-              aria-label={`Change job for ${title}`}
-              onChange={(e) => onChangeJob(job, e.target.value)}
-            >
-              {headingOptions.map((opt) => (
-                <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-        )
-      ) : null}
       <div className="todo-job-card">
+        {heading}
         <div className="todo-list">
           {job.items.map((item) => (
             item.fromHistory ? (
