@@ -2416,8 +2416,8 @@ function TodoJobCard({
               className="todo-job-card-title todo-job-card-draft"
               type="text"
               value={draft}
-              placeholder="Add new task"
-              aria-label={title ? `Add task to ${title}` : 'Add new task'}
+              placeholder="New Task"
+              aria-label={title ? `Add task to ${title}` : 'New Task'}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key !== 'Enter') return;
@@ -2449,6 +2449,9 @@ function TodosView({
   const [composerOwner, setComposerOwner] = useState(() => (
     filterDesigner !== 'all' ? filterDesigner : ''
   ));
+  const [composerOpen, setComposerOpen] = useState(false);
+  const composerRef = useRef(null);
+  const composerBlurTimer = useRef(0);
 
   useEffect(() => {
     if (filterDesigner !== 'all') {
@@ -2457,6 +2460,10 @@ function TodosView({
     }
     setComposerOwner('');
   }, [filterDesigner]);
+
+  useEffect(() => () => {
+    window.clearTimeout(composerBlurTimer.current);
+  }, []);
 
   const projectById = useMemo(() => {
     const map = new Map();
@@ -2578,78 +2585,37 @@ function TodosView({
     });
   };
 
+  const openComposer = () => {
+    window.clearTimeout(composerBlurTimer.current);
+    setComposerOpen(true);
+  };
+
+  const scheduleComposerClose = () => {
+    window.clearTimeout(composerBlurTimer.current);
+    composerBlurTimer.current = window.setTimeout(() => {
+      const root = composerRef.current;
+      if (!root) return;
+      if (root.contains(document.activeElement)) return;
+      if (document.querySelector('.sheet-date-calendar')) return;
+      if (draft.trim() || composerOwner || composerJob || composerDate) return;
+      setComposerOpen(false);
+    }, 120);
+  };
+
   return (
-    <div className="todo-page">
-      {!showArchive ? (
-      <div className="todo-composer-sticky">
-        {!canSyncTasks ? (
-          <p className="todo-sync-hint">
-            Sign in with Google to send dated to-dos to Tasks.
-            {onSignIn ? (
-              <>
-                {' '}
-                <button type="button" className="todo-sync-hint-btn" onClick={onSignIn}>
-                  Sign in
-                </button>
-              </>
-            ) : null}
-          </p>
-        ) : null}
-        <div className="todo-composer">
-          <input
-            className="todo-composer-input"
-            type="text"
-            value={draft}
-            placeholder="Add a to-do"
-            aria-label="Add a to-do"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                submitDraft();
-              }
-            }}
-            onPaste={(e) => {
-              const text = e.clipboardData?.getData('text') || '';
-              if (!text.includes('\n')) return;
-              e.preventDefault();
-              const combined = `${draft}${text}`;
-              if (addLines(combined)) setDraft('');
-            }}
-          />
-          <TodoDesignerPicker
-            value={composerOwner}
-            onChange={setComposerOwner}
-            designers={designers}
-            ariaLabel="Assign to"
-            showName
-            avatarSize={20}
-          />
-          <TodoJobPicker
-            value={composerJob}
-            onChange={setComposerJob}
-            options={jobOptions}
-            project={composerJobProject}
-            ariaLabel="Link to job"
-          />
-          <TodoDateField
-            date={composerDate}
-            onChange={setComposerDate}
-            className="todo-composer-date"
-            emptyLabel="Date"
-            ariaLabel="Due date for new to-dos"
-          />
-          <button
-            type="button"
-            className="sheet-milestone-add-task icon-bubble icon-bubble--sm todo-composer-add"
-            onClick={submitDraft}
-            disabled={!draft.trim()}
-            aria-label="Add to-do"
-          >
-            <span className="icon-bubble-text">Add</span>
-          </button>
-        </div>
-      </div>
+    <div className={`todo-page${!showArchive ? ' todo-page--composer' : ''}`}>
+      {!showArchive && !canSyncTasks ? (
+        <p className="todo-sync-hint">
+          Sign in with Google to send dated to-dos to Tasks.
+          {onSignIn ? (
+            <>
+              {' '}
+              <button type="button" className="todo-sync-hint-btn" onClick={onSignIn}>
+                Sign in
+              </button>
+            </>
+          ) : null}
+        </p>
       ) : null}
 
       {visibleTodos.length === 0 ? (
@@ -2688,6 +2654,84 @@ function TodosView({
           ))}
         </div>
       )}
+
+      {!showArchive ? (
+        <div className="todo-composer-dock">
+          <div
+            ref={composerRef}
+            className={`todo-composer${composerOpen ? ' todo-composer--open' : ''}`}
+            onMouseEnter={openComposer}
+            onMouseLeave={scheduleComposerClose}
+            onFocus={openComposer}
+            onBlur={scheduleComposerClose}
+          >
+            <input
+              className="todo-composer-input"
+              type="text"
+              value={draft}
+              placeholder="Add a to-do"
+              aria-label="Add a to-do"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && !draft.trim()) {
+                  e.currentTarget.blur();
+                  setComposerOpen(false);
+                  return;
+                }
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                submitDraft();
+              }}
+              onPaste={(e) => {
+                const text = e.clipboardData?.getData('text') || '';
+                if (!text.includes('\n')) return;
+                e.preventDefault();
+                const combined = `${draft}${text}`;
+                if (addLines(combined)) setDraft('');
+              }}
+            />
+            <div
+              className="todo-composer-meta-wrap"
+              aria-hidden={!composerOpen}
+              inert={composerOpen ? undefined : true}
+            >
+              <div className="todo-composer-meta">
+                <TodoDesignerPicker
+                  value={composerOwner}
+                  onChange={setComposerOwner}
+                  designers={designers}
+                  ariaLabel="Assign to"
+                  showName
+                  avatarSize={20}
+                />
+                <TodoJobPicker
+                  value={composerJob}
+                  onChange={setComposerJob}
+                  options={jobOptions}
+                  project={composerJobProject}
+                  ariaLabel="Link to job"
+                />
+                <TodoDateField
+                  date={composerDate}
+                  onChange={setComposerDate}
+                  className="todo-composer-date"
+                  emptyLabel="Date"
+                  ariaLabel="Due date for new to-dos"
+                />
+                <button
+                  type="button"
+                  className="sheet-milestone-add-task icon-bubble icon-bubble--sm todo-composer-add"
+                  onClick={submitDraft}
+                  disabled={!draft.trim()}
+                  aria-label="Add to-do"
+                >
+                  <span className="icon-bubble-text">Add</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

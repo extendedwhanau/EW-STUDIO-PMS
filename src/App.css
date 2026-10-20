@@ -5150,21 +5150,40 @@ body.client-overview-open {
 }
 
 .main-content--todos {
+  display: flex;
+  flex-direction: column;
   padding-top: 8px;
+  padding-bottom: 0;
 }
 
 .todo-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
-.todo-composer-sticky {
+.todo-page--composer {
+  padding-bottom: 20px;
+}
+
+.todo-page--composer .todo-board,
+.todo-page--composer .empty-state {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.todo-composer-dock {
   position: sticky;
-  top: -8px;
-  left: 0;
+  bottom: 16px;
   z-index: 4;
-  max-width: 720px;
-  padding: 8px 0 16px;
-  background: #fafaf9;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  margin-top: auto;
+  padding-top: 12px;
 }
 
 .todo-sync-hint {
@@ -5190,32 +5209,85 @@ body.client-overview-open {
 }
 
 .todo-composer {
+  pointer-events: auto;
   display: flex;
+  flex-direction: row;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-height: 48px;
-  padding: 8px 10px 8px 12px;
-  border-radius: 12px;
-  background: var(--project-card-fill);
+  justify-content: flex-start;
+  gap: 0;
+  width: min(320px, calc(100% - 24px));
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 10px 28px rgba(0, 0, 0, 0.08);
+  transition:
+    width 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    padding 0.28s ease,
+    box-shadow 0.28s ease;
+}
+
+.todo-composer--open,
+.todo-composer:hover {
+  width: min(640px, calc(100% - 24px));
+  padding: 0 12px 0 18px;
+  gap: 10px;
 }
 
 .todo-composer-input {
-  flex: 1 1 140px;
-  min-width: 120px;
-  text-align: left;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  height: 28px;
+  margin: 0;
+  padding: 0;
   border: none;
   background: transparent;
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.02em;
+  line-height: 28px;
   color: var(--text-primary);
+  text-align: left;
   outline: none;
 }
 
-.todo-composer > .todo-composer-input + * {
-  margin-left: auto;
+.todo-composer-meta-wrap {
+  display: grid;
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transform: translateX(10px);
+  pointer-events: none;
+  transition:
+    grid-template-columns 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.22s ease,
+    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.todo-composer--open .todo-composer-meta-wrap,
+.todo-composer:hover .todo-composer-meta-wrap {
+  grid-template-columns: 1fr;
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+  transition-delay: 0.04s, 0.08s, 0.04s, 0s;
+}
+
+.todo-composer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.todo-composer-meta > * {
+  flex-shrink: 0;
 }
 
 .todo-composer-add {
@@ -5491,7 +5563,6 @@ body.client-overview-open {
   flex-shrink: 0;
 }
 
-.todo-composer .todo-designer-add .icon-bubble-text,
 .todo-row .todo-designer-add .icon-bubble-text {
   max-width: 8em;
   margin-left: 6px;
@@ -5509,6 +5580,43 @@ body.client-overview-open {
 .todo-row .todo-designer-add .sheet-milestone-add-task.icon-bubble {
   width: auto;
   min-width: var(--bubble-size-sm);
+}
+
+/* Composer chips: label first, + slides in on hover */
+.todo-composer .todo-designer-add .sheet-milestone-add-task.icon-bubble {
+  gap: 0;
+  transition:
+    background 0.28s ease,
+    color 0.28s ease,
+    box-shadow 0.28s ease;
+}
+
+.todo-composer .todo-designer-add .icon-bubble-text {
+  max-width: 8em;
+  margin-left: 0;
+  opacity: 1;
+  overflow: visible;
+}
+
+.todo-composer .todo-designer-add .icon-bubble-glyph {
+  display: inline-block;
+  max-width: 0;
+  width: auto;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  vertical-align: middle;
+  transition:
+    max-width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease,
+    margin 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.todo-composer .todo-designer-add:hover .icon-bubble-glyph,
+.todo-composer .todo-designer-add:focus-within .icon-bubble-glyph {
+  max-width: 1em;
+  margin-right: 5px;
+  opacity: 1;
 }
 
 /* No hover/focus chrome on empty +Designer / +Job / +Date */
