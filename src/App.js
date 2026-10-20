@@ -2371,13 +2371,26 @@ function TodoJobCard({
   job,
   designerId,
   showArchive,
+  jobOptions,
   onAdd,
   onToggle,
   onPatch,
   onRemove,
+  onChangeJob,
 }) {
   const [draft, setDraft] = useState('');
-  const title = job.project ? todoClientName(job.project) : (job.items.length ? 'Other' : '');
+  const [draftDate, setDraftDate] = useState('');
+  const title = job.project
+    ? todoClientName(job.project)
+    : (job.items.length ? 'Other' : '');
+  const hasDraft = Boolean(draft.trim());
+  const headingOptions = useMemo(() => {
+    const opts = (jobOptions || []).slice();
+    if (job.projectId && job.project && !opts.some((opt) => opt.value === job.projectId)) {
+      opts.splice(1, 0, { value: job.projectId, label: todoJobLabel(job.project) });
+    }
+    return opts;
+  }, [jobOptions, job.projectId, job.project]);
 
   const submit = () => {
     const next = draft.trim();
@@ -2386,13 +2399,33 @@ function TodoJobCard({
       title: next,
       projectId: job.projectId || '',
       designerId: designerId === '_none' ? '' : designerId,
+      date: draftDate || '',
     });
     setDraft('');
+    setDraftDate('');
   };
 
   return (
     <div className="todo-job">
-      {title ? <h3 className="todo-job-heading">{title}</h3> : null}
+      {title ? (
+        showArchive || !onChangeJob ? (
+          <h3 className="todo-job-heading">{title}</h3>
+        ) : (
+          <div className="todo-job-heading-wrap">
+            <h3 className="todo-job-heading">{title}</h3>
+            <select
+              className="todo-job-heading-select"
+              value={job.projectId || ''}
+              aria-label={`Change job for ${title}`}
+              onChange={(e) => onChangeJob(job, e.target.value)}
+            >
+              {headingOptions.map((opt) => (
+                <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        )
+      ) : null}
       <div className="todo-job-card">
         <div className="todo-list">
           {job.items.map((item) => (
@@ -2410,7 +2443,7 @@ function TodoJobCard({
           ))}
         </div>
         {!showArchive ? (
-          <div className="todo-job-card-row todo-job-card-row--new">
+          <div className={`todo-job-card-row todo-job-card-row--new${hasDraft ? ' todo-job-card-row--typing' : ''}`}>
             <span className="todo-check todo-check--square todo-check--ghost" aria-hidden />
             <input
               className="todo-job-card-title todo-job-card-draft"
@@ -2425,6 +2458,20 @@ function TodoJobCard({
                 submit();
               }}
             />
+            {hasDraft ? (
+              <div className="todo-job-card-trail">
+                <div className={`todo-job-card-date todo-job-card-date--visible${draftDate ? '' : ' todo-job-card-date--empty'}`}>
+                  <MilestoneSingleDatePicker
+                    date={draftDate}
+                    onChange={setDraftDate}
+                    className="todo-job-card-date-btn"
+                    emptyLabel="Date"
+                    ariaLabel="Date for new task"
+                    rangeFormat="task"
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -2553,8 +2600,26 @@ function TodosView({
     setDraft('');
   };
 
-  const addToJob = ({ title, projectId, designerId }) => {
-    addLines(title, { projectId, designerId, date: '' });
+  const addToJob = ({ title, projectId, designerId, date }) => {
+    addLines(title, {
+      projectId,
+      designerId,
+      date: date || '',
+    });
+  };
+
+  const changeJobForGroup = (job, nextProjectId) => {
+    const ids = new Set(
+      (job.items || [])
+        .filter((item) => item && !item.fromHistory)
+        .map((item) => item.id),
+    );
+    if (!ids.size) return;
+    const nextId = String(nextProjectId || '').trim();
+    setTodos((prev) => prev.map((item) => {
+      if (!ids.has(item.id)) return item;
+      return normalizeTodo({ ...item, projectId: nextId }) || item;
+    }));
   };
 
   const patchTodo = (id, patch) => {
@@ -2702,10 +2767,12 @@ function TodosView({
                     job={job}
                     designerId={col.id}
                     showArchive={showArchive}
+                    jobOptions={jobOptions}
                     onAdd={addToJob}
                     onToggle={toggleDone}
                     onPatch={patchTodo}
                     onRemove={removeTodo}
+                    onChangeJob={changeJobForGroup}
                   />
                 ))}
               </div>
