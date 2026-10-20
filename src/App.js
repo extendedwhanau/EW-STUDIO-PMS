@@ -2439,8 +2439,6 @@ function TodosView({
   designers,
   projects,
   filterDesigner,
-  sessionUser,
-  onSignIn,
   showArchive,
 }) {
   const [draft, setDraft] = useState('');
@@ -2488,7 +2486,6 @@ function TodosView({
   }, [projects, composerJob, projectById]);
 
   const composerJobProject = composerJob ? projectById.get(composerJob) : null;
-  const canSyncTasks = Boolean(sessionUser?.email);
 
   const todayStr = today();
   const sortItems = showArchive ? sortArchivedTodos : sortTodos;
@@ -2602,22 +2599,84 @@ function TodosView({
     }, 120);
   };
 
-  return (
-    <div className={`todo-page${!showArchive ? ' todo-page--composer' : ''}`}>
-      {!showArchive && !canSyncTasks ? (
-        <p className="todo-sync-hint">
-          Sign in with Google to send dated to-dos to Tasks.
-          {onSignIn ? (
-            <>
-              {' '}
-              <button type="button" className="todo-sync-hint-btn" onClick={onSignIn}>
-                Sign in
-              </button>
-            </>
-          ) : null}
-        </p>
-      ) : null}
+  const composer = !showArchive ? (
+    <div
+      ref={composerRef}
+      className={`todo-composer${composerOpen ? ' todo-composer--open' : ''}`}
+      onMouseEnter={openComposer}
+      onMouseLeave={scheduleComposerClose}
+      onFocus={openComposer}
+      onBlur={scheduleComposerClose}
+    >
+      <input
+        className="todo-composer-input"
+        type="text"
+        value={draft}
+        placeholder="Add a to-do"
+        aria-label="Add a to-do"
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && !draft.trim()) {
+            e.currentTarget.blur();
+            setComposerOpen(false);
+            return;
+          }
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          submitDraft();
+        }}
+        onPaste={(e) => {
+          const text = e.clipboardData?.getData('text') || '';
+          if (!text.includes('\n')) return;
+          e.preventDefault();
+          const combined = `${draft}${text}`;
+          if (addLines(combined)) setDraft('');
+        }}
+      />
+      <div
+        className="todo-composer-meta-wrap"
+        aria-hidden={!composerOpen}
+        inert={composerOpen ? undefined : true}
+      >
+        <div className="todo-composer-meta">
+          <TodoDesignerPicker
+            value={composerOwner}
+            onChange={setComposerOwner}
+            designers={designers}
+            ariaLabel="Assign to"
+            showName
+            avatarSize={20}
+          />
+          <TodoJobPicker
+            value={composerJob}
+            onChange={setComposerJob}
+            options={jobOptions}
+            project={composerJobProject}
+            ariaLabel="Link to job"
+          />
+          <TodoDateField
+            date={composerDate}
+            onChange={setComposerDate}
+            className="todo-composer-date"
+            emptyLabel="Date"
+            ariaLabel="Due date for new to-dos"
+          />
+          <button
+            type="button"
+            className="sheet-milestone-add-task icon-bubble icon-bubble--sm todo-composer-add"
+            onClick={submitDraft}
+            disabled={!draft.trim()}
+            aria-label="Add to-do"
+          >
+            <span className="icon-bubble-text">Add</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
+  return (
+    <div className="todo-page">
       {visibleTodos.length === 0 ? (
         <div className="empty-state">
           {showArchive
@@ -2654,84 +2713,7 @@ function TodosView({
           ))}
         </div>
       )}
-
-      {!showArchive ? (
-        <div className="todo-composer-dock">
-          <div
-            ref={composerRef}
-            className={`todo-composer${composerOpen ? ' todo-composer--open' : ''}`}
-            onMouseEnter={openComposer}
-            onMouseLeave={scheduleComposerClose}
-            onFocus={openComposer}
-            onBlur={scheduleComposerClose}
-          >
-            <input
-              className="todo-composer-input"
-              type="text"
-              value={draft}
-              placeholder="Add a to-do"
-              aria-label="Add a to-do"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape' && !draft.trim()) {
-                  e.currentTarget.blur();
-                  setComposerOpen(false);
-                  return;
-                }
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                submitDraft();
-              }}
-              onPaste={(e) => {
-                const text = e.clipboardData?.getData('text') || '';
-                if (!text.includes('\n')) return;
-                e.preventDefault();
-                const combined = `${draft}${text}`;
-                if (addLines(combined)) setDraft('');
-              }}
-            />
-            <div
-              className="todo-composer-meta-wrap"
-              aria-hidden={!composerOpen}
-              inert={composerOpen ? undefined : true}
-            >
-              <div className="todo-composer-meta">
-                <TodoDesignerPicker
-                  value={composerOwner}
-                  onChange={setComposerOwner}
-                  designers={designers}
-                  ariaLabel="Assign to"
-                  showName
-                  avatarSize={20}
-                />
-                <TodoJobPicker
-                  value={composerJob}
-                  onChange={setComposerJob}
-                  options={jobOptions}
-                  project={composerJobProject}
-                  ariaLabel="Link to job"
-                />
-                <TodoDateField
-                  date={composerDate}
-                  onChange={setComposerDate}
-                  className="todo-composer-date"
-                  emptyLabel="Date"
-                  ariaLabel="Due date for new to-dos"
-                />
-                <button
-                  type="button"
-                  className="sheet-milestone-add-task icon-bubble icon-bubble--sm todo-composer-add"
-                  onClick={submitDraft}
-                  disabled={!draft.trim()}
-                  aria-label="Add to-do"
-                >
-                  <span className="icon-bubble-text">Add</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {composer ? <div className="todo-composer-dock">{composer}</div> : null}
     </div>
   );
 }
@@ -8083,10 +8065,6 @@ export default function App() {
   const designerFiltered = filterDesigner === 'all'
     ? projects
     : projects.filter((p) => getProjectDesignerIds(p).includes(filterDesigner));
-  const visibleTodos = filterDesigner === 'all'
-    ? todos
-    : todos.filter((item) => item.designerId === filterDesigner);
-  const openTodoCount = visibleTodos.filter((item) => !item.done).length;
   const todayStr = today();
   const archivedTodoCount = useMemo(() => {
     const entries = archivedTodoEntries(todos, projects, todayStr);
@@ -8358,13 +8336,16 @@ export default function App() {
             </div>
           ) : isSupabaseConfigured() ? (
             <div className="sidebar-session">
+              <p className="sidebar-session-hint">
+                Sign in with Google to send dated to-dos to Tasks.
+              </p>
               <button
                 type="button"
                 className="sidebar-session-signout"
                 onClick={signInWithGoogle}
                 disabled={authBusy}
               >
-                {authBusy ? 'Signing in…' : 'Sign in to sync'}
+                {authBusy ? 'Signing in…' : 'Sign in'}
               </button>
             </div>
           ) : null}
@@ -8373,7 +8354,7 @@ export default function App() {
 
       {/* Main */}
       <main className="main">
-        <header className="main-header">
+        <header className={`main-header${view === 'todos' ? ' main-header--todos' : ''}`}>
           <div className="main-header-title-row">
             <button
               type="button"
@@ -8385,35 +8366,15 @@ export default function App() {
               <span className="mobile-nav-bars" aria-hidden />
             </button>
             <div className="page-title-cluster">
-              {view === 'todos' ? (
-                <div className="page-title-with-archive">
-                  <h1 className="page-title">To-Do</h1>
-                  <button
-                    type="button"
-                    className={`icon-bubble icon-bubble--sm page-title-archive${showTodoArchive ? ' icon-bubble--on' : ''}`}
-                    aria-pressed={showTodoArchive}
-                    aria-label={
-                      showTodoArchive
-                        ? 'Show this week’s to-dos'
-                        : `Archive, ${archivedTodoCount} done ${archivedTodoCount === 1 ? 'to-do' : 'to-dos'}`
-                    }
-                    onClick={() => setTodoArchiveOpen((open) => !open)}
-                  >
-                    <span className="page-title-archive-label">Archive</span>
-                    {archivedTodoCount > 0 ? (
-                      <span className="page-title-archive-count" aria-hidden>{archivedTodoCount}</span>
-                    ) : null}
-                  </button>
-                </div>
-              ) : (
-                <h1 className="page-title">
-                  {view === 'overview'
+              <h1 className="page-title">
+                {view === 'todos'
+                  ? 'To-Do'
+                  : view === 'overview'
                     ? 'Projects'
                     : view === 'archive'
                       ? 'Archive'
                       : 'Timeline'}
-                </h1>
-              )}
+              </h1>
               {view === 'gantt' && ganttFocusMeta ? (
                 <button
                   type="button"
@@ -8439,6 +8400,7 @@ export default function App() {
               || (view === 'projects' && mainProjectCount > 0)
               || (view === 'scheduled' && scheduledCount > 0)
               || (view === 'archive' && archivedCount > 0)
+              || view === 'todos'
               || view !== 'archive') && (
               <div className="main-header-trailing">
                 {view === 'overview' && (
@@ -8473,11 +8435,31 @@ export default function App() {
                     {archivedCount}
                   </span>
                 )}
-                {view === 'todos' && openTodoCount > 0 && (
-                  <span className="page-title-badge" aria-label={`${openTodoCount} open to-dos`}>
-                    {openTodoCount}
-                  </span>
-                )}
+                {view === 'todos' ? (
+                  <button
+                    type="button"
+                    className={`icon-bubble page-title-archive${showTodoArchive ? ' icon-bubble--on' : ''}`}
+                    aria-pressed={showTodoArchive}
+                    aria-label={
+                      showTodoArchive
+                        ? 'Show this week’s to-dos'
+                        : `Archive, ${archivedTodoCount} done ${archivedTodoCount === 1 ? 'to-do' : 'to-dos'}`
+                    }
+                    onClick={() => setTodoArchiveOpen((open) => !open)}
+                  >
+                    <svg className="page-title-archive-icon" width="15" height="15" viewBox="0 0 16 16" aria-hidden>
+                      <path
+                        d="M2.5 3.25h11a.75.75 0 0 1 .75.75v1.25H1.75V4a.75.75 0 0 1 .75-.75Zm-.75 3h12.5v6a1.25 1.25 0 0 1-1.25 1.25h-10A1.25 1.25 0 0 1 1.75 12.25v-6Zm4 2.25h4"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span className="icon-bubble-text">Archive</span>
+                  </button>
+                ) : null}
                 {view !== 'archive' && view !== 'todos' && (
                   <button
                     type="button"
@@ -8653,8 +8635,6 @@ export default function App() {
               designers={designers}
               projects={projects}
               filterDesigner={filterDesigner}
-              sessionUser={sessionUser}
-              onSignIn={signInWithGoogle}
               showArchive={showTodoArchive}
             />
           )}

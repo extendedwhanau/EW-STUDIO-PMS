@@ -100,12 +100,17 @@ html, body, #root {
   padding: 0 var(--sidebar-inner-pad-x);
 }
 
-.sidebar-session-email {
+.sidebar-session-email,
+.sidebar-session-hint {
   margin: 0;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: -0.01em;
   color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.sidebar-session-email {
   word-break: break-all;
 }
 
@@ -378,6 +383,11 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.main-header--todos {
+  align-items: center;
+  gap: 12px;
+}
+
 .main-header-actions {
   display: flex;
   align-items: flex-start;
@@ -593,21 +603,8 @@ html, body, #root {
   max-width: 100%;
 }
 
-.page-title-archive {
-  gap: 5px;
-}
-
-.page-title-archive-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-}
-
-.page-title-archive-count {
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
+.page-title-archive-icon {
+  display: block;
 }
 
 .page-title {
@@ -5152,7 +5149,8 @@ body.client-overview-open {
 .main-content--todos {
   display: flex;
   flex-direction: column;
-  padding-top: 8px;
+  overflow: hidden;
+  padding-top: 16px;
   padding-bottom: 0;
 }
 
@@ -5163,27 +5161,36 @@ body.client-overview-open {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
-.todo-page--composer {
-  padding-bottom: 20px;
-}
-
-.todo-page--composer .todo-board,
-.todo-page--composer .empty-state {
+.todo-page .todo-board,
+.todo-page .empty-state {
   flex: 1 1 auto;
   min-height: 0;
+  overflow: auto;
+  padding-bottom: 120px;
 }
 
 .todo-composer-dock {
-  position: sticky;
-  bottom: 16px;
+  position: absolute;
+  left: 50%;
+  bottom: 48px;
   z-index: 4;
   display: flex;
   justify-content: center;
+  width: min(680px, calc(100% - 24px));
+  transform: translateX(-50%);
   pointer-events: none;
-  margin-top: auto;
-  padding-top: 12px;
+}
+
+.todo-composer-dock .todo-composer {
+  pointer-events: auto;
+}
+
+.main-header--todos .main-header-actions {
+  align-items: center;
+  margin-left: auto;
 }
 
 .todo-sync-hint {
@@ -5378,7 +5385,7 @@ body.client-overview-open {
 
 .todo-board {
   display: flex;
-  gap: 20px;
+  gap: 28px;
   align-items: flex-start;
   overflow-x: auto;
   scrollbar-width: none;
@@ -5388,23 +5395,32 @@ body.client-overview-open {
   display: none;
 }
 
+.todo-board .overview-col {
+  flex: 0 0 380px;
+  width: 380px;
+}
+
+.todo-board .overview-col-header {
+  padding: 0 6px 14px;
+}
+
 .todo-col-list {
   display: flex;
   flex-direction: column;
-  padding: 0 4px 16px;
-  gap: 16px;
+  padding: 0 4px 20px;
+  gap: 22px;
 }
 
 .todo-job {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
 .todo-job-heading {
   margin: 0;
-  padding: 0 4px;
+  padding: 0 6px;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -5415,7 +5431,7 @@ body.client-overview-open {
 .todo-job-card {
   background: var(--surface);
   border-radius: 18px;
-  padding: 10px 14px 8px;
+  padding: 14px 18px 12px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
@@ -5426,10 +5442,10 @@ body.client-overview-open {
 .todo-job-card-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
-  min-height: 36px;
-  padding: 4px 0;
+  min-height: 40px;
+  padding: 6px 0;
   position: relative;
 }
 
@@ -5555,7 +5571,12 @@ body.client-overview-open {
 
 @media (max-width: 1100px) {
   .todo-board {
-    gap: 16px;
+    gap: 20px;
+  }
+
+  .todo-board .overview-col {
+    flex: 0 0 340px;
+    width: 340px;
   }
 }
 
