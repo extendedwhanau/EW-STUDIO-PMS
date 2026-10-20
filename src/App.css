@@ -5194,15 +5194,10 @@ body.client-overview-open {
   background: var(--project-card-fill);
 }
 
-.todo-composer > :not(.todo-composer-input):not(.todo-composer-add) {
-  order: 3;
-}
-
 .todo-composer-input {
-  order: 1;
   flex: 1 1 140px;
   min-width: 120px;
-  text-align: right;
+  text-align: left;
   border: none;
   background: transparent;
   font-family: inherit;
@@ -5213,10 +5208,12 @@ body.client-overview-open {
   outline: none;
 }
 
+.todo-composer > .todo-composer-input + * {
+  margin-left: auto;
+}
+
 .todo-composer-add {
-  order: 2;
   flex-shrink: 0;
-  margin-left: 0;
 }
 
 .todo-composer-add:disabled {
