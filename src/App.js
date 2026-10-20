@@ -2294,6 +2294,144 @@ function TodoDesignerPicker({
 }
 
 
+function TodoJobCardRow({
+  item,
+  onToggle,
+  onPatch,
+  onRemove,
+}) {
+  const dateState = item.date && !item.done ? workingDayCountdown(item.date) : null;
+  const overdue = dateState?.kind === 'overdue';
+  const dateLabel = formatTaskDateShort(item.date);
+
+  return (
+    <div className={`todo-job-card-row${item.done ? ' todo-job-card-row--done' : ''}`}>
+      <button
+        type="button"
+        className={`todo-check todo-check--square${item.done ? ' todo-check--done' : ''}`}
+        aria-label={item.done ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
+        aria-pressed={item.done}
+        onClick={onToggle}
+      >
+        {item.done ? (
+          <svg viewBox="0 0 16 16" aria-hidden>
+            <path
+              d="M3.5 8.2l3 3.1 6-6.4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : null}
+      </button>
+      <input
+        className="todo-job-card-title"
+        type="text"
+        value={item.title}
+        aria-label="To-do"
+        onChange={(e) => onPatch({ title: e.target.value })}
+        onBlur={(e) => {
+          const next = e.target.value.trim();
+          onPatch({ title: next || item.title });
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
+      />
+      <div className="todo-job-card-trail">
+        <div className={`todo-job-card-date${overdue ? ' todo-job-card-date--overdue' : ''}${dateLabel ? '' : ' todo-job-card-date--empty'}`}>
+          <MilestoneSingleDatePicker
+            date={item.date}
+            onChange={(date) => onPatch({ date })}
+            className="todo-job-card-date-btn"
+            emptyLabel="Date"
+            ariaLabel={`Date for ${item.title}`}
+            rangeFormat="task"
+          />
+        </div>
+        <button
+          type="button"
+          className="todo-job-card-remove"
+          onClick={onRemove}
+          aria-label={`Remove ${item.title}`}
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TodoJobCard({
+  job,
+  designerId,
+  showArchive,
+  onAdd,
+  onToggle,
+  onPatch,
+  onRemove,
+}) {
+  const [draft, setDraft] = useState('');
+  const title = job.project ? todoClientName(job.project) : (job.items.length ? 'Other' : '');
+
+  const submit = () => {
+    const next = draft.trim();
+    if (!next) return;
+    onAdd({
+      title: next,
+      projectId: job.projectId || '',
+      designerId: designerId === '_none' ? '' : designerId,
+    });
+    setDraft('');
+  };
+
+  return (
+    <div className="todo-job">
+      {title ? <h3 className="todo-job-heading">{title}</h3> : null}
+      <div className="todo-job-card">
+        <div className="todo-list">
+          {job.items.map((item) => (
+            item.fromHistory ? (
+              <TodoHistoryRow key={item.id} item={item} />
+            ) : (
+              <TodoJobCardRow
+                key={item.id}
+                item={item}
+                onToggle={() => onToggle(item)}
+                onPatch={(patch) => onPatch(item.id, patch)}
+                onRemove={() => onRemove(item.id)}
+              />
+            )
+          ))}
+        </div>
+        {!showArchive ? (
+          <div className="todo-job-card-row todo-job-card-row--new">
+            <span className="todo-check todo-check--square todo-check--ghost" aria-hidden />
+            <input
+              className="todo-job-card-title todo-job-card-draft"
+              type="text"
+              value={draft}
+              placeholder="Add new task"
+              aria-label={title ? `Add task to ${title}` : 'Add new task'}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                submit();
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function TodosView({
   todos,
   setTodos,
@@ -2384,15 +2522,21 @@ function TodosView({
     return cols;
   }, [visibleTodos, filterDesigner, designers, projectById, sortItems, showArchive]);
 
-  const addLines = (raw) => {
+  const addLines = (raw, overrides = {}) => {
     const lines = splitTodoLines(raw);
     if (!lines.length) return false;
     const createdAtBase = Date.now();
     const items = lines.map((title, i) => normalizeTodo({
       title,
-      designerId: composerOwner,
-      projectId: composerJob,
-      date: composerDate,
+      designerId: Object.prototype.hasOwnProperty.call(overrides, 'designerId')
+        ? overrides.designerId
+        : composerOwner,
+      projectId: Object.prototype.hasOwnProperty.call(overrides, 'projectId')
+        ? overrides.projectId
+        : composerJob,
+      date: Object.prototype.hasOwnProperty.call(overrides, 'date')
+        ? overrides.date
+        : composerDate,
       createdAt: new Date(createdAtBase + i).toISOString(),
     })).filter(Boolean);
     if (!items.length) return false;
@@ -2403,6 +2547,10 @@ function TodosView({
   const submitDraft = () => {
     if (!addLines(draft)) return;
     setDraft('');
+  };
+
+  const addToJob = ({ title, projectId, designerId }) => {
+    addLines(title, { projectId, designerId, date: '' });
   };
 
   const patchTodo = (id, patch) => {
@@ -2429,21 +2577,6 @@ function TodosView({
       doneAt: item.done ? '' : new Date().toISOString(),
     });
   };
-
-  const renderRow = (item) => (item.fromHistory ? (
-    <TodoHistoryRow key={item.id} item={item} />
-  ) : (
-    <TodoRow
-      key={item.id}
-      item={item}
-      designers={designers}
-      projectById={projectById}
-      jobOptions={jobOptions}
-      onToggle={() => toggleDone(item)}
-      onPatch={(patch) => patchTodo(item.id, patch)}
-      onRemove={() => removeTodo(item.id)}
-    />
-  ));
 
   return (
     <div className="todo-page">
@@ -2539,14 +2672,16 @@ function TodosView({
                     {showArchive ? 'Nothing archived yet.' : 'Nothing on.'}
                   </p>
                 ) : col.jobGroups.map((job) => (
-                  <div key={job.projectId || 'no-job'} className="todo-job">
-                    {job.project ? (
-                      <h3 className="todo-job-heading">{todoClientName(job.project)}</h3>
-                    ) : null}
-                    <div className="todo-list">
-                      {job.items.map(renderRow)}
-                    </div>
-                  </div>
+                  <TodoJobCard
+                    key={job.projectId || 'no-job'}
+                    job={job}
+                    designerId={col.id}
+                    showArchive={showArchive}
+                    onAdd={addToJob}
+                    onToggle={toggleDone}
+                    onPatch={patchTodo}
+                    onRemove={removeTodo}
+                  />
                 ))}
               </div>
             </section>
@@ -2581,100 +2716,6 @@ function TodoHistoryRow({ item }) {
           <span className="todo-row-done-date">{formatMilestoneDateShort(doneOn)}</span>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function TodoRow({
-  item,
-  designers,
-  projectById,
-  jobOptions,
-  onToggle,
-  onPatch,
-  onRemove,
-}) {
-  const project = item.projectId ? projectById.get(item.projectId) : null;
-  const rowJobOptions = project && !jobOptions.some((opt) => opt.value === project.id)
-    ? [...jobOptions, { value: project.id, label: todoJobLabel(project) }]
-    : jobOptions;
-  const dateState = item.date && !item.done ? workingDayCountdown(item.date) : null;
-  const overdue = dateState?.kind === 'overdue';
-
-  return (
-    <div className={`todo-row${item.done ? ' todo-row--done' : ''}`}>
-      <div className="todo-row-top">
-        <button
-          type="button"
-          className={`todo-check${item.done ? ' todo-check--done' : ''}`}
-          aria-label={item.done ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
-          aria-pressed={item.done}
-          onClick={onToggle}
-        >
-          {item.done ? (
-            <svg viewBox="0 0 16 16" aria-hidden>
-              <path
-                d="M3.5 8.2l3 3.1 6-6.4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          ) : null}
-        </button>
-        <input
-          className="todo-row-title"
-          type="text"
-          value={item.title}
-          aria-label="To-do"
-          onChange={(e) => onPatch({ title: e.target.value })}
-          onBlur={(e) => {
-            const next = e.target.value.trim();
-            onPatch({ title: next || item.title });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              e.currentTarget.blur();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="sheet-designer-chip-remove todo-row-remove"
-          onClick={onRemove}
-          aria-label={`Remove ${item.title}`}
-        >
-          ×
-        </button>
-      </div>
-      <div className="todo-row-meta">
-        <TodoDesignerPicker
-          value={item.designerId}
-          onChange={(id) => onPatch({ designerId: id })}
-          designers={designers}
-          ariaLabel="Assigned to"
-          avatarSize={18}
-        />
-        <TodoJobPicker
-          value={item.projectId || ''}
-          onChange={(id) => onPatch({ projectId: id })}
-          options={rowJobOptions}
-          project={project}
-          ariaLabel="Job"
-          nameOnly
-        />
-        <TodoDateField
-          date={item.date}
-          onChange={(date) => onPatch({ date })}
-          className={`todo-row-date${overdue ? ' todo-row-date--overdue' : ''}`}
-          emptyLabel="Date"
-          ariaLabel={`Date for ${item.title}`}
-          overdue={overdue}
-        />
-      </div>
     </div>
   );
 }
