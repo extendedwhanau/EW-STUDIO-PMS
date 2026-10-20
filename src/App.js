@@ -2790,7 +2790,7 @@ function TodoHistoryRow({ item }) {
   return (
     <div className="todo-row todo-row--done todo-row--history">
       <div className="todo-row-top">
-        <span className="todo-check todo-check--done" aria-hidden>
+        <span className="todo-check todo-check--square todo-check--done" aria-hidden>
           <svg viewBox="0 0 16 16">
             <path
               d="M3.5 8.2l3 3.1 6-6.4"
