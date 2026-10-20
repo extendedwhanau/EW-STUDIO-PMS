@@ -5533,14 +5533,6 @@ body.client-overview-open {
 }
 
 .todo-job-card-date {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-
-.todo-job-card-row:hover .todo-job-card-date,
-.todo-job-card-row:focus-within .todo-job-card-date,
-.todo-job-card-date--visible {
   opacity: 1;
   pointer-events: auto;
 }
