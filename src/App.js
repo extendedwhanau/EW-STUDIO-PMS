@@ -55,8 +55,8 @@ import {
   ganttTotalDays,
   pointerDayFromTrack as pointerDayFromTrackGeometry,
 } from './ganttGeometry';
-import TimeTracker from './TimeTracker';
-import { canAccessTimeTracker, getStreamtimeUserId } from './timeTrackerConfig';
+import TimeTracker, { TimerDock } from './TimeTracker';
+import { canAccessTimeTracker, timeTrackerEmail } from './timeTrackerConfig';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -8144,6 +8144,29 @@ export default function App() {
   }, [todos, projects, filterDesigner, todayStr]);
   const showTodoArchive = todoArchiveOpen;
 
+  const timeTrackerEnabled = canAccessTimeTracker(sessionUser?.email);
+  const timerJobs = useMemo(() => {
+    const email = timeTrackerEmail(sessionUser?.email);
+    const firstName = email.split('@')[0];
+    const me = email
+      ? (designers.find((d) => normalizeEmail(d.email) === email)
+        || designers.find((d) => (
+          !d.email && String(d.name || '').trim().split(/\s+/)[0].toLowerCase() === firstName
+        )))
+      : null;
+    const open = projects
+      .filter((p) => p.status !== 'Complete')
+      .sort((a, b) => (
+        String(a.client || '').localeCompare(String(b.client || ''))
+        || String(a.name || '').localeCompare(String(b.name || ''))
+      ));
+    if (!me) return { mine: [], others: open };
+    const isMine = (p) => getProjectDesignerIds(p).map(String).includes(String(me.id));
+    const mine = open.filter(isMine);
+    const others = open.filter((p) => !isMine(p));
+    return { mine, others };
+  }, [projects, designers, sessionUser]);
+
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
   const inStudioProjects = activeProjects.filter((p) => (
     !isPipelineStatus(p.status) && !isPotentialStatus(p.status)
@@ -8722,10 +8745,8 @@ export default function App() {
 
           {view === 'time' && canAccessTimeTracker(sessionUser?.email) && (
             <TimeTracker
-              projects={projects}
-              streamtimeUserId={getStreamtimeUserId(sessionUser?.email)}
               onSyncToStreamtime={() => {
-                alert('Streamtime sync coming soon! For now, time is saved locally in your browser.');
+                alert('Streamtime sync isn’t connected yet. Your time is saved in this browser.');
               }}
             />
           )}
@@ -8745,6 +8766,14 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {timeTrackerEnabled && (
+        <TimerDock
+          myJobs={timerJobs.mine}
+          otherJobs={timerJobs.others}
+          raised={view === 'todos' && !showTodoArchive}
+        />
+      )}
 
       {overviewDragProject && createPortal(
         <div

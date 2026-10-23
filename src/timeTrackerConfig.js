@@ -33,6 +33,16 @@ export function canAccessTimeTracker(email) {
 }
 
 /**
+ * Email whose assigned jobs are listed first in the timer.
+ * Locally there is no sign-in, so fall back to the first allowlisted person.
+ */
+export function timeTrackerEmail(sessionEmail) {
+  const normalized = String(sessionEmail || '').trim().toLowerCase();
+  if (normalized) return normalized;
+  return process.env.NODE_ENV === 'development' ? TIME_TRACKER_ALLOWLIST[0] : '';
+}
+
+/**
  * Get Streamtime user ID for a studio email
  */
 export function getStreamtimeUserId(email) {
