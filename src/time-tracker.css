@@ -13,41 +13,57 @@
   pointer-events: auto;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  box-sizing: border-box;
+  /* padding + clock + gap + play button */
+  width: calc(18px + var(--timer-clock-w, 32px) + 8px + 32px + 10px);
   height: 52px;
   padding: 0 10px 0 18px;
+  overflow: hidden;
   border-radius: 999px;
   background: var(--surface);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 10px 28px rgba(0, 0, 0, 0.08);
   cursor: pointer;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .timer-pill--open {
   width: min(320px, calc(100vw - 24px));
-  justify-content: flex-start;
   cursor: default;
 }
 
 .timer-job {
   position: relative;
-  display: none;
+  display: flex;
   align-items: center;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  opacity: 0;
   cursor: pointer;
+  transition: opacity 0.2s ease;
 }
 
 .timer-pill--open .timer-job {
-  display: flex;
-  animation: timer-job-in 0.2s ease;
+  padding-right: 8px;
+  opacity: 1;
+  transition: opacity 0.35s ease 0.12s;
 }
 
-@keyframes timer-job-in {
-  from { opacity: 0; transform: translateX(-4px); }
-  to { opacity: 1; transform: translateX(0); }
+.timer-clock {
+  margin-right: 8px;
+}
+
+.timer-btn--stop {
+  margin-left: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-pill,
+  .timer-job,
+  .timer-pill--open .timer-job {
+    transition: none;
+  }
 }
 
 .timer-job-label {

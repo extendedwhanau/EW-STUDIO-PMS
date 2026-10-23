@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { STANDARD_WORK_HOURS } from './timeTrackerConfig';
 
@@ -174,6 +174,13 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
   const elapsed = elapsedMs(timer, now);
   const canStop = !timer.running && elapsed >= STOP_AFTER_MS;
   const expanded = open || !project;
+  const clockText = formatClock(elapsed);
+
+  const clockRef = useRef(null);
+  const [clockWidth, setClockWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (clockRef.current) setClockWidth(clockRef.current.offsetWidth);
+  }, [clockText]);
 
   const changeJob = (nextId) => {
     if (!nextId || nextId === timer.jobId) return;
@@ -223,6 +230,7 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
           timer.running ? 'timer-pill--running' : '',
           expanded ? 'timer-pill--open' : '',
         ].filter(Boolean).join(' ')}
+        style={clockWidth ? { '--timer-clock-w': `${clockWidth}px` } : undefined}
         onMouseEnter={openPill}
         onMouseLeave={schedulePillClose}
         onBlur={schedulePillClose}
@@ -255,7 +263,7 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
             ))}
           </select>
         </label>
-        <span className="timer-clock" aria-live="off">{formatClock(elapsed)}</span>
+        <span ref={clockRef} className="timer-clock" aria-live="off">{clockText}</span>
         <button
           type="button"
           className="timer-btn timer-btn--toggle"
