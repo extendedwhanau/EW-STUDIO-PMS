@@ -1,11 +1,10 @@
-/* ── Timer dock (always-on, bottom centre; matches the To-Do composer) ──── */
+/* ── Timer dock (always-on: bottom left on desktop, bottom centre on phones) */
 
 .timer-dock {
   position: fixed;
-  left: calc(var(--sidebar-width) + (100vw - var(--sidebar-width)) / 2);
+  left: calc(var(--sidebar-width) + var(--app-inline));
   bottom: 48px;
   z-index: 50;
-  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -140,11 +139,12 @@
 @media (max-width: 768px) {
   .timer-dock {
     left: 50%;
+    transform: translateX(-50%);
   }
 }
 
-/* On the To-Do page the pill lives in the composer dock: one centred row on
-   desktop, stacked above the composer on phones. */
+/* On phones the To-Do page puts the pill in the composer dock, stacked above
+   the composer. On desktop it stays floating bottom left. */
 .todo-composer-dock {
   align-items: center;
   gap: 12px;

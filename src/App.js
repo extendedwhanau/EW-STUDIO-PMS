@@ -8173,6 +8173,7 @@ export default function App() {
 
   const timeTrackerEnabled = canAccessTimeTracker(sessionUser?.email);
   const [todoTimerSlot, setTodoTimerSlot] = useState(null);
+  const timerMobile = useGanttMobileLayout();
   const timerJobs = useMemo(() => {
     const email = timeTrackerEmail(sessionUser?.email);
     const firstName = email.split('@')[0];
@@ -8800,7 +8801,7 @@ export default function App() {
         <TimerDock
           myJobs={timerJobs.mine}
           otherJobs={timerJobs.others}
-          slot={view === 'todos' && !showTodoArchive ? todoTimerSlot : null}
+          slot={timerMobile && view === 'todos' && !showTodoArchive ? todoTimerSlot : null}
         />
       )}
 
