@@ -6,8 +6,8 @@ import { STANDARD_WORK_HOURS } from './timeTrackerConfig';
 const ENTRIES_STORAGE = 'time_tracker_entries';
 const TIMER_STORAGE = 'time_tracker_timer';
 const ENTRIES_EVENT = 'time-tracker-entries-changed';
-const STOP_AFTER_MS = 5 * 60 * 1000;
 const MIN_LOG_MS = 60 * 1000;
+const ACTIONS_AFTER_MS = 700;
 
 function todayDateString() {
   const now = new Date();
@@ -143,8 +143,10 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
   }, [timer.running]);
 
   const [open, setOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const pillRef = useRef(null);
   const closeTimer = useRef(null);
+  const actionsTimer = useRef(null);
 
   const openPill = () => {
     window.clearTimeout(closeTimer.current);
@@ -153,29 +155,56 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
 
   const schedulePillClose = () => {
     window.clearTimeout(closeTimer.current);
+    window.clearTimeout(actionsTimer.current);
     closeTimer.current = window.setTimeout(() => {
       const root = pillRef.current;
       if (root && root.contains(document.activeElement)) return;
       setOpen(false);
+      setActionsOpen(false);
     }, 120);
+  };
+
+  const scheduleActionsOpen = () => {
+    window.clearTimeout(actionsTimer.current);
+    actionsTimer.current = window.setTimeout(() => setActionsOpen(true), ACTIONS_AFTER_MS);
+  };
+
+  const handlePillEnter = () => {
+    openPill();
+    scheduleActionsOpen();
+  };
+
+  const handlePillPointerDown = () => {
+    scheduleActionsOpen();
+  };
+
+  const handlePillLeave = () => {
+    window.clearTimeout(actionsTimer.current);
+    schedulePillClose();
   };
 
   useEffect(() => {
     if (!open) return undefined;
     const onPointerDown = (e) => {
-      if (pillRef.current && !pillRef.current.contains(e.target)) setOpen(false);
+      if (pillRef.current && !pillRef.current.contains(e.target)) {
+        setOpen(false);
+        setActionsOpen(false);
+      }
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [open]);
 
-  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(closeTimer.current);
+    window.clearTimeout(actionsTimer.current);
+  }, []);
 
   const allJobs = [...myJobs, ...otherJobs];
   const project = allJobs.find((p) => p.id === timer.jobId) || null;
   const elapsed = elapsedMs(timer, now);
-  const canStop = !timer.running && elapsed >= STOP_AFTER_MS;
-  const expanded = open || !project;
+  const expanded = open || actionsOpen || !project;
+  const showActions = actionsOpen && !timer.running && elapsed > 0 && !!project;
   const clockText = formatClock(elapsed);
 
   const jobText = project ? (String(project.client || '').trim() || jobLabel(project)) : '+ Job';
@@ -225,9 +254,18 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
     setNow(at);
   };
 
-  const stop = () => {
+  const save = (e) => {
+    e.stopPropagation();
     logTime(timer, project, elapsed);
     setTimer({ ...EMPTY_TIMER, jobId: timer.jobId });
+    setActionsOpen(false);
+  };
+
+  const reset = (e) => {
+    e.stopPropagation();
+    setTimer({ ...EMPTY_TIMER, jobId: timer.jobId });
+    setNow(Date.now());
+    setActionsOpen(false);
   };
 
   const dock = (
@@ -238,14 +276,16 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
           'timer-pill',
           timer.running ? 'timer-pill--running' : '',
           expanded ? 'timer-pill--open' : '',
+          showActions ? 'timer-pill--actions' : '',
         ].filter(Boolean).join(' ')}
         style={{
           ...(clockWidth ? { '--timer-clock-w': `${clockWidth}px` } : {}),
           ...(labelWidth ? { '--timer-label-w': `${labelWidth}px` } : {}),
-          '--timer-stop-w': canStop && expanded ? '40px' : '0px',
+          '--timer-actions-w': showActions ? '80px' : '0px',
         }}
-        onMouseEnter={openPill}
-        onMouseLeave={schedulePillClose}
+        onMouseEnter={handlePillEnter}
+        onMouseLeave={handlePillLeave}
+        onPointerDown={handlePillPointerDown}
         onBlur={schedulePillClose}
         onClick={openPill}
       >
@@ -296,17 +336,35 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
             </svg>
           )}
         </button>
-        {canStop && expanded ? (
-          <button
-            type="button"
-            className="timer-btn timer-btn--stop"
-            onClick={stop}
-            aria-label="Stop and log time"
-          >
-            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden>
-              <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
-            </svg>
-          </button>
+        {showActions ? (
+          <>
+            <button
+              type="button"
+              className="timer-btn timer-btn--save"
+              onClick={save}
+              aria-label="Save and log time"
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
+                <path
+                  d="M3 2.5h8.2L13.5 5v8.5H3V2.5zm1.5 1.5v3h7V4H4.5zM4.5 11h7V8.5h-7V11z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="timer-btn timer-btn--reset"
+              onClick={reset}
+              aria-label="Reset timer"
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden>
+                <path
+                  d="M3.2 3.2a1 1 0 0 1 1.4 0L8 6.6l3.4-3.4a1 1 0 1 1 1.4 1.4L9.4 8l3.4 3.4a1 1 0 0 1-1.4 1.4L8 9.4l-3.4 3.4a1 1 0 0 1-1.4-1.4L6.6 8 3.2 4.6a1 1 0 0 1 0-1.4z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          </>
         ) : null}
       </div>
     </div>

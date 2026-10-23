@@ -1,8 +1,9 @@
-/* ── Timer dock (always-on: bottom left on desktop, bottom centre on phones) */
+/* ── Timer dock (always-on: bottom of the sidebar on desktop, bottom centre on
+   phones). Lives outside the sidebar so a wide open pill overlaps the main area. */
 
 .timer-dock {
   position: fixed;
-  left: calc(var(--sidebar-width) + var(--app-inline));
+  left: 16px;
   bottom: 48px;
   z-index: 50;
   pointer-events: none;
@@ -28,10 +29,10 @@
 }
 
 .timer-pill--open {
-  /* closed width + client name + its gap + stop button when shown */
+  /* closed width + client name + its gap + save/reset when shown */
   width: min(
-    calc(18px + var(--timer-label-w, 60px) + 8px + var(--timer-clock-w, 32px) + 8px + 32px + var(--timer-stop-w, 0px) + 10px),
-    320px,
+    calc(18px + var(--timer-label-w, 60px) + 8px + var(--timer-clock-w, 32px) + 8px + 32px + var(--timer-actions-w, 0px) + 10px),
+    360px,
     calc(100vw - 24px)
   );
   cursor: default;
@@ -58,7 +59,12 @@
   margin-right: 8px;
 }
 
-.timer-btn--stop {
+.timer-btn--save,
+.timer-btn--reset {
+  margin-left: 0;
+}
+
+.timer-btn--save {
   margin-left: 8px;
 }
 
