@@ -40,8 +40,8 @@ function JobSelector({ projects, selectedJobId, selectedJobItemId, onSelect }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showItems, setShowItems] = useState(false);
   
-  const activeProjects = projects.filter(p => 
-    p.status === 'In Play' || p.status === 'Active'
+  const activeProjects = projects.filter(p =>
+    p.status !== 'Complete' && p.status !== 'Potential'
   );
 
   const filteredProjects = searchTerm

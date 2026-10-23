@@ -26,6 +26,8 @@ export const STANDARD_WORK_HOURS = 8;
  * Check if a user (by email) has access to the time tracker
  */
 export function canAccessTimeTracker(email) {
+  // `npm start` skips Google sign-in, so there is no email to check locally.
+  if (process.env.NODE_ENV === 'development') return true;
   const normalized = String(email || '').trim().toLowerCase();
   return TIME_TRACKER_ALLOWLIST.includes(normalized);
 }
