@@ -6,7 +6,6 @@ import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 import './gantt-timeline.css';
-import './time-tracker.css';
 import {
   isSupabaseConfigured,
   loadWorkspacePayload,
@@ -14,12 +13,6 @@ import {
   fetchWorkspaceUpdatedAt,
   subscribeWorkspaceChanges,
 } from './supabaseData';
-import { supabase } from './supabaseClient';
-import { isStudioEmail, normalizeEmail } from './studioConfig';
-import {
-  buildNotifyEvents,
-  enqueueStudioNotifications,
-} from './studioNotifications';
 import {
   getDevTimelinePreviewProjects,
   getDevOverviewPreviewProject,
@@ -43,20 +36,8 @@ import { importTimelineCsv } from './streamtimeCsvImport';
 import {
   cascadeAfterPhaseEndChange,
   cascadeAfterTaskChange,
-  daysFromEpoch,
   latestScheduleEnd,
 } from './scheduleEngine';
-import {
-  ganttChartWidths,
-  ganttDayCenterPct,
-  ganttDayLeftPct,
-  ganttInclusiveBarPct,
-  ganttScrollLeftForTrackPct,
-  ganttTotalDays,
-  pointerDayFromTrack as pointerDayFromTrackGeometry,
-} from './ganttGeometry';
-import TimeTracker from './TimeTracker';
-import { canAccessTimeTracker, getStreamtimeUserId } from './timeTrackerConfig';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -130,7 +111,6 @@ function designerWithNormalizedColor(d) {
 }
 
 const STATUS_OPTIONS = [
-  'Potential',
   'Scheduled',
   'Ready to Start',
   'In Progress',
@@ -140,7 +120,6 @@ const STATUS_OPTIONS = [
 
 /** Row dot colours — blue / purple / green / amber / grey. */
 const STATUS_ACCENT = {
-  Potential: '#B7B2A9',
   Scheduled: '#4F7FD9',
   'Ready to Start': '#8B6FD6',
   'In Progress': '#22A45A',
@@ -166,81 +145,30 @@ function normalizeProjectStatus(status) {
 
 const PIPELINE_STATUSES = new Set(['Scheduled', 'Ready to Start']);
 
-const CATEGORY_OPTIONS = ['thisWeek', 'studio'];
+const CATEGORY_OPTIONS = ['priority', 'secondary'];
 
 const CATEGORY_LABELS = {
-  thisWeek: 'This Week',
-  studio: 'Studio',
+  priority: 'Priority',
+  secondary: 'Secondary',
 };
-
-const OVERVIEW_COLUMN_TITLE_STORAGE = 'studio_overview_column_titles';
-const OVERVIEW_COLUMN_VISIBILITY_STORAGE = 'studio_overview_column_visibility';
-const OVERVIEW_COLUMN_IDS = ['studio', 'schedule', 'potential'];
-const OVERVIEW_COLUMN_FALLBACK_TITLES = {
-  studio: 'Studio',
-  schedule: 'Scheduled',
-  potential: 'Potential',
-};
-function loadOverviewColumnTitles() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(OVERVIEW_COLUMN_TITLE_STORAGE));
-    if (!raw || typeof raw !== 'object') return { ...CATEGORY_LABELS };
-    return {
-      thisWeek: String(raw.thisWeek || '').trim() || CATEGORY_LABELS.thisWeek,
-      studio: String(raw.studio || '').trim() || CATEGORY_LABELS.studio,
-    };
-  } catch {
-    return { ...CATEGORY_LABELS };
-  }
-}
-
-function defaultOverviewColumnVisibility() {
-  return {
-    studio: true,
-    schedule: true,
-    potential: true,
-  };
-}
-
-function loadOverviewColumnVisibility() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(OVERVIEW_COLUMN_VISIBILITY_STORAGE));
-    if (!raw || typeof raw !== 'object') return defaultOverviewColumnVisibility();
-    const next = defaultOverviewColumnVisibility();
-    OVERVIEW_COLUMN_IDS.forEach((id) => {
-      if (typeof raw[id] === 'boolean') next[id] = raw[id];
-    });
-    if (!OVERVIEW_COLUMN_IDS.some((id) => next[id])) return defaultOverviewColumnVisibility();
-    return next;
-  } catch {
-    return defaultOverviewColumnVisibility();
-  }
-}
 
 function normalizeProjectCategory(category) {
-  if (category === 'thisWeek' || category === 'priority') return 'thisWeek';
-  if (
-    category === 'studio'
-    || category === 'secondary'
-    || category === 'onTheGo'
-    || category === 'background'
-    || category === 'pro-bono'
-  ) return 'studio';
+  if (category === 'background' || category === 'pro-bono') return 'secondary';
   if (CATEGORY_OPTIONS.includes(category)) return category;
-  return 'studio';
+  return 'secondary';
+}
+
+function formatCategoryForDisplay(category) {
+  return CATEGORY_LABELS[normalizeProjectCategory(category)] || CATEGORY_LABELS.priority;
 }
 
 function getProjectCategory(project) {
   return normalizeProjectCategory(project?.priority);
 }
 
-/** Upcoming booked work — listed under Scheduled, hidden from main Projects. */
+/** Upcoming / pre–in-progress — listed under Schedule, hidden from main Projects. */
 function isPipelineStatus(status) {
   return PIPELINE_STATUSES.has(normalizeProjectStatus(status));
-}
-
-function isPotentialStatus(status) {
-  return normalizeProjectStatus(status) === 'Potential';
 }
 
 /** Sentence case labels for sheet-style status display */
@@ -453,25 +381,11 @@ function formatDueDaysDisplay(endDateStr) {
   return days === 1 ? '1 Day' : `${days} Days`;
 }
 
-/** Day + short month for marker labels, e.g. "14 Aug". */
+/** Day + month for marker labels, e.g. "29 July". */
 function formatMarkerDateLabel(str) {
   if (!str) return '';
-  const d = new Date(`${str}T12:00:00Z`);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${d.getUTCDate()} ${months[d.getUTCMonth()]}`;
-}
-
-function formatCommentWhen(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('en-NZ', {
-    timeZone: 'Pacific/Auckland',
-    day: 'numeric',
-    month: 'short',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const d = new Date(str + 'T00:00:00');
+  return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long' });
 }
 
 /** Short date for compact UI, e.g. "7 Jul 26". */
@@ -505,24 +419,18 @@ function formatScheduleStartDate(str) {
   return `${day}.${month}.${year}`;
 }
 
-/** Project/phase date visuals, e.g. "20 Sep – 10 Nov". */
-function formatDayMonthRangeDisplay(start, end) {
-  if (!start && !end) return '';
-  const from = formatTaskDateShort(start || end);
-  const to = formatTaskDateShort(end || start);
-  if (!from) return '';
-  if (!start || !end || from === to) return from;
-  return `${from} – ${to}`;
-}
-
-/** Project-level date visuals, e.g. "20 Sep – 10 Nov". */
+/** Project-level date visuals, e.g. "7 July 2026 — 13 February 2027". */
 function formatMilestoneDateRangeDisplay(start, end) {
-  return formatDayMonthRangeDisplay(start, end);
+  if (!start && !end) return '';
+  if (start && end) return `${formatDueDateLong(start)} — ${formatDueDateLong(end)}`;
+  return formatDueDateLong(start || end);
 }
 
-/** Phase date ranges in the project card, e.g. "20 Sep – 10 Nov". */
+/** Phase date ranges in the project card, e.g. "7 Jul 2026 – 11 Aug 2026". */
 function formatPhaseDateRangeDisplay(start, end) {
-  return formatDayMonthRangeDisplay(start, end);
+  if (!start && !end) return '';
+  if (start && end) return `${formatPhaseDateMedium(start)} – ${formatPhaseDateMedium(end)}`;
+  return formatPhaseDateMedium(start || end);
 }
 
 /** Task date ranges in the project card, e.g. "7 Jul – 11 Aug". */
@@ -649,13 +557,10 @@ function isoFromTimelineDay(dayNum, anchorIso) {
 
 function pointerDayFromTrack(clientX, track, minDay, totalDays) {
   const rect = track.getBoundingClientRect();
-  return pointerDayFromTrackGeometry(
-    clientX,
-    rect.width,
-    rect.left,
-    minDay,
-    totalDays,
-  );
+  if (rect.width <= 0) return minDay;
+  const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+  const pct = (x / rect.width) * 100;
+  return Math.round(minDay + (pct / 100) * totalDays);
 }
 
 function applyProjectMilestoneUpdate(project, milestones, patch = {}) {
@@ -769,16 +674,14 @@ function updateProjectTaskDates(project, phaseId, taskId, patch) {
   };
 }
 
-function updateProjectMarker(project, markerId, patch = {}) {
-  // Keep list order stable while editing (esp. titles). Full normalize runs on save.
-  const markers = (project.markers || []).map((marker) => (
-    marker.id === markerId ? { ...marker, ...patch } : marker
-  ));
-  return { ...project, markers };
-}
-
 function updateProjectMarkerDate(project, markerId, date) {
-  return updateProjectMarker(project, markerId, { date: date || '' });
+  const markers = (project.markers || []).map((marker) => (
+    marker.id === markerId ? { ...marker, date: date || '' } : marker
+  ));
+  return {
+    ...project,
+    markers: normalizeProjectMarkers(markers, { requireTitle: false }),
+  };
 }
 
 function updateProjectPhaseCustomDates(project, phaseId, patch) {
@@ -998,111 +901,6 @@ function normalizeProjectMarkers(markers, options = {}) {
   );
 }
 
-function normalizeProjectComments(comments) {
-  return (Array.isArray(comments) ? comments : [])
-    .map((raw) => {
-      if (!raw || typeof raw !== 'object') return null;
-      const body = String(raw.body || '').trim();
-      if (!body) return null;
-      return {
-        id: String(raw.id || uuidv4()),
-        body,
-        authorId: String(raw.authorId || ''),
-        authorName: String(raw.authorName || '').trim(),
-        createdAt: raw.createdAt || new Date().toISOString(),
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
-}
-
-function normalizeFigmaUrl(raw) {
-  const text = String(raw || '').trim();
-  if (!text) return '';
-  try {
-    const url = new URL(text);
-    if (url.protocol === 'figma:') return url.toString();
-    const host = url.hostname.replace(/^www\./i, '').toLowerCase();
-    if (host === 'figma.com') return url.toString();
-    if (url.protocol === 'http:' || url.protocol === 'https:') return '';
-    return text;
-  } catch {
-    return text;
-  }
-}
-
-/** Desktop-app URL. File links use figma://file/{key}. Folder links are a best-effort rewrite. */
-function figmaDesktopUrl(raw) {
-  const text = String(raw || '').trim();
-  if (!text) return '';
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    return '';
-  }
-  if (url.protocol === 'figma:') return url.toString();
-  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
-  if (host !== 'figma.com') return '';
-  const file = url.pathname.match(/^\/(design|file|proto|board|slides|deck|site|buzz|make)\/([^/]+)/i);
-  if (file) {
-    const key = file[2];
-    const node = url.searchParams.get('node-id');
-    return node ? `figma://file/${key}?node-id=${encodeURIComponent(node)}` : `figma://file/${key}`;
-  }
-  const path = url.pathname.replace(/^\/+/, '').replace(/\/+$/, '');
-  if (!path) return '';
-  return `figma://${path}`;
-}
-
-function dropboxOpenHref(raw) {
-  const text = String(raw || '').trim();
-  if (!text) return '';
-  if (text.startsWith('file:')) return text;
-  if (text.startsWith('/')) {
-    const encoded = text.split('/').map((part, index) => (
-      index === 0 ? '' : encodeURIComponent(part)
-    )).join('/');
-    return `file://${encoded}`;
-  }
-  try {
-    const url = new URL(text);
-    if (url.protocol === 'file:') return url.toString();
-    const host = url.hostname.replace(/^www\./i, '').toLowerCase();
-    if (host === 'dropbox.com' || host.endsWith('.dropbox.com')) return url.toString();
-  } catch {
-    return '';
-  }
-  return '';
-}
-
-function linkOpenHref(link) {
-  if (!link) return '';
-  if (link.kind === 'figma') return figmaDesktopUrl(link.url);
-  if (link.kind === 'dropbox') return dropboxOpenHref(link.url);
-  return '';
-}
-
-function normalizeProjectLinks(p) {
-  const seen = new Set();
-  const links = [];
-  (Array.isArray(p?.links) ? p.links : []).forEach((raw) => {
-    if (!raw || typeof raw !== 'object') return;
-    const kind = raw.kind === 'dropbox' || raw.kind === 'figma' ? raw.kind : '';
-    const url = String(raw.url || '').trim();
-    if (!kind || !url || seen.has(kind) || !linkOpenHref({ kind, url })) return;
-    seen.add(kind);
-    links.push({ id: String(raw.id || uuidv4()), kind, url });
-  });
-  if (!seen.has('figma')) {
-    const legacy = normalizeFigmaUrl(p?.figmaUrl);
-    if (legacy && figmaDesktopUrl(legacy)) {
-      links.unshift({ id: 'legacy-figma', kind: 'figma', url: legacy });
-    }
-  }
-  return links;
-}
-
 function normalizeProjectMilestones(p) {
   const raw = Array.isArray(p.milestones) ? p.milestones : [];
   const milestones = sortPhasesByCatalog(
@@ -1110,19 +908,15 @@ function normalizeProjectMilestones(p) {
   );
   const markers = normalizeProjectMarkers(p.markers);
   const linkedSchedule = Boolean(p.linkedSchedule);
-  const comments = normalizeProjectComments(p.comments);
-  const links = normalizeProjectLinks(p);
-  const figmaUrl = links.find((link) => link.kind === 'figma')?.url || '';
   const { milestonesEnabled, ...rest } = p;
-  const extras = { comments, links, figmaUrl };
   if (!milestones.length) {
-    return { ...rest, milestones, markers, linkedSchedule, ...extras };
+    return { ...rest, milestones, markers, linkedSchedule };
   }
   const kickoff = rest.startDate || today();
   const savedEnd = rest.endDate || '';
   const { phases, startDate, endDate: resolvedEnd } = resolveMilestoneSchedule(kickoff, milestones);
   const endDate = pickProjectEndDate('', savedEnd, resolvedEnd);
-  return { ...rest, milestones: phases, markers, linkedSchedule, startDate, endDate, ...extras };
+  return { ...rest, milestones: phases, markers, linkedSchedule, startDate, endDate };
 }
 
 function projectHasMilestones(project) {
@@ -1139,6 +933,9 @@ function emptyProjectMarker() {
   };
 }
 
+function daysFromEpoch(str) {
+  return Math.floor(new Date(str + 'T00:00:00').getTime() / 86400000);
+}
 function addDays(str, n) {
   const d = parseISODateLocal(str);
   d.setDate(d.getDate() + n);
@@ -1147,220 +944,12 @@ function addDays(str, n) {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
-
-function aucklandDateString(date) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Pacific/Auckland',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const y = parts.find((p) => p.type === 'year')?.value;
-  const m = parts.find((p) => p.type === 'month')?.value;
-  const day = parts.find((p) => p.type === 'day')?.value;
-  return `${y}-${m}-${day}`;
-}
-
-function aucklandWeekdayIndex(date) {
-  const wd = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Pacific/Auckland',
-    weekday: 'short',
-  }).format(date);
-  const key = String(wd || '').slice(0, 3);
-  return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[key];
-}
-
-/** Studio calendar “today” in NZ — keeps the today line correct regardless of browser TZ. */
 function today() {
-  return aucklandDateString(new Date());
-}
-
-/** Friday a ticked to-do leaves the live list. Mon–Thu ticks go that week's Friday; Fri–Sun wait until the next one. */
-function todoArchiveFriday(doneAtIso) {
-  const done = new Date(doneAtIso);
-  if (Number.isNaN(done.getTime())) return '';
-  const weekday = aucklandWeekdayIndex(done);
-  if (weekday == null) return '';
-  const daysUntil = weekday >= 1 && weekday <= 4
-    ? 5 - weekday
-    : weekday === 5
-      ? 7
-      : weekday === 6
-        ? 6
-        : 5;
-  return addDays(aucklandDateString(done), daysUntil);
-}
-
-function todoIsArchived(item, todayStr) {
-  if (!item?.done) return false;
-  const friday = todoArchiveFriday(item.doneAt || item.createdAt || '');
-  return Boolean(friday) && todayStr >= friday;
-}
-
-/** Ticked to-dos past their Friday, plus ticked ones removed earlier and kept on each job's history. */
-function archivedTodoEntries(todos, projects, todayStr) {
-  const seen = new Set();
-  const out = [];
-  (todos || []).forEach((item) => {
-    if (!todoIsArchived(item, todayStr)) return;
-    seen.add(item.id);
-    out.push(item);
-  });
-  (projects || []).forEach((p) => {
-    (Array.isArray(p.todoHistory) ? p.todoHistory : []).forEach((entry) => {
-      if (!entry?.done || seen.has(entry.id)) return;
-      seen.add(entry.id);
-      out.push({ ...entry, projectId: p.id, fromHistory: true });
-    });
-  });
-  return out;
-}
-
-function sortArchivedTodos(list) {
-  return (list || []).slice().sort((a, b) => (
-    String(b.doneAt || b.archivedAt || '').localeCompare(String(a.doneAt || a.archivedAt || ''))
-  ));
-}
-
-function normalizeTodo(item) {
-  if (!item) return null;
-  const title = String(item.title || '').trim();
-  if (!title) return null;
-  const dateRaw = String(item.date || '').trim();
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : '';
-  const done = Boolean(item.done);
-  return {
-    id: item.id || uuidv4(),
-    title,
-    designerId: String(item.designerId || '').trim(),
-    projectId: String(item.projectId || '').trim(),
-    date,
-    done,
-    createdAt: item.createdAt || new Date().toISOString(),
-    doneAt: done ? (item.doneAt || new Date().toISOString()) : '',
-  };
-}
-
-function loadTodosFromStorage() {
-  try {
-    const raw = JSON.parse(localStorage.getItem('studio_todos'));
-    if (!Array.isArray(raw)) return [];
-    return raw.map(normalizeTodo).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function sortTodos(list) {
-  return (list || []).slice().sort((a, b) => {
-    if (Boolean(a.done) !== Boolean(b.done)) return a.done ? 1 : -1;
-    const ad = a.date || '';
-    const bd = b.date || '';
-    if (ad && bd && ad !== bd) return ad.localeCompare(bd);
-    if (ad && !bd) return -1;
-    if (!ad && bd) return 1;
-    return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
-  });
-}
-
-function todoProjectName(project) {
-  if (!project) return '';
-  return String(project.name || '').trim() || 'Untitled';
-}
-
-function todoClientName(project) {
-  if (!project) return '';
-  return String(project.client || '').trim() || todoProjectName(project);
-}
-
-function todoJobLabel(project) {
-  if (!project) return '';
-  const name = todoProjectName(project);
-  const client = String(project.client || '').trim();
-  return client ? `${client}: ${name}` : name;
-}
-
-function normalizeTodoHistoryEntry(item) {
-  if (!item) return null;
-  const title = String(item.title || '').trim();
-  if (!title) return null;
-  const dateRaw = String(item.date || '').trim();
-  return {
-    id: item.id || uuidv4(),
-    title,
-    designerId: String(item.designerId || '').trim(),
-    date: /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : '',
-    done: Boolean(item.done),
-    createdAt: item.createdAt || '',
-    doneAt: item.doneAt || '',
-    archivedAt: item.archivedAt || new Date().toISOString(),
-  };
-}
-
-function archiveTodoOntoProjects(todo, setProjects) {
-  if (!todo?.projectId || typeof setProjects !== 'function') return;
-  const entry = normalizeTodoHistoryEntry({
-    ...todo,
-    archivedAt: new Date().toISOString(),
-  });
-  if (!entry) return;
-  setProjects((prev) => prev.map((p) => {
-    if (p.id !== todo.projectId) return p;
-    const history = Array.isArray(p.todoHistory) ? p.todoHistory : [];
-    if (history.some((h) => h.id === entry.id)) {
-      return {
-        ...p,
-        todoHistory: history.map((h) => (h.id === entry.id ? { ...h, ...entry } : h)),
-      };
-    }
-    return { ...p, todoHistory: [...history, entry] };
-  }));
-}
-
-function jobGroupsFromTodos(items, projectById, sortItems = sortTodos) {
-  const byJob = new Map();
-  (items || []).forEach((item) => {
-    const key = item.projectId || '_none';
-    if (!byJob.has(key)) byJob.set(key, []);
-    byJob.get(key).push(item);
-  });
-  const none = byJob.get('_none') || [];
-  byJob.delete('_none');
-  const groups = [...byJob.keys()]
-    .sort((a, b) => {
-      const la = todoJobLabel(projectById.get(a)) || '';
-      const lb = todoJobLabel(projectById.get(b)) || '';
-      return la.localeCompare(lb);
-    })
-    .map((id) => ({
-      projectId: id,
-      project: projectById.get(id) || null,
-      items: sortItems(byJob.get(id)),
-    }));
-  if (none.length) {
-    groups.push({
-      projectId: '',
-      project: null,
-      items: sortItems(none),
-    });
-  }
-  return groups;
-}
-
-function designerIdForSession(designers, sessionUser) {
-  const email = normalizeEmail(sessionUser?.email);
-  if (email) {
-    const match = (designers || []).find((d) => normalizeEmail(d.email) === email);
-    if (match?.id) return String(match.id);
-  }
-  return String((designers || [])[0]?.id || '');
-}
-
-function splitTodoLines(raw) {
-  return String(raw || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function buildSampleProjects() {
@@ -1476,86 +1065,6 @@ const CALENDAR_WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 function isoDateParts(y, monthIndex, day) {
   return `${y}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
-/** Compact typed dates in the calendar popup, e.g. "18/08/26". */
-function formatCalendarInputDate(iso) {
-  if (!iso) return '';
-  const d = parseISODateLocal(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${dd}/${mm}/${yy}`;
-}
-
-function parseCalendarInputDate(raw) {
-  const text = String(raw || '').trim();
-  const match = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/);
-  if (!match) return '';
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  let year = Number(match[3]);
-  if (match[3].length === 2) year = year >= 70 ? 1900 + year : 2000 + year;
-  const d = new Date(year, month - 1, day);
-  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return '';
-  return isoDateParts(year, month - 1, day);
-}
-
-function CalendarDateField({ label, valueIso, onApply, onClear }) {
-  const [text, setText] = useState(() => formatCalendarInputDate(valueIso));
-
-  useEffect(() => {
-    setText(formatCalendarInputDate(valueIso));
-  }, [valueIso]);
-
-  const commit = () => {
-    const parsed = parseCalendarInputDate(text);
-    if (parsed) {
-      onApply(parsed);
-      setText(formatCalendarInputDate(parsed));
-      return;
-    }
-    setText(formatCalendarInputDate(valueIso));
-  };
-
-  return (
-    <label className="sheet-date-calendar__field">
-      <span className="sr-only">{label}</span>
-      <input
-        className="sheet-date-calendar__field-input"
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        spellCheck={false}
-        placeholder="dd/mm/yy"
-        aria-label={label}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter') return;
-          e.preventDefault();
-          e.stopPropagation();
-          commit();
-        }}
-      />
-      {text ? (
-        <button
-          type="button"
-          className="sheet-date-calendar__field-clear"
-          aria-label={`Clear ${label}`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            setText('');
-            onClear();
-          }}
-        >
-          ×
-        </button>
-      ) : null}
-    </label>
-  );
 }
 
 function buildCalendarCells(viewYear, viewMonth) {
@@ -1721,59 +1230,6 @@ function DateRangeBubbleCalendar({
     setDraftEnd('');
   };
 
-  const showMonthForIso = (iso) => {
-    if (!iso) return;
-    const d = parseISODateLocal(iso);
-    if (Number.isNaN(d.getTime())) return;
-    setViewYear(d.getFullYear());
-    setViewMonth(d.getMonth());
-  };
-
-  const applyTypedStart = (iso) => {
-    setDatesCleared(true);
-    setDraftStart(iso);
-    if (singleDate) {
-      setDraftEnd(iso);
-    } else if (draftEnd && iso > draftEnd) {
-      setDraftEnd('');
-    }
-    showMonthForIso(iso);
-  };
-
-  const applyTypedEnd = (iso) => {
-    if (singleDate) {
-      setDraftStart(iso);
-      setDraftEnd(iso);
-      showMonthForIso(iso);
-      return;
-    }
-    if (!draftStart || iso < draftStart) {
-      setDatesCleared(true);
-      setDraftStart(iso);
-      setDraftEnd('');
-      showMonthForIso(iso);
-      return;
-    }
-    setDraftEnd(iso);
-    showMonthForIso(iso);
-  };
-
-  const clearTypedStart = () => {
-    setDatesCleared(true);
-    setDraftStart('');
-    if (singleDate) setDraftEnd('');
-  };
-
-  const clearTypedEnd = () => {
-    if (singleDate) {
-      setDatesCleared(true);
-      setDraftStart('');
-      setDraftEnd('');
-      return;
-    }
-    setDraftEnd('');
-  };
-
   const handleSave = () => {
     if (singleDate) {
       if (!draftStart) return;
@@ -1795,7 +1251,11 @@ function DateRangeBubbleCalendar({
     : rangeFormat === 'phase'
       ? formatPhaseDateRangeDisplay
       : formatMilestoneDateRangeDisplay;
-  const formatSingleLabel = formatTaskDateShort;
+  const formatSingleLabel = rangeFormat === 'task'
+    ? formatTaskDateShort
+    : rangeFormat === 'phase'
+      ? formatPhaseDateMedium
+      : formatDueDateLong;
 
   const todayIso = today();
   const canSave = singleDate ? Boolean(draftStart) : Boolean(draftStart && draftEnd);
@@ -1822,20 +1282,6 @@ function DateRangeBubbleCalendar({
       aria-label={label}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="sheet-date-calendar__inputs">
-        <CalendarDateField
-          label="Start date"
-          valueIso={draftStart}
-          onApply={applyTypedStart}
-          onClear={clearTypedStart}
-        />
-        <CalendarDateField
-          label="End date"
-          valueIso={draftEnd}
-          onApply={applyTypedEnd}
-          onClear={clearTypedEnd}
-        />
-      </div>
       <div className="sheet-date-calendar__head">
         <button
           type="button"
@@ -1929,7 +1375,6 @@ function MilestoneDateRangePicker({
   onChange,
   className = '',
   emptyLabel = 'Add dates',
-  emptyAsPlus = false,
   ariaLabel = 'Set dates',
   endDateOnly = false,
   rangeFormat = 'long',
@@ -1978,7 +1423,17 @@ function MilestoneDateRangePicker({
     : rangeFormat === 'phase'
       ? formatPhaseDateRangeDisplay
       : formatMilestoneDateRangeDisplay;
-  const rangeLabel = formatRangeLabel(startDate, endDate) || emptyLabel;
+  const formatSingleLabel = rangeFormat === 'task'
+    ? formatTaskDateShort
+    : rangeFormat === 'phase'
+      ? formatPhaseDateMedium
+      : formatDueDateLong;
+
+  const rangeLabel = endDateOnly
+    ? (startDate
+      ? `${formatSingleLabel(startDate)} — ${formatSingleLabel(endDate || startDate)}`
+      : emptyLabel)
+    : (formatRangeLabel(startDate, endDate) || emptyLabel);
   const hasDates = endDateOnly ? Boolean(startDate) : Boolean(startDate && endDate);
 
   return (
@@ -1991,20 +1446,13 @@ function MilestoneDateRangePicker({
           className,
           calendarOpen ? 'sheet-date-range-btn--active' : '',
           hasDates ? '' : 'sheet-date-range-btn--empty',
-          !hasDates && emptyAsPlus ? 'icon-bubble icon-bubble--sm sheet-date-range-btn--plus' : '',
-          calendarOpen && !hasDates && emptyAsPlus ? 'icon-bubble--open' : '',
         ].filter(Boolean).join(' ')}
         onClick={toggleCalendar}
         aria-label={ariaLabel}
         aria-expanded={calendarOpen}
         aria-live="polite"
       >
-        {hasDates ? rangeLabel : (emptyAsPlus ? (
-          <>
-            <span className="icon-bubble-glyph" aria-hidden>+</span>
-            <span className="icon-bubble-text">Add</span>
-          </>
-        ) : rangeLabel)}
+        {rangeLabel}
       </button>
       <DateRangeBubbleCalendar
         anchorRef={rangeBtnRef}
@@ -2050,7 +1498,7 @@ const MilestoneSingleDatePicker = forwardRef(function MilestoneSingleDatePicker(
   };
 
   const label = date
-    ? formatTaskDateShort(date)
+    ? (rangeFormat === 'task' ? formatTaskDateShort(date) : formatPhaseDateMedium(date))
     : emptyLabel;
   const calendarDate = date || fallbackDate || '';
 
@@ -2087,735 +1535,6 @@ const MilestoneSingleDatePicker = forwardRef(function MilestoneSingleDatePicker(
   );
 });
 
-function TodoJobPicker({
-  value,
-  onChange,
-  options,
-  project,
-  ariaLabel,
-  nameOnly = false,
-}) {
-  const label = project
-    ? (nameOnly ? todoProjectName(project) : todoJobLabel(project))
-    : '';
-  if (!value || !project) {
-    return (
-      <div className="sheet-designer-add-wrap todo-designer-add">
-        <button
-          type="button"
-          className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
-          aria-label={ariaLabel}
-          tabIndex={-1}
-        >
-          <span className="icon-bubble-glyph" aria-hidden>+</span>
-          <span className="icon-bubble-text">Job</span>
-        </button>
-        <select
-          className="sheet-designer-add-select"
-          value=""
-          aria-label={ariaLabel}
-          onChange={(e) => {
-            const next = e.target.value;
-            if (next) onChange(next);
-            e.target.value = '';
-          }}
-        >
-          <option value="" disabled hidden />
-          {(options || []).filter((opt) => opt.value).map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-    );
-  }
-
-  return (
-    <div className="todo-job-chip">
-      <div className="todo-job-chip-main">
-        <span className="todo-pick-face">
-          <span className="todo-pick-label">{label}</span>
-        </span>
-        <select
-          className="todo-job-chip-select"
-          value={value}
-          aria-label={ariaLabel}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {(options || []).map((opt) => (
-            <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-      <button
-        type="button"
-        className="sheet-designer-chip-remove todo-chip-clear"
-        aria-label={`Remove ${label}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onChange('');
-        }}
-      >
-        ×
-      </button>
-    </div>
-  );
-}
-
-function TodoDateField({
-  date,
-  onChange,
-  className = '',
-  emptyLabel = 'Date',
-  ariaLabel = 'Set date',
-  overdue = false,
-}) {
-  if (!date) {
-    return (
-      <div className="sheet-designer-add-wrap todo-designer-add todo-date-add">
-        <button
-          type="button"
-          className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
-          aria-label={ariaLabel}
-          tabIndex={-1}
-        >
-          <span className="icon-bubble-glyph" aria-hidden>+</span>
-          <span className="icon-bubble-text">Date</span>
-        </button>
-        <MilestoneSingleDatePicker
-          date={date}
-          onChange={onChange}
-          className={`todo-date-add-hit ${className}`.trim()}
-          emptyLabel={emptyLabel}
-          ariaLabel={ariaLabel}
-          rangeFormat="task"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className={`todo-date-chip${overdue ? ' todo-date-chip--overdue' : ''}`}>
-      <MilestoneSingleDatePicker
-        date={date}
-        onChange={onChange}
-        className={`todo-date-chip-face ${className}`.trim()}
-        emptyLabel={emptyLabel}
-        ariaLabel={ariaLabel}
-        rangeFormat="task"
-      />
-      <button
-        type="button"
-        className="sheet-designer-chip-remove todo-chip-clear"
-        aria-label="Clear date"
-        onClick={(e) => {
-          e.stopPropagation();
-          onChange('');
-        }}
-      >
-        ×
-      </button>
-    </div>
-  );
-}
-
-function TodoDesignerPicker({
-  value,
-  onChange,
-  designers,
-  ariaLabel,
-  showName = false,
-  avatarSize = 20,
-}) {
-  const owner = (designers || []).find((d) => d.id === value);
-  const assignedOptions = [
-    { value: '', label: 'No one' },
-    ...(designers || []).map((d) => ({ value: d.id, label: d.name })),
-  ];
-
-  if (!owner) {
-    return (
-      <div className="sheet-designer-add-wrap todo-designer-add">
-        <button
-          type="button"
-          className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
-          aria-label={ariaLabel}
-          tabIndex={-1}
-        >
-          <span className="icon-bubble-glyph" aria-hidden>+</span>
-          <span className="icon-bubble-text">Designer</span>
-        </button>
-        <select
-          className="sheet-designer-add-select"
-          value=""
-          aria-label={ariaLabel}
-          onChange={(e) => {
-            const next = e.target.value;
-            if (next) onChange(next);
-            e.target.value = '';
-          }}
-        >
-          <option value="" disabled hidden />
-          {(designers || []).map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
-      </div>
-    );
-  }
-
-  return (
-    <div className="todo-designer-chip">
-      <div className="todo-designer-chip-main">
-        <span className="todo-pick-face">
-          <Avatar designer={owner} size={avatarSize} />
-          {showName ? <span className="todo-pick-label">{owner.name}</span> : null}
-        </span>
-        <select
-          className="todo-designer-chip-select"
-          value={value}
-          aria-label={ariaLabel}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {assignedOptions.map((opt) => (
-            <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-      <button
-        type="button"
-        className="sheet-designer-chip-remove todo-chip-clear"
-        aria-label={`Remove ${owner.name}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onChange('');
-        }}
-      >
-        ×
-      </button>
-    </div>
-  );
-}
-
-
-function TodoJobCardRow({
-  item,
-  onToggle,
-  onPatch,
-  onRemove,
-}) {
-  const dateState = item.date && !item.done ? workingDayCountdown(item.date) : null;
-  const overdue = dateState?.kind === 'overdue';
-  const dateLabel = formatTaskDateShort(item.date);
-
-  return (
-    <div className={`todo-job-card-row${item.done ? ' todo-job-card-row--done' : ''}`}>
-      <button
-        type="button"
-        className={`todo-check todo-check--square${item.done ? ' todo-check--done' : ''}`}
-        aria-label={item.done ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
-        aria-pressed={item.done}
-        onClick={onToggle}
-      >
-        {item.done ? (
-          <svg viewBox="0 0 16 16" aria-hidden>
-            <path
-              d="M3.5 8.2l3 3.1 6-6.4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : null}
-      </button>
-      <input
-        className="todo-job-card-title"
-        type="text"
-        value={item.title}
-        aria-label="To-do"
-        onChange={(e) => onPatch({ title: e.target.value })}
-        onBlur={(e) => {
-          const next = e.target.value.trim();
-          onPatch({ title: next || item.title });
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            e.currentTarget.blur();
-          }
-        }}
-      />
-      <div className="todo-job-card-trail">
-        <div className={`todo-job-card-date${overdue ? ' todo-job-card-date--overdue' : ''}${dateLabel ? '' : ' todo-job-card-date--empty'}`}>
-          <MilestoneSingleDatePicker
-            date={item.date}
-            onChange={(date) => onPatch({ date })}
-            className="todo-job-card-date-btn"
-            emptyLabel="Date"
-            ariaLabel={`Date for ${item.title}`}
-            rangeFormat="task"
-          />
-        </div>
-        <button
-          type="button"
-          className="todo-job-card-remove"
-          onClick={onRemove}
-          aria-label={`Remove ${item.title}`}
-        >
-          ×
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TodoJobCard({
-  job,
-  designerId,
-  showArchive,
-  jobOptions,
-  onAdd,
-  onToggle,
-  onPatch,
-  onRemove,
-  onChangeJob,
-}) {
-  const [draft, setDraft] = useState('');
-  const [draftDate, setDraftDate] = useState('');
-  const title = job.project
-    ? todoClientName(job.project)
-    : (job.items.length ? 'Other' : '');
-  const hasDraft = Boolean(draft.trim());
-  const headingOptions = useMemo(() => {
-    const opts = (jobOptions || []).slice();
-    if (job.projectId && job.project && !opts.some((opt) => opt.value === job.projectId)) {
-      opts.splice(1, 0, { value: job.projectId, label: todoJobLabel(job.project) });
-    }
-    return opts;
-  }, [jobOptions, job.projectId, job.project]);
-
-  const submit = () => {
-    const next = draft.trim();
-    if (!next) return;
-    onAdd({
-      title: next,
-      projectId: job.projectId || '',
-      designerId: designerId === '_none' ? '' : designerId,
-      date: draftDate || '',
-    });
-    setDraft('');
-    setDraftDate('');
-  };
-
-  const heading = !title ? null : (showArchive || !onChangeJob) ? (
-    <h3 className="todo-job-heading">{title}</h3>
-  ) : (
-    <div className="todo-job-heading-wrap">
-      <h3 className="todo-job-heading">{title}</h3>
-      <select
-        className="todo-job-heading-select"
-        value={job.projectId || ''}
-        aria-label={`Change job for ${title}`}
-        onChange={(e) => onChangeJob(job, e.target.value)}
-      >
-        {headingOptions.map((opt) => (
-          <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-    </div>
-  );
-
-  return (
-    <div className="todo-job">
-      <div className="todo-job-card">
-        {heading}
-        <div className="todo-list">
-          {job.items.map((item) => (
-            item.fromHistory ? (
-              <TodoHistoryRow key={item.id} item={item} />
-            ) : (
-              <TodoJobCardRow
-                key={item.id}
-                item={item}
-                onToggle={() => onToggle(item)}
-                onPatch={(patch) => onPatch(item.id, patch)}
-                onRemove={() => onRemove(item.id)}
-              />
-            )
-          ))}
-        </div>
-        {!showArchive ? (
-          <div className={`todo-job-card-row todo-job-card-row--new${hasDraft ? ' todo-job-card-row--typing' : ''}`}>
-            <span className="todo-check todo-check--square todo-check--ghost" aria-hidden />
-            <input
-              className="todo-job-card-title todo-job-card-draft"
-              type="text"
-              value={draft}
-              placeholder="New Task"
-              aria-label={title ? `Add task to ${title}` : 'New Task'}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                submit();
-              }}
-            />
-            {hasDraft ? (
-              <div className="todo-job-card-trail">
-                <div className={`todo-job-card-date todo-job-card-date--visible${draftDate ? '' : ' todo-job-card-date--empty'}`}>
-                  <MilestoneSingleDatePicker
-                    date={draftDate}
-                    onChange={setDraftDate}
-                    className="todo-job-card-date-btn"
-                    emptyLabel="Date"
-                    ariaLabel="Date for new task"
-                    rangeFormat="task"
-                  />
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function TodosView({
-  todos,
-  setTodos,
-  setProjects,
-  designers,
-  projects,
-  filterDesigner,
-  showArchive,
-}) {
-  const [draft, setDraft] = useState('');
-  const [composerJob, setComposerJob] = useState('');
-  const [composerDate, setComposerDate] = useState('');
-  const [composerOwner, setComposerOwner] = useState(() => (
-    filterDesigner !== 'all' ? filterDesigner : ''
-  ));
-  const [composerOpen, setComposerOpen] = useState(false);
-  const composerRef = useRef(null);
-  const composerBlurTimer = useRef(0);
-
-  useEffect(() => {
-    if (filterDesigner !== 'all') {
-      setComposerOwner(filterDesigner);
-      return;
-    }
-    setComposerOwner('');
-  }, [filterDesigner]);
-
-  useEffect(() => () => {
-    window.clearTimeout(composerBlurTimer.current);
-  }, []);
-
-  const projectById = useMemo(() => {
-    const map = new Map();
-    (projects || []).forEach((p) => map.set(p.id, p));
-    return map;
-  }, [projects]);
-
-  const jobOptions = useMemo(() => {
-    const active = (projects || []).filter((p) => p.status !== 'Complete');
-    const selected = composerJob ? projectById.get(composerJob) : null;
-    const list = selected && selected.status === 'Complete'
-      ? [...active, selected]
-      : active;
-    const sorted = list.slice().sort((a, b) => (
-      String(a.client || '').localeCompare(String(b.client || ''))
-      || String(a.name || '').localeCompare(String(b.name || ''))
-    ));
-    return [
-      { value: '', label: 'No job' },
-      ...sorted.map((p) => ({ value: p.id, label: todoJobLabel(p) })),
-    ];
-  }, [projects, composerJob, projectById]);
-
-  const composerJobProject = composerJob ? projectById.get(composerJob) : null;
-
-  const todayStr = today();
-  const sortItems = showArchive ? sortArchivedTodos : sortTodos;
-
-  const visibleTodos = useMemo(() => {
-    const source = showArchive
-      ? archivedTodoEntries(todos, projects, todayStr)
-      : todos.filter((item) => !todoIsArchived(item, todayStr));
-    const scoped = filterDesigner === 'all'
-      ? source
-      : source.filter((t) => t.designerId === filterDesigner);
-    return sortItems(scoped);
-  }, [todos, projects, filterDesigner, todayStr, showArchive, sortItems]);
-
-  const columns = useMemo(() => {
-    const column = (id, title, items) => ({
-      id,
-      title,
-      count: showArchive ? items.length : items.filter((item) => !item.done).length,
-      jobGroups: jobGroupsFromTodos(items, projectById, sortItems),
-    });
-    if (filterDesigner !== 'all') {
-      const owner = designers.find((d) => d.id === filterDesigner);
-      return [column(
-        filterDesigner,
-        owner?.name || 'Designer',
-        visibleTodos.filter((item) => item.designerId === filterDesigner),
-      )];
-    }
-    const cols = designers.map((d) => column(
-      d.id,
-      d.name,
-      visibleTodos.filter((item) => item.designerId === d.id),
-    ));
-    const knownIds = new Set(designers.map((d) => d.id));
-    const unassigned = visibleTodos.filter((item) => !knownIds.has(item.designerId));
-    if (unassigned.length) cols.push(column('_none', 'Unassigned', unassigned));
-    return cols;
-  }, [visibleTodos, filterDesigner, designers, projectById, sortItems, showArchive]);
-
-  const addLines = (raw, overrides = {}) => {
-    const lines = splitTodoLines(raw);
-    if (!lines.length) return false;
-    const createdAtBase = Date.now();
-    const items = lines.map((title, i) => normalizeTodo({
-      title,
-      designerId: Object.prototype.hasOwnProperty.call(overrides, 'designerId')
-        ? overrides.designerId
-        : composerOwner,
-      projectId: Object.prototype.hasOwnProperty.call(overrides, 'projectId')
-        ? overrides.projectId
-        : composerJob,
-      date: Object.prototype.hasOwnProperty.call(overrides, 'date')
-        ? overrides.date
-        : composerDate,
-      createdAt: new Date(createdAtBase + i).toISOString(),
-    })).filter(Boolean);
-    if (!items.length) return false;
-    setTodos((prev) => [...prev, ...items]);
-    return true;
-  };
-
-  const submitDraft = () => {
-    if (!addLines(draft)) return;
-    setDraft('');
-  };
-
-  const addToJob = ({ title, projectId, designerId, date }) => {
-    addLines(title, {
-      projectId,
-      designerId,
-      date: date || '',
-    });
-  };
-
-  const changeJobForGroup = (job, nextProjectId) => {
-    const ids = new Set(
-      (job.items || [])
-        .filter((item) => item && !item.fromHistory)
-        .map((item) => item.id),
-    );
-    if (!ids.size) return;
-    const nextId = String(nextProjectId || '').trim();
-    setTodos((prev) => prev.map((item) => {
-      if (!ids.has(item.id)) return item;
-      return normalizeTodo({ ...item, projectId: nextId }) || item;
-    }));
-  };
-
-  const patchTodo = (id, patch) => {
-    setTodos((prev) => prev.map((item) => {
-      if (item.id !== id) return item;
-      if (Object.prototype.hasOwnProperty.call(patch, 'title')) {
-        return { ...item, title: patch.title };
-      }
-      return normalizeTodo({ ...item, ...patch }) || item;
-    }));
-  };
-
-  const removeTodo = (id) => {
-    setTodos((prev) => {
-      const found = prev.find((item) => item.id === id);
-      if (found) archiveTodoOntoProjects(found, setProjects);
-      return prev.filter((item) => item.id !== id);
-    });
-  };
-
-  const toggleDone = (item) => {
-    patchTodo(item.id, {
-      done: !item.done,
-      doneAt: item.done ? '' : new Date().toISOString(),
-    });
-  };
-
-  const openComposer = () => {
-    window.clearTimeout(composerBlurTimer.current);
-    setComposerOpen(true);
-  };
-
-  const scheduleComposerClose = () => {
-    window.clearTimeout(composerBlurTimer.current);
-    composerBlurTimer.current = window.setTimeout(() => {
-      const root = composerRef.current;
-      if (!root) return;
-      if (root.contains(document.activeElement)) return;
-      if (document.querySelector('.sheet-date-calendar')) return;
-      if (draft.trim() || composerOwner || composerJob || composerDate) return;
-      setComposerOpen(false);
-    }, 120);
-  };
-
-  const composer = !showArchive ? (
-    <div
-      ref={composerRef}
-      className={`todo-composer${composerOpen ? ' todo-composer--open' : ''}`}
-      onMouseEnter={openComposer}
-      onMouseLeave={scheduleComposerClose}
-      onFocus={openComposer}
-      onBlur={scheduleComposerClose}
-    >
-      <input
-        className="todo-composer-input"
-        type="text"
-        value={draft}
-        placeholder="Add a to-do"
-        aria-label="Add a to-do"
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape' && !draft.trim()) {
-            e.currentTarget.blur();
-            setComposerOpen(false);
-            return;
-          }
-          if (e.key !== 'Enter') return;
-          e.preventDefault();
-          submitDraft();
-        }}
-        onPaste={(e) => {
-          const text = e.clipboardData?.getData('text') || '';
-          if (!text.includes('\n')) return;
-          e.preventDefault();
-          const combined = `${draft}${text}`;
-          if (addLines(combined)) setDraft('');
-        }}
-      />
-      <div
-        className="todo-composer-meta-wrap"
-        aria-hidden={!composerOpen}
-        inert={composerOpen ? undefined : true}
-      >
-        <div className="todo-composer-meta">
-          <TodoDesignerPicker
-            value={composerOwner}
-            onChange={setComposerOwner}
-            designers={designers}
-            ariaLabel="Assign to"
-            showName
-            avatarSize={20}
-          />
-          <TodoJobPicker
-            value={composerJob}
-            onChange={setComposerJob}
-            options={jobOptions}
-            project={composerJobProject}
-            ariaLabel="Link to job"
-          />
-          <TodoDateField
-            date={composerDate}
-            onChange={setComposerDate}
-            className="todo-composer-date"
-            emptyLabel="Date"
-            ariaLabel="Due date for new to-dos"
-          />
-          <button
-            type="button"
-            className="sheet-milestone-add-task icon-bubble icon-bubble--sm todo-composer-add"
-            onClick={submitDraft}
-            disabled={!draft.trim()}
-            aria-label="Add to-do"
-          >
-            <span className="icon-bubble-text">Add</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
-  return (
-    <div className="todo-page">
-      {visibleTodos.length === 0 ? (
-        <div className="empty-state">
-          {showArchive
-            ? 'Nothing archived yet. Ticked to-dos move here on the Friday after they’re done.'
-            : 'Type a to-do and tap Add. Paste a list to add several at once.'}
-        </div>
-      ) : (
-        <div className="todo-board">
-          {columns.map((col) => (
-            <section key={col.id} className="overview-col todo-col" aria-label={col.title}>
-              <header className="overview-col-header">
-                <h2 className="project-feed-heading">{col.title}</h2>
-                <span className="overview-col-count">{col.count}</span>
-              </header>
-              <div className="todo-col-list">
-                {col.jobGroups.length === 0 ? (
-                  <p className="overview-col-empty">
-                    {showArchive ? 'Nothing archived yet.' : 'Nothing on.'}
-                  </p>
-                ) : col.jobGroups.map((job) => (
-                  <TodoJobCard
-                    key={job.projectId || 'no-job'}
-                    job={job}
-                    designerId={col.id}
-                    showArchive={showArchive}
-                    jobOptions={jobOptions}
-                    onAdd={addToJob}
-                    onToggle={toggleDone}
-                    onPatch={patchTodo}
-                    onRemove={removeTodo}
-                    onChangeJob={changeJobForGroup}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
-      {composer ? <div className="todo-composer-dock">{composer}</div> : null}
-    </div>
-  );
-}
-
-function TodoHistoryRow({ item }) {
-  const doneOn = item.doneAt ? aucklandDateString(new Date(item.doneAt)) : '';
-  return (
-    <div className="todo-row todo-row--done todo-row--history">
-      <div className="todo-row-top">
-        <span className="todo-check todo-check--square todo-check--done" aria-hidden>
-          <svg viewBox="0 0 16 16">
-            <path
-              d="M3.5 8.2l3 3.1 6-6.4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-        <span className="todo-row-title">{item.title}</span>
-      </div>
-      {doneOn ? (
-        <div className="todo-row-meta">
-          <span className="todo-row-done-date">{formatMilestoneDateShort(doneOn)}</span>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function ScheduleStartEndRow({
   rowClass,
   name,
@@ -2825,10 +1544,6 @@ function ScheduleStartEndRow({
   startLabel = 'Start',
   endLabel = 'End',
   nameExtra = null,
-  dropActive = false,
-  onMarkerDragOver,
-  onMarkerDragLeave,
-  onMarkerDrop,
 }) {
   const endPickerRef = useRef(null);
 
@@ -2840,17 +1555,7 @@ function ScheduleStartEndRow({
   };
 
   return (
-    <div
-      className={[
-        'gantt-edit-rail-row',
-        rowClass,
-        dropActive ? 'gantt-edit-rail-row--drop-active' : '',
-      ].filter(Boolean).join(' ')}
-      role="row"
-      onDragOver={onMarkerDragOver}
-      onDragLeave={onMarkerDragLeave}
-      onDrop={onMarkerDrop}
-    >
+    <div className={['gantt-edit-rail-row', rowClass].filter(Boolean).join(' ')} role="row">
       <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
         {nameExtra}
         {name}
@@ -2886,7 +1591,6 @@ function MilestoneCatalogAddButton({
   options,
   onSelect,
   ariaLabel,
-  hoverLabel = '',
   disabled = false,
 }) {
   if (disabled || !options.length) return null;
@@ -2895,16 +1599,11 @@ function MilestoneCatalogAddButton({
     <div className="sheet-designer-add-wrap sheet-milestone-catalog-add-wrap">
       <button
         type="button"
-        className={`sheet-milestone-add-task${hoverLabel ? ' icon-bubble' : ''}`}
+        className="sheet-milestone-add-task"
         aria-label={ariaLabel}
         tabIndex={-1}
       >
-        {hoverLabel ? (
-          <>
-            <span className="icon-bubble-glyph" aria-hidden>+</span>
-            <span className="icon-bubble-text">{hoverLabel}</span>
-          </>
-        ) : '+'}
+        +
       </button>
       <select
         className="sheet-designer-add-select"
@@ -3013,8 +1712,6 @@ function MilestonePhaseDurationPicker({
 
 function MilestonePhaseTitle({
   phase,
-  collapsed = false,
-  onToggleCollapse,
   onAdjustWeeks,
   onSelectCustom,
   onCustomDatesChange,
@@ -3023,18 +1720,7 @@ function MilestonePhaseTitle({
 
   return (
     <div className="sheet-phase-head-fields">
-      <button
-        type="button"
-        className="sheet-phase-name"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onToggleCollapse();
-        }}
-        aria-expanded={!collapsed}
-      >
-        {phase.title}
-      </button>
+      <span className="sheet-phase-name-label">{phase.title}</span>
       <MilestonePhaseDurationPicker
         phase={phase}
         onAdjustWeeks={onAdjustWeeks}
@@ -3083,8 +1769,6 @@ function MilestoneTaskChip({
 
 function MilestonePhaseBlock({
   phase,
-  collapsed = false,
-  onToggleCollapse,
   markers = [],
   onRemovePhase,
   onAddTask,
@@ -3104,18 +1788,10 @@ function MilestonePhaseBlock({
   const phaseMarkers = (markers || []).filter((marker) => marker.phaseKey === phase.phaseKey);
 
   return (
-    <div
-      className={`sheet-milestone-block${collapsed ? ' sheet-milestone-block--collapsed' : ''}`}
-      onClick={collapsed ? (event) => {
-        if (event.target.closest('button, input, select, textarea, a')) return;
-        onToggleCollapse();
-      } : undefined}
-    >
+    <div className="sheet-milestone-block">
       <div className="sheet-milestone-phase-head">
         <MilestonePhaseTitle
           phase={phase}
-          collapsed={collapsed}
-          onToggleCollapse={onToggleCollapse}
           onAdjustWeeks={onAdjustWeeks}
           onSelectCustom={onSelectCustom}
           onCustomDatesChange={onCustomDatesChange}
@@ -3130,7 +1806,6 @@ function MilestonePhaseBlock({
         </button>
       </div>
 
-      {!collapsed ? (
       <div className="sheet-milestone-tasks">
         <div className="sheet-milestone-task-chips">
           {phase.tasks.map((task) => (
@@ -3160,20 +1835,9 @@ function MilestonePhaseBlock({
                   emptyLabel="No date"
                   ariaLabel={`Date for ${marker.title.trim() || 'milestone'}`}
                 />
-                <input
-                  type="text"
-                  className="sheet-phase-marker-title"
-                  value={marker.title}
-                  placeholder="Milestone"
-                  aria-label="Milestone name"
-                  onChange={(event) => onUpdateMarker(marker.id, { title: event.target.value })}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
+                <span className="sheet-phase-marker-title">
+                  {marker.title.trim() || 'Milestone'}
+                </span>
               </div>
               <button
                 type="button"
@@ -3189,25 +1853,21 @@ function MilestonePhaseBlock({
             type="button"
             className="sheet-phase-marker-add"
             onClick={() => onAddMarker(phase.phaseKey)}
-            aria-label={`Add milestone to ${phase.title}`}
           >
-            +
+            + Milestone
           </button>
         </div>
       </div>
-      ) : null}
     </div>
   );
 }
 
-function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader = false }) {
+function MilestonesPanel({ form, setForm, isEditing = false }) {
   const phases = form.milestones || [];
-  const [expandedPhaseIds, setExpandedPhaseIds] = useState(() => new Set());
-  const anyPhaseExpanded = phases.some((ph) => expandedPhaseIds.has(ph.id));
   const [importError, setImportError] = useState('');
   const [importNotice, setImportNotice] = useState('');
   const csvInputRef = useRef(null);
-  const projectNameSize = Math.max(7, (form.name.trim() || 'Project').length + 1);
+  const projectNameSize = Math.max(10, (form.name.trim() || 'Project name').length + 1);
   const phaseOptions = availablePhases(phases).map((phase) => ({
     key: phase.key,
     label: phase.title,
@@ -3290,36 +1950,33 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
     });
   };
 
-  const addPhaseMarker = (phaseKey) => {
+  const setMarkers = (next) => {
     setForm((f) => ({
       ...f,
-      markers: normalizeProjectMarkers([
-        ...(f.markers || []),
-        {
-          ...emptyProjectMarker(),
-          phaseKey: phaseKey || '',
-          title: 'Milestone',
-          date: today(),
-        },
-      ], { requireTitle: false }),
+      markers: normalizeProjectMarkers(next, { requireTitle: false }),
     }));
+  };
+
+  const addPhaseMarker = (phaseKey) => {
+    setMarkers([
+      ...(form.markers || []),
+      {
+        ...emptyProjectMarker(),
+        phaseKey: phaseKey || '',
+        title: 'Milestone',
+        date: today(),
+      },
+    ]);
   };
 
   const removePhaseMarker = (markerId) => {
-    setForm((f) => ({
-      ...f,
-      markers: (f.markers || []).filter((marker) => marker.id !== markerId),
-    }));
+    setMarkers((form.markers || []).filter((marker) => marker.id !== markerId));
   };
 
   const updatePhaseMarker = (markerId, patch) => {
-    // Avoid re-sorting/trimming on every keystroke so the title input stays focused.
-    setForm((f) => ({
-      ...f,
-      markers: (f.markers || []).map((marker) => (
-        marker.id === markerId ? { ...marker, ...patch } : marker
-      )),
-    }));
+    setMarkers((form.markers || []).map((marker) => (
+      marker.id === markerId ? { ...marker, ...patch } : marker
+    )));
   };
 
   const selectPhaseWeeks = (phaseId, weeks) => {
@@ -3458,71 +2115,50 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
 
   return (
     <>
-      {hideProjectHeader ? null : (
-        <>
-          <div className="sheet-modal-section sheet-modal-section--project-name">
-            <div className="sheet-project-name-row">
-              <input
-                className="sheet-name-dates-name sheet-project-name-input"
-                type="text"
-                placeholder="Project"
-                aria-label="Project"
-                value={form.name}
-                size={projectNameSize}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-          </div>
+      <div className="sheet-modal-section sheet-modal-section--project-name">
+        <div className="sheet-project-name-row">
+          <input
+            className="sheet-name-dates-name sheet-project-name-input"
+            type="text"
+            placeholder="Project name"
+            aria-label="Project name"
+            value={form.name}
+            size={projectNameSize}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+        </div>
+      </div>
 
-          <div className="sheet-modal-section sheet-modal-section--project-dates">
-            <div className="sheet-project-dates-row">
-              <div className="sheet-modal-section-label sheet-project-dates-label">Dates</div>
-              <MilestoneDateRangePickerWithRef
-                startDate={form.startDate}
-                endDate={form.endDate}
-                onChange={handleKickoffChange}
-                className="sheet-name-dates-range sheet-project-dates-btn"
-                emptyAsPlus
-                ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
-                endDateOnly={isEditing}
-              />
-            </div>
-          </div>
-        </>
-      )}
+      <div className="sheet-modal-section sheet-modal-section--project-dates">
+        <div className="sheet-project-dates-row">
+          <div className="sheet-modal-section-label sheet-project-dates-label">Dates</div>
+          <MilestoneDateRangePickerWithRef
+            startDate={form.startDate}
+            endDate={form.endDate}
+            onChange={handleKickoffChange}
+            className="sheet-name-dates-range sheet-project-dates-btn"
+            emptyLabel="Add dates"
+            ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
+            endDateOnly={isEditing}
+          />
+        </div>
+      </div>
 
       <div className="sheet-pair sheet-pair--priority-top">
-        <span className="sheet-field-label sheet-field-label--phases">
-          <MilestoneCatalogAddButton
-            options={phaseOptions}
-            onSelect={addPhase}
-            ariaLabel="Add phase"
-            hoverLabel="Phase"
-          />
-          {phases.length > 0 ? (
-            <button
-              type="button"
-              className={`sheet-milestone-add-task icon-bubble${anyPhaseExpanded ? '' : ' icon-bubble--on'}`}
-              aria-pressed={!anyPhaseExpanded}
-              aria-label={anyPhaseExpanded ? 'Collapse' : 'Expand'}
-              onClick={() => {
-                setExpandedPhaseIds(anyPhaseExpanded
-                  ? new Set()
-                  : new Set(phases.map((ph) => ph.id)));
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-                {anyPhaseExpanded ? (
-                  <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                ) : (
-                  <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                )}
-              </svg>
-              <span className="icon-bubble-text">{anyPhaseExpanded ? 'Collapse' : 'Expand'}</span>
-            </button>
-          ) : null}
-        </span>
+        <span className="sheet-field-label">Phases</span>
         <div className="sheet-field-value sheet-milestone-phase-actions">
+          <button
+            type="button"
+            className={[
+              'sheet-milestone-add-task',
+              'sheet-milestone-add-task--label',
+              form.linkedSchedule ? 'sheet-linked-schedule--on' : '',
+            ].filter(Boolean).join(' ')}
+            aria-pressed={Boolean(form.linkedSchedule)}
+            onClick={() => setForm((f) => ({ ...f, linkedSchedule: !f.linkedSchedule }))}
+          >
+            Linked
+          </button>
           <button
             type="button"
             className="sheet-milestone-add-task sheet-milestone-add-task--label"
@@ -3540,6 +2176,11 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
             aria-hidden
             tabIndex={-1}
           />
+          <MilestoneCatalogAddButton
+            options={phaseOptions}
+            onSelect={addPhase}
+            ariaLabel="Add phase"
+          />
         </div>
       </div>
 
@@ -3555,15 +2196,6 @@ function MilestonesPanel({ form, setForm, isEditing = false, hideProjectHeader =
         <MilestonePhaseBlock
           key={phase.id}
           phase={phase}
-          collapsed={!expandedPhaseIds.has(phase.id)}
-          onToggleCollapse={() => {
-            setExpandedPhaseIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(phase.id)) next.delete(phase.id);
-              else next.add(phase.id);
-              return next;
-            });
-          }}
           markers={form.markers || []}
           onRemovePhase={() => removePhase(phase.id)}
           onAddTask={(taskKey) => addTask(phase.id, taskKey)}
@@ -3593,70 +2225,7 @@ function ProjectDetailsPanel({
   existingClients,
   isEditing = false,
 }) {
-  const projectNameSize = Math.max(7, (form.name.trim() || 'Project').length + 1);
-  const clientSize = Math.max(6, (form.client.trim() || 'Client').length + 1);
-  const [linkMenuOpen, setLinkMenuOpen] = useState(false);
-  const [linkKind, setLinkKind] = useState('');
-  const [linkDraft, setLinkDraft] = useState('');
-  const linkMenuRef = useRef(null);
-  const linkCommitLock = useRef(false);
-  const links = Array.isArray(form.links) ? form.links : [];
-  const linkKindsLeft = [
-    { kind: 'figma', label: 'Figma' },
-    { kind: 'dropbox', label: 'Dropbox' },
-  ].filter((option) => !links.some((link) => link.kind === option.kind));
-
-  useEffect(() => {
-    if (!linkMenuOpen) return undefined;
-    const onPointerDown = (event) => {
-      if (linkMenuRef.current?.contains(event.target)) return;
-      setLinkMenuOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setLinkMenuOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [linkMenuOpen]);
-
-  const beginLink = (kind) => {
-    linkCommitLock.current = false;
-    setLinkMenuOpen(false);
-    setLinkKind(kind);
-    setLinkDraft('');
-  };
-
-  const cancelLink = () => {
-    setLinkKind('');
-    setLinkDraft('');
-  };
-
-  const commitLink = () => {
-    if (linkCommitLock.current) return;
-    const url = linkDraft.trim();
-    const href = linkOpenHref({ kind: linkKind, url });
-    if (!linkKind || !href) return;
-    linkCommitLock.current = true;
-    setForm((current) => ({
-      ...current,
-      links: [
-        ...(Array.isArray(current.links) ? current.links : []),
-        { id: uuidv4(), kind: linkKind, url },
-      ],
-    }));
-    cancelLink();
-  };
-
-  const removeLink = (id) => {
-    setForm((current) => ({
-      ...current,
-      links: (Array.isArray(current.links) ? current.links : []).filter((link) => link.id !== id),
-    }));
-  };
+  const projectNameSize = Math.max(10, (form.name.trim() || 'Project name').length + 1);
 
   return (
     <>
@@ -3664,37 +2233,35 @@ function ProjectDetailsPanel({
         <div className="sheet-client-row">
           <input
             id="project-modal-client"
-            className="sheet-name-dates-name sheet-client-input"
+            className="sheet-text-input sheet-text-input--left sheet-client-input"
             type="text"
             placeholder="Client"
             aria-label="Client"
             autoComplete="off"
             value={form.client}
-            size={clientSize}
             onChange={(e) => set('client', e.target.value)}
           />
           {existingClients.length > 0 ? (
             <div className="sheet-designer-add-wrap sheet-client-add-wrap">
               <button
                 type="button"
-                className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
-                aria-label="Add client"
+                className="sheet-milestone-add-task"
+                aria-label="Choose client"
                 tabIndex={-1}
               >
-                <span className="icon-bubble-glyph" aria-hidden>+</span>
-                <span className="icon-bubble-text">Add</span>
+                +
               </button>
               <select
                 className="sheet-designer-add-select"
                 value=""
-                aria-label="Add client"
+                aria-label="Choose client"
                 onChange={(e) => {
                   const v = e.target.value;
                   if (v) set('client', v);
                   e.target.value = '';
                 }}
               >
-                <option value="" disabled>Add client</option>
+                <option value="" disabled>Choose client</option>
                 {existingClients.map((name) => (
                   <option key={name} value={name}>{name}</option>
                 ))}
@@ -3710,8 +2277,8 @@ function ProjectDetailsPanel({
             id="project-modal-name"
             className="sheet-name-dates-name sheet-project-name-input"
             type="text"
-            placeholder="Project"
-            aria-label="Project"
+            placeholder="Project name"
+            aria-label="Project name"
             value={form.name}
             size={projectNameSize}
             onChange={(e) => set('name', e.target.value)}
@@ -3727,7 +2294,7 @@ function ProjectDetailsPanel({
             endDate={form.endDate}
             onChange={(patch) => setForm((f) => applyProjectDatePatch(f, patch))}
             className="sheet-name-dates-range sheet-project-dates-btn"
-            emptyAsPlus
+            emptyLabel="Add dates"
             ariaLabel={`Set dates for ${form.name.trim() || 'project'}`}
             endDateOnly={isEditing}
           />
@@ -3760,12 +2327,11 @@ function ProjectDetailsPanel({
               <div className="sheet-designer-add-wrap">
                 <button
                   type="button"
-                  className="sheet-milestone-add-task icon-bubble icon-bubble--sm"
+                  className="sheet-milestone-add-task"
                   aria-label="Add designer"
                   tabIndex={-1}
                 >
-                  <span className="icon-bubble-glyph" aria-hidden>+</span>
-                  <span className="icon-bubble-text">Add</span>
+                  +
                 </button>
                 <select
                   className="sheet-designer-add-select"
@@ -3789,120 +2355,50 @@ function ProjectDetailsPanel({
       </div>
 
       <div className="sheet-modal-section sheet-modal-section--project-meta">
-        <div className="sheet-project-designers-row">
-          <div className="sheet-modal-section-label sheet-project-designers-label">Status</div>
-          <div className="sheet-select-hit sheet-select-hit--meta">
-            <span className="sheet-select-visual sheet-select-visual--status" aria-hidden>
-              <span
-                className="sheet-status-dot"
-                style={{
-                  backgroundColor: statusAccent(form.status),
-                  boxShadow: `0 0 0 2px ${statusAccent(form.status)}22`,
-                }}
-              />
-              <span className="sheet-value sheet-value--nowrap">
-                {formatStatusForDisplay(form.status)}
+        <div className="sheet-project-meta">
+          <div className="sheet-project-meta-group">
+            <label htmlFor="project-modal-category" className="sheet-modal-section-sublabel">
+              Category
+            </label>
+            <div className="sheet-select-hit sheet-select-hit--meta">
+              <span className="sheet-select-visual" aria-hidden>
+                <span className="sheet-value sheet-value--nowrap">
+                  {formatCategoryForDisplay(form.priority)}
+                </span>
               </span>
-            </span>
-            <select
-              id="project-modal-status"
-              className="sheet-select-native"
-              value={form.status}
-              onChange={(e) => set('status', e.target.value)}
-            >
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+              <select
+                id="project-modal-category"
+                className="sheet-select-native"
+                value={normalizeProjectCategory(form.priority)}
+                onChange={(e) => set('priority', e.target.value)}
+              >
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
-      </div>
-
-      <div className="sheet-modal-section sheet-modal-section--project-links">
-        <div className="sheet-project-designers-row">
-          <div className="sheet-modal-section-label sheet-project-designers-label">Links</div>
-          <div className="sheet-designer-chips-row">
-            {links.map((link) => {
-              const href = linkOpenHref(link);
-              const label = link.kind === 'dropbox' ? 'Dropbox' : 'Figma';
-              if (!href) return null;
-              return (
-                <div key={link.id} className="sheet-designer-chip sheet-link-chip">
-                  <a
-                    className="sheet-link-chip-open"
-                    href={href}
-                    title={link.url}
-                    aria-label={`Open ${label}`}
-                  >
-                    {label}
-                  </a>
-                  <button
-                    type="button"
-                    className="sheet-designer-chip-remove"
-                    onClick={() => removeLink(link.id)}
-                    aria-label={`Remove ${label}`}
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })}
-            {linkKind ? (
-              <input
-                className="sheet-link-draft"
-                type="text"
-                autoFocus
-                placeholder={linkKind === 'dropbox' ? 'Dropbox folder' : 'Figma link'}
-                aria-label={linkKind === 'dropbox' ? 'Dropbox folder' : 'Figma link'}
-                value={linkDraft}
-                onChange={(e) => setLinkDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    cancelLink();
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    commitLink();
-                  }
-                }}
-                onBlur={() => {
-                  if (linkDraft.trim()) commitLink();
-                  else cancelLink();
-                }}
-              />
-            ) : null}
-            {!linkKind && linkKindsLeft.length > 0 ? (
-              <div className="sheet-designer-add-wrap" ref={linkMenuRef}>
-                <button
-                  type="button"
-                  className={`sheet-milestone-add-task icon-bubble icon-bubble--sm${linkMenuOpen ? ' icon-bubble--open' : ''}`}
-                  aria-label="Add link"
-                  aria-expanded={linkMenuOpen}
-                  aria-haspopup="menu"
-                  onClick={() => setLinkMenuOpen((open) => !open)}
-                >
-                  <span className="icon-bubble-glyph" aria-hidden>+</span>
-                  <span className="icon-bubble-text">Add</span>
-                </button>
-                {linkMenuOpen ? (
-                  <div className="sheet-link-menu" role="menu" aria-label="Add link">
-                    {linkKindsLeft.map((option) => (
-                      <button
-                        key={option.kind}
-                        type="button"
-                        role="menuitem"
-                        className="sheet-link-menu-option"
-                        onClick={() => beginLink(option.kind)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+          <div className="sheet-project-meta-group">
+            <label htmlFor="project-modal-status" className="sheet-modal-section-sublabel">
+              Status
+            </label>
+            <div className="sheet-select-hit sheet-select-hit--meta">
+              <span className="sheet-select-visual" aria-hidden>
+                <span className="sheet-value sheet-value--nowrap">
+                  {formatStatusForDisplay(form.status)}
+                </span>
+              </span>
+              <select
+                id="project-modal-status"
+                className="sheet-select-native"
+                value={form.status}
+                onChange={(e) => set('status', e.target.value)}
+              >
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -4136,62 +2632,25 @@ function ClientOverviewModal({ project, onClose }) {
   );
 }
 
-function TodoHistoryList({ entries, designers }) {
-  const items = (entries || [])
-    .slice()
-    .sort((a, b) => String(b.archivedAt || '').localeCompare(String(a.archivedAt || '')));
-  if (!items.length) {
-    return (
-      <p className="todo-history-empty">No to-do history for this job yet.</p>
-    );
-  }
-  return (
-    <ul className="todo-history-list">
-      {items.map((entry) => {
-        const designer = (designers || []).find((d) => d.id === entry.designerId);
-        const bits = [
-          designer?.name || null,
-          entry.date ? formatMilestoneDateShort(entry.date) : null,
-          entry.done ? 'Done' : null,
-          entry.archivedAt ? `Archived ${formatMilestoneDateShort(entry.archivedAt.slice(0, 10))}` : null,
-        ].filter(Boolean);
-        return (
-          <li key={entry.id} className="todo-history-item">
-            <p className="todo-history-title">{entry.title}</p>
-            {bits.length ? <p className="todo-history-meta">{bits.join(' · ')}</p> : null}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 function ProjectModal({
   project,
   designers,
   existingClients = [],
   initialTab = 'details',
-  sessionUser = null,
   onClose,
   onSave,
   onDelete,
   onOpenTimeline,
 }) {
+  const [modalTab, setModalTab] = useState(
+    initialTab === 'markers' || initialTab === 'milestones' ? 'phases' : initialTab,
+  );
   const [showOverview, setShowOverview] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [commentDraft, setCommentDraft] = useState('');
-  const phasesAnchorRef = useRef(null);
-  const isEditing = Boolean(project);
 
   useEffect(() => {
-    const tab = initialTab === 'markers' || initialTab === 'milestones' ? 'phases' : initialTab;
-    if (tab !== 'phases') return undefined;
-    const id = window.requestAnimationFrame(() => {
-      phasesAnchorRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    });
-    return () => window.cancelAnimationFrame(id);
+    setModalTab(initialTab === 'markers' || initialTab === 'milestones' ? 'phases' : initialTab);
   }, [project?.id, initialTab]);
-
+  const isEditing = Boolean(project);
   const [form, setForm] = useState(() => {
     if (project) {
       const merged = normalizeProjectMilestones(normalizeProjectDesignersOnProject({
@@ -4207,9 +2666,7 @@ function ProjectModal({
       designerIds: firstId ? [firstId] : [],
       designerId: firstId,
       status: 'Scheduled', startDate: '', endDate: '',
-      notes: '', priority: 'studio',
-      comments: [],
-      links: [],
+      notes: '', priority: 'secondary',
       milestones: [],
       markers: [],
       linkedSchedule: false,
@@ -4241,30 +2698,6 @@ function ProjectModal({
     onClose();
   };
 
-  useEffect(() => {
-    const onKey = (e) => {
-      if (showOverview) return;
-      if (document.querySelector('.sheet-date-calendar')) return;
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key !== 'Enter' || e.repeat || e.isComposing) return;
-      const target = e.target;
-      const tag = target?.tagName;
-      if (tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (target?.classList?.contains('sheet-link-draft')) return;
-      if (target?.isContentEditable) return;
-      if (!form.name.trim()) return;
-      e.preventDefault();
-      onSave(normalizeProjectMilestones(form));
-      onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [form, onClose, onSave, showOverview]);
-
   const showTimelineLink = Boolean(
     onOpenTimeline
     && projectHasMilestones(form)
@@ -4277,42 +2710,6 @@ function ProjectModal({
     onOpenTimeline(normalizeProjectMilestones(form));
   };
 
-  const commentAuthorId = designerIdForSession(designers, sessionUser);
-
-  const persistForm = (next) => {
-    const normalized = normalizeProjectMilestones(next);
-    setForm(normalized);
-    if (normalized.name.trim()) onSave(normalized);
-    return normalized;
-  };
-
-  const postComment = () => {
-    const body = commentDraft.trim();
-    if (!body || !form.name.trim()) return;
-    const author = (designers || []).find((d) => d.id === commentAuthorId);
-    persistForm({
-      ...form,
-      comments: [
-        ...(form.comments || []),
-        {
-          id: uuidv4(),
-          body,
-          authorId: commentAuthorId,
-          authorName: author?.name || '',
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    });
-    setCommentDraft('');
-  };
-
-  const deleteComment = (id) => {
-    persistForm({
-      ...form,
-      comments: (form.comments || []).filter((comment) => comment.id !== id),
-    });
-  };
-
   const overviewProject = useMemo(
     () => normalizeProjectMilestones(form),
     [form],
@@ -4320,16 +2717,29 @@ function ProjectModal({
 
   return (
     <>
-    <div className="modal-overlay modal-overlay--drawer" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div
-        className="modal modal--project modal--drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-label={isEditing ? (form.name.trim() || 'Project') : 'New Project'}
-      >
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal--project">
         <div className="modal-header modal-header--project">
-          {isEditing ? (
-            <div className="modal-project-link-row">
+          <div className="modal-project-tabs" role="tablist" aria-label="Project sections">
+            <button
+              type="button"
+              role="tab"
+              className={`modal-project-tab${modalTab === 'details' ? ' modal-project-tab--active' : ''}`}
+              aria-selected={modalTab === 'details'}
+              onClick={() => setModalTab('details')}
+            >
+              Details
+            </button>
+            <div className="modal-project-tab-group">
+              <button
+                type="button"
+                role="tab"
+                className={`modal-project-tab${modalTab === 'phases' ? ' modal-project-tab--active' : ''}`}
+                aria-selected={modalTab === 'phases'}
+                onClick={() => setModalTab('phases')}
+              >
+                Phases
+              </button>
               {showTimelineLink ? (
                 <button
                   type="button"
@@ -4339,96 +2749,28 @@ function ProjectModal({
                 >
                   Timeline
                 </button>
-              ) : (
-                <span className="modal-project-sheet-heading">Project</span>
-              )}
-              <button
-                type="button"
-                className={`modal-project-timeline-link${showHistory ? ' is-active' : ''}`}
-                onClick={() => setShowHistory((v) => !v)}
-              >
-                View history
-              </button>
+              ) : null}
             </div>
-          ) : (
-            <h2 className="modal-project-sheet-heading">New Project</h2>
-          )}
+          </div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <form className="modal-project-sheet-form" onSubmit={submitProject} noValidate>
         <div className="modal-body modal-body--project">
-          {showHistory ? (
-            <TodoHistoryList
-              entries={form.todoHistory}
+          {modalTab === 'details' ? (
+            <ProjectDetailsPanel
+              form={form}
+              set={set}
+              setForm={setForm}
               designers={designers}
+              designersAvailableToAdd={designersAvailableToAdd}
+              addDesignerId={addDesignerId}
+              removeDesignerId={removeDesignerId}
+              existingClients={existingClients}
+              isEditing={isEditing}
             />
           ) : (
-            <>
-          <ProjectDetailsPanel
-            form={form}
-            set={set}
-            setForm={setForm}
-            designers={designers}
-            designersAvailableToAdd={designersAvailableToAdd}
-            addDesignerId={addDesignerId}
-            removeDesignerId={removeDesignerId}
-            existingClients={existingClients}
-            isEditing={isEditing}
-          />
-          <div className="sheet-comments">
-            {(form.comments || []).length > 0 ? (
-              <ul className="sheet-comment-list">
-                {form.comments.map((comment) => (
-                  <li key={comment.id} className="sheet-comment-item">
-                    <div className="sheet-comment-meta">
-                      <span className="sheet-comment-author">{comment.authorName || 'Studio'}</span>
-                      {comment.createdAt ? (
-                        <time className="sheet-comment-when" dateTime={comment.createdAt}>
-                          {formatCommentWhen(comment.createdAt)}
-                        </time>
-                      ) : null}
-                      {comment.authorId && comment.authorId === commentAuthorId ? (
-                        <button
-                          type="button"
-                          className="sheet-comment-delete"
-                          onClick={() => deleteComment(comment.id)}
-                          aria-label="Delete comment"
-                        >
-                          Delete
-                        </button>
-                      ) : null}
-                    </div>
-                    <p className="sheet-comment-body">{comment.body}</p>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <div className="sheet-modal-section sheet-comment-composer-box">
-              <textarea
-                className="sheet-notes--section sheet-comment-composer"
-                placeholder="Add a comment"
-                aria-label="Add a comment"
-                value={commentDraft}
-                rows={2}
-                onChange={(e) => setCommentDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' || e.shiftKey || e.repeat || e.isComposing) return;
-                  e.preventDefault();
-                  postComment();
-                }}
-              />
-            </div>
-          </div>
-          <div ref={phasesAnchorRef} className="sheet-project-phases-anchor">
-            <MilestonesPanel
-              form={form}
-              setForm={setForm}
-              isEditing={isEditing}
-              hideProjectHeader
-            />
-          </div>
-            </>
+            <MilestonesPanel form={form} setForm={setForm} isEditing={isEditing} />
           )}
         </div>
 
@@ -4439,6 +2781,15 @@ function ProjectModal({
             </button>
           )}
           <div className="modal-footer-actions">
+            <button
+              type="button"
+              className="modal-btn-close"
+              onClick={() => setShowOverview(true)}
+              disabled={!form.name.trim()}
+              title={!form.name.trim() ? 'Add a project name first' : 'Preview client overview PDF'}
+            >
+              Export
+            </button>
             <button type="button" className="modal-btn-close" onClick={onClose}>
               Close
             </button>
@@ -4447,7 +2798,7 @@ function ProjectModal({
               className="modal-btn-submit"
               disabled={!form.name.trim()}
             >
-              {project ? 'Save' : 'Add'}
+              {project ? 'Save' : 'Add project'}
             </button>
           </div>
         </div>
@@ -4468,7 +2819,6 @@ function ProjectModal({
 function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
   const isEdit = initialDesigner != null;
   const [name, setName] = useState(initialDesigner?.name ?? '');
-  const [email, setEmail] = useState(initialDesigner?.email ?? '');
   const [barHex, setBarHex] = useState(() =>
     normalizeHex(
       initialDesigner
@@ -4483,7 +2833,6 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
     const idx = DESIGNER_COLORS.findIndex((c) => c.bar.toLowerCase() === hex.toLowerCase());
     const payload = {
       name: name.trim(),
-      email: normalizeEmail(email),
       colorHex: hex,
       colorIdx: idx >= 0 ? idx : 0,
     };
@@ -4529,17 +2878,6 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
               </label>
             </div>
           </div>
-          <input
-            id="designer-modal-email"
-            className="sheet-text-input sheet-text-input--left"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            placeholder="Google email"
-            aria-label="Google email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
         </div>
         <div className="modal-footer modal-footer--project">
           {isEdit && (
@@ -4574,19 +2912,8 @@ function DesignerModal({ initialDesigner, onClose, onSave, onDelete }) {
 }
 
 // ── Project Row ───────────────────────────────────────────────────────────────
-function ProjectRow({
-  project,
-  designers,
-  onClick,
-  onStatusChange,
-  variant = 'default',
-  boardDate = 'due',
-  draggable = false,
-  dragging = false,
-  onDragStart,
-}) {
-  const isBoardCard = variant === 'board';
-  const isFeedCard = variant === 'schedule' || variant === 'projects' || isBoardCard;
+function ProjectRow({ project, designers, onClick, onStatusChange, variant = 'default' }) {
+  const isFeedCard = variant === 'schedule' || variant === 'projects';
   const isProjectsCard = variant === 'projects';
   const assignedDesigners = getProjectDesigners(project, designers);
   const accent = statusAccent(project.status);
@@ -4602,102 +2929,46 @@ function ProjectRow({
     ? (dateStr ? `Completed ${formatDueDateLong(dateStr)}` : 'No completion date')
     : (dateStr ? `${dueSeg}, ${formatDueDateLong(dateStr)}. Working weekdays.` : '');
   const hasMilestones = projectHasMilestones(project);
-  const showDueDate = isProjectsCard || (isBoardCard && boardDate === 'due');
-  const feedDateLabel = showDueDate
+  const feedDateLabel = isProjectsCard
     ? formatDueDateLong(project.endDate)
     : formatDueDateLong(project.startDate);
-  const feedDateTitle = showDueDate ? 'Due date' : 'Start date';
-  const feedDateAria = showDueDate && project.endDate
+  const feedDateTitle = isProjectsCard ? 'Due date' : 'Start date';
+  const feedDateAria = isProjectsCard && project.endDate
     ? `Due ${formatDueDateLong(project.endDate)}`
-    : (!showDueDate && project.startDate
+    : (!isProjectsCard && project.startDate
       ? `Starts ${formatDueDateLong(project.startDate)}`
       : undefined);
-  const boardStartLabel = formatTaskDateShort(project.startDate);
-  const boardEndLabel = formatTaskDateShort(project.endDate);
-  const boardDateLabel = boardDate === 'due'
-    ? boardEndLabel
-    : (boardStartLabel && boardEndLabel && boardStartLabel !== boardEndLabel
-      ? `${boardStartLabel} - ${boardEndLabel}`
-      : (boardStartLabel || boardEndLabel));
-  const boardDateTitle = boardDate === 'due' ? 'Due date' : 'Schedule';
-  const boardDateAria = boardDate === 'due'
-    ? (boardEndLabel ? `Due ${boardEndLabel}` : undefined)
-    : (boardDateLabel ? `Scheduled ${boardDateLabel}` : undefined);
-
-  const statusHit = (
-    <div
-      className={[
-        'project-status-hit',
-        isFeedCard ? 'project-status-hit--dot-only' : '',
-      ].filter(Boolean).join(' ')}
-      onPointerDown={e => e.stopPropagation()}
-      onClick={e => e.stopPropagation()}
-    >
-      <span
-        className="project-status-dot"
-        style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
-        title={project.status}
-        aria-hidden
-      />
-      <select
-        className="row-status-select"
-        value={project.status}
-        onChange={e => onStatusChange(project.id, e.target.value)}
-        onPointerDown={e => e.stopPropagation()}
-        onClick={e => e.stopPropagation()}
-        aria-label="Project status"
-      >
-        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-    </div>
-  );
 
   const trailCol = (
     <div className="project-row-col project-row-col--trail">
-      {isBoardCard ? (
-        <div className="project-row-board-meta">
-          {statusHit}
-          {boardDateLabel ? (
-            <span
-              className="project-row-board-date"
-              title={boardDateTitle}
-              aria-label={boardDateAria}
-            >
-              {boardDateLabel}
-            </span>
-          ) : null}
-        </div>
-      ) : statusHit}
-      <DesignerAvatarStack designers={assignedDesigners} size={isBoardCard ? 22 : 28} maxVisible={isBoardCard ? 3 : 4} />
+      <div
+        className={[
+          'project-status-hit',
+          isFeedCard ? 'project-status-hit--dot-only' : '',
+        ].filter(Boolean).join(' ')}
+        onPointerDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+      >
+        <span
+          className="project-status-dot"
+          style={{ backgroundColor: accent, boxShadow: `0 0 0 2px ${accent}22` }}
+          title={project.status}
+          aria-hidden
+        />
+        <select
+          className="row-status-select"
+          value={project.status}
+          onChange={e => onStatusChange(project.id, e.target.value)}
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          aria-label="Project status"
+        >
+          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <DesignerAvatarStack designers={assignedDesigners} size={28} maxVisible={4} />
     </div>
   );
-
-  if (isBoardCard) {
-    return (
-      <div
-        className={`project-row project-row--board${dragging ? ' project-row--board-dragging' : ''}`}
-        onPointerDown={(e) => {
-          if (!draggable) return;
-          if (e.button !== 0) return;
-          const target = e.target instanceof Element ? e.target : e.target?.parentElement;
-          if (target?.closest('select, button, .project-status-hit')) return;
-          if (e.pointerType !== 'touch') e.preventDefault();
-          onDragStart?.(e, project.id);
-        }}
-        onClick={() => onClick(project)}
-      >
-        <div className="project-row-inner project-row-inner--board">
-          {project.client ? (
-            <span className="project-client">{project.client}</span>
-          ) : null}
-          {project.name ? (
-            <span className="project-name">{project.name}</span>
-          ) : null}
-          {trailCol}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -4782,268 +3053,42 @@ function ProjectRow({
   );
 }
 
-function applyOverviewColumnMove(project, column) {
-  if (!project || !column) return project;
+const GANTT_NZ_TZ = 'Pacific/Auckland';
 
-  const clearComplete = (next) => {
-    if (next.status === 'Complete') return next;
-    const { completedAt, ...rest } = next;
-    return rest;
-  };
-
-  if (column === 'thisWeek' || column === 'studio') {
-    const next = { ...project, priority: column };
-    if (isPipelineStatus(next.status) || isPotentialStatus(next.status)) {
-      next.status = 'In Progress';
-      return clearComplete(next);
-    }
-    return next;
-  }
-  if (column === 'schedule') {
-    if (isPipelineStatus(project.status)) return project;
-    return clearComplete({ ...project, status: 'Scheduled' });
-  }
-  if (column === 'potential') {
-    if (isPotentialStatus(project.status)) return project;
-    return clearComplete({ ...project, status: 'Potential' });
-  }
-  return project;
+function ganttNzNoonMs(epochDay) {
+  return epochDay * 86400000 + 12 * 60 * 60 * 1000;
 }
 
-function overviewColumnFromPoint(x, y) {
-  const el = document.elementFromPoint(x, y);
-  const hit = el?.closest?.('[data-overview-col]')?.getAttribute('data-overview-col');
-  if (hit) return hit;
-
-  let best = null;
-  let bestDist = Infinity;
-  document.querySelectorAll('[data-overview-col]').forEach((col) => {
-    const r = col.getBoundingClientRect();
-    const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
-    const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
-    const dist = dx + dy;
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = col.getAttribute('data-overview-col');
-    }
-  });
-  return best;
-}
-
-function overviewColumnForProject(project) {
-  if (!project) return null;
-  if (isPotentialStatus(project.status)) return 'potential';
-  if (isPipelineStatus(project.status)) return 'schedule';
-  return getProjectCategory(project);
-}
-
-function OverviewFilterMenu({ titles, visibility, onToggle }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
-  const filtered = OVERVIEW_COLUMN_IDS.some((id) => !visibility[id]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onPointerDown = (e) => {
-      if (wrapRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <div className="overview-filter" ref={wrapRef}>
-      <button
-        type="button"
-        className={`overview-filter-tab icon-bubble${open ? ' icon-bubble--open overview-filter-tab--open' : ''}${filtered ? ' overview-filter-tab--active' : ''}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Filter"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <path
-            d="M2.5 3.5h11L9.5 8.4V12.5L6.5 11V8.4L2.5 3.5Z"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span className="icon-bubble-text">Filter</span>
-      </button>
-      {open ? (
-        <div className="overview-filter-menu" role="menu" aria-label="Visible columns">
-          {OVERVIEW_COLUMN_IDS.map((id) => {
-            const checked = Boolean(visibility[id]);
-            const label = titles[id] || OVERVIEW_COLUMN_FALLBACK_TITLES[id];
-            return (
-              <button
-                key={id}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={checked}
-                className={`overview-filter-option${checked ? ' overview-filter-option--on' : ''}`}
-                onClick={() => onToggle(id)}
-              >
-                <span className="overview-filter-option-label">{label}</span>
-                <span className={`overview-filter-tick${checked ? '' : ' overview-filter-tick--off'}`} aria-hidden>
-                  ✓
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function OverviewColumnTitle({ value, fallback, onChange }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [editing, value]);
-
-  useEffect(() => {
-    if (!editing) return undefined;
-    const node = inputRef.current;
-    if (!node) return undefined;
-    node.focus();
-    node.select();
-    return undefined;
-  }, [editing]);
-
-  const commit = () => {
-    const next = draft.trim() || fallback;
-    onChange(next);
-    setDraft(next);
-    setEditing(false);
-  };
-
-  if (!onChange) {
-    return <h2 className="project-feed-heading">{value}</h2>;
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        className="overview-col-title-input"
-        value={draft}
-        maxLength={28}
-        aria-label="Column name"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            e.stopPropagation();
-            commit();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            setDraft(value);
-            setEditing(false);
-          }
-        }}
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      className="project-feed-heading overview-col-title"
-      onClick={() => setEditing(true)}
-      aria-label={`Rename ${value}`}
-      title="Click to rename"
-    >
-      {value}
-    </button>
-  );
-}
-
-function OverviewColumn({
-  title,
-  count,
-  empty,
-  columnId,
-  showDropPreview = false,
-  dropPreviewHeight = 88,
-  onRename,
-  renameFallback,
-  children,
-}) {
-  return (
-    <section
-      className="overview-col"
-      data-overview-col={columnId}
-      aria-label={title}
-    >
-      <header className="overview-col-header">
-        <OverviewColumnTitle
-          value={title}
-          fallback={renameFallback || title}
-          onChange={onRename}
-        />
-        <span className="overview-col-count">{count}</span>
-      </header>
-      <div className="overview-col-list">
-        {showDropPreview ? (
-          <div
-            className="overview-drop-preview"
-            style={{ height: dropPreviewHeight }}
-            aria-hidden
-          />
-        ) : null}
-        {count === 0 && !showDropPreview ? (
-          <p className="overview-col-empty">{empty}</p>
-        ) : children}
-      </div>
-    </section>
-  );
-}
-
-/** UTC midnight for a civil day index from daysFromEpoch. */
-function ganttCivilUtcMs(epochDay) {
-  return epochDay * 86400000;
-}
-
-/** Calendar Monday for a civil YYYY-MM-DD day index. */
+/** Calendar Monday in NZ (avoids DST midnight edge cases). */
 function isMondayNZ(epochDay) {
-  return new Date(ganttCivilUtcMs(epochDay)).getUTCDay() === 1;
+  const wk = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    weekday: 'short',
+  }).format(new Date(ganttNzNoonMs(epochDay)));
+  return wk === 'Mon';
+}
+
+function ganttWeekdayNZ(epochDay) {
+  return new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    weekday: 'short',
+  }).format(new Date(ganttNzNoonMs(epochDay)));
 }
 
 function isSaturdayNZ(epochDay) {
-  return new Date(ganttCivilUtcMs(epochDay)).getUTCDay() === 6;
+  return ganttWeekdayNZ(epochDay) === 'Sat';
 }
 
 function isSundayNZ(epochDay) {
-  return new Date(ganttCivilUtcMs(epochDay)).getUTCDay() === 0;
+  return ganttWeekdayNZ(epochDay) === 'Sun';
 }
 
-function isWeekdayNZ(epochDay) {
-  const dow = new Date(ganttCivilUtcMs(epochDay)).getUTCDay();
-  return dow >= 1 && dow <= 5;
-}
-
-function ganttIsFullDayZoom(pxPerDay) {
-  return pxPerDay >= 24;
-}
-
-/** Day of month only (civil date). */
+/** Day of month only (NZ). */
 function ganttTickDayNumberNZ(epochDay) {
-  return String(new Date(ganttCivilUtcMs(epochDay)).getUTCDate());
+  return new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    day: 'numeric',
+  }).format(new Date(ganttNzNoonMs(epochDay)));
 }
 
 function ganttDayPx(day, minDay, pxPerDay) {
@@ -5065,67 +3110,38 @@ function ganttFilterTicksByGap(candidates, minDay, pxPerDay, minGapPx) {
 }
 
 /** How much date detail to show in the week row. */
-function ganttRulerLabelTier(pxPerDay, { showWeekDates = false } = {}) {
-  if (pxPerDay >= 24) return 'full';
-  if (pxPerDay >= 12) return 'week';
-  if (showWeekDates && pxPerDay >= 9) return 'week';
+function ganttRulerLabelTier(pxPerDay) {
+  if (pxPerDay >= 12) return 'full';
+  if (pxPerDay >= 5) return 'day';
   return 'hidden';
 }
 
 function ganttWeekTickLabel(epochDay, tier) {
-  if (tier === 'hidden') return '';
-  const monday = ganttTickDayNumberNZ(epochDay);
-  const friday = ganttTickDayNumberNZ(epochDay + 4);
-  return `${monday} - ${friday}`;
+  const dom = ganttTickDayNumberNZ(epochDay);
+  if (tier === 'full') return `${dom} MON`;
+  if (tier === 'day') return dom;
+  return '';
 }
 
 function ganttMinLabelGapPx(tier) {
   if (tier === 'full') return 48;
-  if (tier === 'week') return 56;
+  if (tier === 'day') return 34;
   return Infinity;
 }
 
-/** Left edge of the weekend grey box, as % of the track. */
-function ganttWeekendBandLeftPct(startDay, spanDays, minDay, totalDays, pxPerDay) {
-  const trackWidthPx = Math.max(1, totalDays * pxPerDay);
-  const widthPx = Math.min(GANTT_WEEKEND_BAND_MAX_PX, spanDays * pxPerDay);
-  const weekendStartPx = (startDay - minDay) * pxPerDay;
-  const centerPx = weekendStartPx + (spanDays * pxPerDay) / 2;
-  const leftPx = centerPx - widthPx / 2;
-  return (leftPx / trackWidthPx) * 100;
-}
-
-function ganttWeekendBandRightPct(startDay, spanDays, minDay, totalDays, pxPerDay) {
-  const trackWidthPx = Math.max(1, totalDays * pxPerDay);
-  const widthPx = Math.min(GANTT_WEEKEND_BAND_MAX_PX, spanDays * pxPerDay);
-  return ganttWeekendBandLeftPct(startDay, spanDays, minDay, totalDays, pxPerDay)
-    + (widthPx / trackWidthPx) * 100;
-}
-
 /** Soft grey weekend separators — max 10px, shrink when zoomed out. */
-function buildWeekendBands(minDay, maxDay, totalDays, pxPerDay) {
+function buildWeekendBands(minDay, maxDay, pxPerDay, trackWidthPx) {
   const bands = [];
-  if (pxPerDay <= 1) return bands;
-
-  if (ganttIsFullDayZoom(pxPerDay)) {
-    const widthPct = (1 / Math.max(totalDays, 1)) * 100;
-    for (let day = minDay; day <= maxDay; day += 1) {
-      if (!isSaturdayNZ(day) && !isSundayNZ(day)) continue;
-      bands.push({
-        key: `wknd-${day}`,
-        left: ganttDayLeftPct(day, minDay, totalDays),
-        widthPct,
-      });
-    }
-    return bands;
-  }
 
   const addBand = (startDay, spanDays) => {
     const widthPx = Math.min(GANTT_WEEKEND_BAND_MAX_PX, spanDays * pxPerDay);
     if (widthPx < 1) return;
+    const weekendStartPx = (startDay - minDay) * pxPerDay;
+    const centerPx = weekendStartPx + (spanDays * pxPerDay) / 2;
+    const leftPx = centerPx - widthPx / 2;
     bands.push({
       key: `wknd-${startDay}`,
-      left: ganttWeekendBandLeftPct(startDay, spanDays, minDay, totalDays, pxPerDay),
+      left: trackWidthPx > 0 ? (leftPx / trackWidthPx) * 100 : 0,
       widthPx,
     });
   };
@@ -5142,65 +3158,21 @@ function buildWeekendBands(minDay, maxDay, totalDays, pxPerDay) {
   return bands;
 }
 
-function buildMonthGuideLines(minDay, maxDay, totalDays, pxPerDay) {
-  if (pxPerDay > 1) return [];
-  const lines = [];
-  for (let day = minDay; day <= maxDay; day += 1) {
-    if (!isFirstOfMonthNZ(day)) continue;
-    lines.push({
-      key: `mo-${day}`,
-      left: ganttDayLeftPct(day, minDay, totalDays),
-    });
-  }
-  return lines;
-}
-
-function buildWeekdayLines(minDay, maxDay, totalDays, pxPerDay) {
-  if (!ganttIsFullDayZoom(pxPerDay)) return [];
-  const lines = [];
-  for (let day = minDay; day <= maxDay; day += 1) {
-    if (!isWeekdayNZ(day)) continue;
-    lines.push({
-      key: `wd-${day}`,
-      left: ganttDayLeftPct(day, minDay, totalDays),
-    });
-  }
-  return lines;
-}
-
 /**
  * Monday week ticks — left edge of each white work week.
  */
-function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay, options = {}) {
-  const toPct = (day) => ganttDayLeftPct(day, minDay, totalDays);
-  const labelTier = ganttRulerLabelTier(pxPerDay, options);
-  const fullDayZoom = ganttIsFullDayZoom(pxPerDay);
+function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay, trackWidthPx) {
+  const toPct = (day) => ((day - minDay) / totalDays) * 100;
+  const labelTier = ganttRulerLabelTier(pxPerDay);
 
   let ticks = [];
   if (labelTier !== 'hidden') {
     const candidates = [];
     for (let day = minDay; day <= maxDay; day += 1) {
       if (!isMondayNZ(day) || isFirstOfMonthNZ(day)) continue;
-      const prevSaturday = day - 2;
-      let left = toPct(day);
-      if (
-        !fullDayZoom
-        && prevSaturday >= minDay
-        && isSaturdayNZ(prevSaturday)
-      ) {
-        let weekendSpan = 1;
-        if (isSundayNZ(day - 1)) weekendSpan = 2;
-        left = ganttWeekendBandRightPct(
-          prevSaturday,
-          weekendSpan,
-          minDay,
-          totalDays,
-          pxPerDay,
-        );
-      }
       candidates.push({
         day,
-        left,
+        left: toPct(day),
         label: ganttWeekTickLabel(day, labelTier),
         labelTier,
       });
@@ -5215,27 +3187,37 @@ function buildGanttTimelineSchedule(minDay, maxDay, totalDays, pxPerDay, options
 
   return {
     ticks,
-    weekendBands: buildWeekendBands(minDay, maxDay, totalDays, pxPerDay),
-    weekdayLines: buildWeekdayLines(minDay, maxDay, totalDays, pxPerDay),
-    monthLines: buildMonthGuideLines(minDay, maxDay, totalDays, pxPerDay),
+    weekendBands: buildWeekendBands(minDay, maxDay, pxPerDay, trackWidthPx),
   };
 }
 
 function isFirstOfMonthNZ(epochDay) {
-  return new Date(ganttCivilUtcMs(epochDay)).getUTCDate() === 1;
+  const dom = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    day: 'numeric',
+  }).format(new Date(ganttNzNoonMs(epochDay)));
+  return dom === '1';
 }
 
 function monthFirstNZ(epochDay) {
-  const d = new Date(ganttCivilUtcMs(epochDay));
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: GANTT_NZ_TZ,
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date(ganttNzNoonMs(epochDay)));
+  const y = parts.find((p) => p.type === 'year')?.value;
+  const m = parts.find((p) => p.type === 'month')?.value;
   return daysFromEpoch(`${y}-${m}-01`);
 }
 
 function nextMonthFirstNZ(monthFirstDay) {
-  const d = new Date(ganttCivilUtcMs(monthFirstDay));
-  let y = d.getUTCFullYear();
-  let m = d.getUTCMonth() + 2; // 1-based next month
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: GANTT_NZ_TZ,
+    year: 'numeric',
+    month: 'numeric',
+  }).formatToParts(new Date(ganttNzNoonMs(monthFirstDay)));
+  let y = Number(parts.find((p) => p.type === 'year')?.value);
+  let m = Number(parts.find((p) => p.type === 'month')?.value) + 1;
   if (m > 12) {
     m = 1;
     y += 1;
@@ -5244,7 +3226,10 @@ function nextMonthFirstNZ(monthFirstDay) {
 }
 
 function ganttYearNZ(epochDay) {
-  return new Date(ganttCivilUtcMs(epochDay)).getUTCFullYear();
+  return Number(new Intl.DateTimeFormat('en-NZ', {
+    timeZone: GANTT_NZ_TZ,
+    year: 'numeric',
+  }).format(new Date(ganttNzNoonMs(epochDay))));
 }
 
 /** Drop year suffixes when consecutive month labels would collide. */
@@ -5270,8 +3255,9 @@ function ganttResolveMonthMarkerOverlaps(markers, minDay, pxPerDay) {
   return resolved;
 }
 
-/** Every month touching the range — a band spanning the visible days of that month. */
+/** Every month touching the range — labels sit on the 1st of each month. */
 function buildMonthMarkers(minDay, maxDay, totalDays, rangeSpansYears, pxPerDay) {
+  const toPct = (day) => ((day - minDay) / totalDays) * 100;
   const markers = [];
   let monthFirst = monthFirstNZ(minDay);
   let prevYear = null;
@@ -5279,31 +3265,24 @@ function buildMonthMarkers(minDay, maxDay, totalDays, rangeSpansYears, pxPerDay)
   while (monthFirst <= maxDay) {
     const year = ganttYearNZ(monthFirst);
     const showYear = rangeSpansYears && (prevYear === null || year !== prevYear);
-    const nextFirst = nextMonthFirstNZ(monthFirst);
-    const visStart = Math.max(monthFirst, minDay);
-    const visEnd = Math.min(nextFirst - 1, maxDay);
-    const { left, width } = ganttInclusiveBarPct(visStart, visEnd, minDay, totalDays);
-    const widthPx = (width / 100) * totalDays * pxPerDay;
     markers.push({
       day: monthFirst,
-      left,
-      width,
-      label: ganttMonthNameNZ(monthFirst, showYear, widthPx >= 72),
+      left: toPct(monthFirst),
+      label: ganttMonthNameNZ(monthFirst, showYear),
     });
     prevYear = year;
-    monthFirst = nextFirst;
+    monthFirst = nextMonthFirstNZ(monthFirst);
   }
 
   return ganttResolveMonthMarkerOverlaps(markers, minDay, pxPerDay);
 }
 
-/** Ruler month row: "August" when there is room, otherwise "Aug". */
-function ganttMonthNameNZ(epochDay, includeYear = false, longName = false) {
-  const monthStyle = longName ? 'long' : 'short';
+/** Ruler month row: "Jul", "Aug" (optional year when range spans years). */
+function ganttMonthNameNZ(epochDay, includeYear = false) {
   const opts = includeYear
-    ? { timeZone: 'UTC', month: monthStyle, year: '2-digit' }
-    : { timeZone: 'UTC', month: monthStyle };
-  return new Intl.DateTimeFormat('en-NZ', opts).format(new Date(ganttCivilUtcMs(epochDay)));
+    ? { timeZone: GANTT_NZ_TZ, month: 'short', year: '2-digit' }
+    : { timeZone: GANTT_NZ_TZ, month: 'short' };
+  return new Intl.DateTimeFormat('en-NZ', opts).format(new Date(ganttNzNoonMs(epochDay)));
 }
 
 const GANTT_MOBILE_MQ = '(max-width: 768px)';
@@ -5323,6 +3302,8 @@ function useGanttMobileLayout() {
   return mobile;
 }
 
+/** Pixels per day on the timeline (horizontal scroll width). */
+const GANTT_PX_PER_DAY = 3;
 const GANTT_FOCUS_HEAD_DAYS = 14;
 const GANTT_FOCUS_TAIL_DAYS = 62;
 /** Press-and-hold before a phase can be dragged along the timeline. */
@@ -5330,103 +3311,23 @@ const PHASE_TIMELINE_HOLD_MS = 400;
 /** Match --gantt-lead-w in gantt-timeline.css (10px pad + label + 4px gap). */
 const GANTT_LEAD_W_DESKTOP = 124;
 const GANTT_WEEKEND_BAND_MAX_PX = 10;
-const GANTT_TIMELINE_LAST_DAY = daysFromEpoch('2027-12-31');
-const GANTT_ZOOM_SCALES = [
-  { px: 1, label: 'Year', mobileOnly: true },
-  { px: 2, label: 'Half year', mobileOnly: true },
-  { px: 4, label: 'Quarter', mobileOnly: true },
-  { px: 9, label: 'Months' },
-  { px: 18, label: 'Weeks' },
-  { px: 30, label: 'Days' },
-];
+const FOCUS_ZOOM_STEPS = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
 
-function ganttZoomScales(mobile) {
-  return mobile
-    ? GANTT_ZOOM_SCALES
-    : GANTT_ZOOM_SCALES.filter((scale) => !scale.mobileOnly);
-}
-
-function ganttPxForZoomStep(step, mobile) {
-  const scales = ganttZoomScales(mobile);
-  return scales[step]?.px ?? scales[0].px;
-}
-
-function GanttZoomMenu({ zoomStep, onSelect, scales }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
-  const current = scales[zoomStep] || scales[0];
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onPointerDown = (e) => {
-      if (wrapRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <div className="gantt-zoom-menu" ref={wrapRef}>
-      <button
-        type="button"
-        className={`icon-bubble gantt-zoom-menu-tab${open ? ' icon-bubble--open gantt-zoom-menu-tab--open' : ''}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Timeline scale, ${current.label}`}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {current.label}
-      </button>
-      {open ? (
-        <div className="overview-filter-menu gantt-zoom-menu-list" role="menu" aria-label="Timeline scale">
-          {scales.map((scale, index) => {
-            const checked = index === zoomStep;
-            return (
-              <button
-                key={scale.label}
-                type="button"
-                role="menuitemradio"
-                aria-checked={checked}
-                className={`overview-filter-option${checked ? ' overview-filter-option--on' : ''}`}
-                onClick={() => {
-                  onSelect(index);
-                  setOpen(false);
-                }}
-              >
-                <span className="overview-filter-option-label">{scale.label}</span>
-                <span className={`overview-filter-tick${checked ? '' : ' overview-filter-tick--off'}`} aria-hidden>
-                  ✓
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function defaultMainZoomStep(mobile = false, viewportPx = 1120) {
-  const scales = ganttZoomScales(mobile);
+function defaultMainZoomStep(mobile = false) {
   if (mobile) {
-    const quarter = scales.findIndex((scale) => scale.label === 'Quarter');
-    return quarter >= 0 ? quarter : 0;
+    const mobileIdx = FOCUS_ZOOM_STEPS.indexOf(12);
+    if (mobileIdx >= 0) return mobileIdx;
   }
-  const todayDay = daysFromEpoch(today());
-  const remainingDays = Math.max(1, ganttTotalDays(todayDay, GANTT_TIMELINE_LAST_DAY));
-  const usablePx = Math.max(320, viewportPx - GANTT_LEAD_W_DESKTOP);
-  const idealPx = usablePx / remainingDays;
+  const idx = FOCUS_ZOOM_STEPS.indexOf(GANTT_PX_PER_DAY);
+  return idx >= 0 ? idx : 1;
+}
+
+function defaultFocusZoomStep(totalDays) {
+  const targetWidth = 1120;
+  const idealPx = targetWidth / Math.max(totalDays, 1);
   let best = 0;
-  for (let i = 0; i < scales.length; i += 1) {
-    if (scales[i].px <= idealPx + 0.5) best = i;
+  for (let i = 0; i < FOCUS_ZOOM_STEPS.length; i += 1) {
+    if (FOCUS_ZOOM_STEPS[i] <= idealPx + 0.5) best = i;
   }
   return best;
 }
@@ -5477,112 +3378,19 @@ function sortTimelineProjectsByDesigner(projects, designers) {
 }
 
 // ── Timeline edit rail (focus Edit mode only) ────────────────────────────────
-const MARKER_DRAG_MIME = 'application/x-ew-marker-id';
-
 function TimelineEditRail({
   project,
   onPhaseDates,
   onTaskDates,
   onMarkerDate,
-  onMarkerPatch,
-  onMarkerRelink,
 }) {
   const phases = project.milestones || [];
   const markers = project.markers || [];
-  const [draggingMarkerId, setDraggingMarkerId] = useState(null);
-  const [dropTargetKey, setDropTargetKey] = useState(null);
-  const [titleDrafts, setTitleDrafts] = useState({});
-  const titleDraftsRef = useRef({});
-  const skipTitleCommitRef = useRef(null);
-  titleDraftsRef.current = titleDrafts;
-
-  const markerTitleValue = (marker) => (
-    Object.prototype.hasOwnProperty.call(titleDrafts, marker.id)
-      ? titleDrafts[marker.id]
-      : (marker.title || '')
-  );
-
-  const clearTitleDraft = (markerId) => {
-    setTitleDrafts((prev) => {
-      if (!Object.prototype.hasOwnProperty.call(prev, markerId)) return prev;
-      const { [markerId]: _removed, ...rest } = prev;
-      return rest;
-    });
-  };
-
-  const commitMarkerTitle = (markerId) => {
-    if (!markerId || !onMarkerPatch) return;
-    if (skipTitleCommitRef.current === markerId) {
-      skipTitleCommitRef.current = null;
-      clearTitleDraft(markerId);
-      return;
-    }
-    const current = markers.find((marker) => marker.id === markerId);
-    if (!current) return;
-    const drafts = titleDraftsRef.current;
-    const raw = Object.prototype.hasOwnProperty.call(drafts, markerId)
-      ? drafts[markerId]
-      : (current.title || '');
-    const nextTitle = String(raw).trim();
-    clearTitleDraft(markerId);
-    if ((current.title || '') === nextTitle) return;
-    onMarkerPatch(markerId, { title: nextTitle });
-  };
-
-  const readDraggedMarkerId = (event) => (
-    event.dataTransfer.getData(MARKER_DRAG_MIME)
-      || event.dataTransfer.getData('text/plain')
-      || draggingMarkerId
-      || ''
-  );
-
-  const handleMarkerDragStart = (event, markerId) => {
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData(MARKER_DRAG_MIME, markerId);
-    event.dataTransfer.setData('text/plain', markerId);
-    setDraggingMarkerId(markerId);
-  };
-
-  const handleMarkerDragEnd = () => {
-    setDraggingMarkerId(null);
-    setDropTargetKey(null);
-  };
-
-  const handleDropTargetDragOver = (event, targetKey) => {
-    const types = [...event.dataTransfer.types];
-    if (
-      !draggingMarkerId
-      && !types.includes(MARKER_DRAG_MIME)
-      && !types.includes('text/plain')
-    ) {
-      return;
-    }
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    setDropTargetKey(targetKey);
-  };
-
-  const handleDropTargetDragLeave = (event, targetKey) => {
-    if (event.currentTarget.contains(event.relatedTarget)) return;
-    setDropTargetKey((cur) => (cur === targetKey ? null : cur));
-  };
-
-  const handleDropOnTarget = (event, target) => {
-    event.preventDefault();
-    const markerId = readDraggedMarkerId(event);
-    setDraggingMarkerId(null);
-    setDropTargetKey(null);
-    if (!markerId || !onMarkerRelink) return;
-    onMarkerRelink(markerId, target);
-  };
 
   return (
     <aside className="gantt-edit-rail" aria-label="Schedule editor">
       <div className="gantt-edit-rail-head">
         <span className="gantt-edit-rail-title">{project.name.trim() || 'Project'}</span>
-        <p className="gantt-edit-rail-hint">
-          Drag a milestone's dot onto a phase or task to retime it.
-        </p>
       </div>
 
       <div className="gantt-edit-rail-table" role="table" aria-label="Phases and tasks">
@@ -5595,7 +3403,6 @@ function TimelineEditRail({
         {phases.map((phase) => {
           const phaseTitle = phase.title.trim() || 'Phase';
           const phaseMarkers = markers.filter((marker) => marker.phaseKey === phase.phaseKey);
-          const phaseDropKey = `phase:${phase.id}`;
           return (
             <div key={phase.id} className="gantt-edit-rail-group">
               <ScheduleStartEndRow
@@ -5604,19 +3411,10 @@ function TimelineEditRail({
                 startDate={phase.startDate}
                 endDate={phase.endDate}
                 onChange={(patch) => onPhaseDates(phase.id, patch)}
-                dropActive={dropTargetKey === phaseDropKey}
-                onMarkerDragOver={(event) => handleDropTargetDragOver(event, phaseDropKey)}
-                onMarkerDragLeave={(event) => handleDropTargetDragLeave(event, phaseDropKey)}
-                onMarkerDrop={(event) => handleDropOnTarget(event, {
-                  phaseKey: phase.phaseKey,
-                  date: phase.startDate || '',
-                  linkedTo: '',
-                })}
               />
 
               {(phase.tasks || []).map((task) => {
                 const taskTitle = task.title.trim() || 'Task';
-                const taskDropKey = `task:${task.id}`;
                 return (
                   <ScheduleStartEndRow
                     key={task.id}
@@ -5625,84 +3423,29 @@ function TimelineEditRail({
                     startDate={task.startDate}
                     endDate={task.endDate}
                     onChange={(patch) => onTaskDates(phase.id, task.id, patch)}
-                    dropActive={dropTargetKey === taskDropKey}
-                    onMarkerDragOver={(event) => handleDropTargetDragOver(event, taskDropKey)}
-                    onMarkerDragLeave={(event) => handleDropTargetDragLeave(event, taskDropKey)}
-                    onMarkerDrop={(event) => handleDropOnTarget(event, {
-                      phaseKey: phase.phaseKey,
-                      date: task.startDate || phase.startDate || '',
-                      linkedTo: taskTitle,
-                    })}
                   />
                 );
               })}
 
-              {phaseMarkers.map((marker) => {
-                const displayTitle = markerTitleValue(marker).trim() || 'Milestone';
-                return (
-                  <div
-                    key={marker.id}
-                    className={[
-                      'gantt-edit-rail-row',
-                      'gantt-edit-rail-row--marker',
-                      draggingMarkerId === marker.id ? 'gantt-edit-rail-row--dragging' : '',
-                    ].filter(Boolean).join(' ')}
-                    role="row"
-                  >
-                    <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
-                      <span
-                        className="gantt-edit-rail-marker-handle"
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Drag ${displayTitle} onto a phase or task`}
-                        title="Drag onto a phase or task"
-                        draggable
-                        onDragStart={(event) => handleMarkerDragStart(event, marker.id)}
-                        onDragEnd={handleMarkerDragEnd}
-                      >
-                        <span className="gantt-edit-rail-marker-dot" aria-hidden />
-                      </span>
-                      <input
-                        type="text"
-                        className="gantt-edit-rail-marker-title-input"
-                        value={markerTitleValue(marker)}
-                        placeholder="Milestone"
-                        aria-label="Milestone name"
-                        onChange={(event) => {
-                          const next = event.target.value;
-                          setTitleDrafts((prev) => ({ ...prev, [marker.id]: next }));
-                        }}
-                        onBlur={() => commitMarkerTitle(marker.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault();
-                            event.currentTarget.blur();
-                          } else if (event.key === 'Escape') {
-                            event.preventDefault();
-                            skipTitleCommitRef.current = marker.id;
-                            clearTitleDraft(marker.id);
-                            event.currentTarget.blur();
-                          }
-                        }}
-                      />
-                    </span>
-                    <span
-                      className="gantt-edit-rail-col gantt-edit-rail-col--date"
-                      role="cell"
-                    >
-                      <MilestoneSingleDatePicker
-                        date={marker.date}
-                        onChange={(date) => onMarkerDate(marker.id, date)}
-                        className="gantt-edit-rail-date"
-                        emptyLabel="Date"
-                        ariaLabel={`Date for ${displayTitle}`}
-                        rangeFormat="task"
-                      />
-                    </span>
-                    <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell" />
-                  </div>
-                );
-              })}
+              {phaseMarkers.map((marker) => (
+                <div key={marker.id} className="gantt-edit-rail-row gantt-edit-rail-row--marker" role="row">
+                  <span className="gantt-edit-rail-col gantt-edit-rail-col--name" role="cell">
+                    <span className="gantt-edit-rail-marker-dot" aria-hidden />
+                    {marker.title.trim() || 'Milestone'}
+                  </span>
+                  <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell">
+                    <MilestoneSingleDatePicker
+                      date={marker.date}
+                      onChange={(date) => onMarkerDate(marker.id, date)}
+                      className="gantt-edit-rail-date"
+                      emptyLabel="Date"
+                      ariaLabel={`Date for ${marker.title.trim() || 'milestone'}`}
+                      rangeFormat="task"
+                    />
+                  </span>
+                  <span className="gantt-edit-rail-col gantt-edit-rail-col--date" role="cell" />
+                </div>
+              ))}
             </div>
           );
         })}
@@ -5782,12 +3525,9 @@ function GanttChartInner({
   const [mobileExpandedPhases, setMobileExpandedPhases] = useState(() => new Set());
   const [mainZoomStep, setMainZoomStep] = useState(() => defaultMainZoomStep(
     typeof window !== 'undefined' && window.matchMedia(GANTT_MOBILE_MQ).matches,
-    typeof window !== 'undefined' ? window.innerWidth : 1120,
   ));
   const centerOnTodayPendingRef = useRef(true);
   const [focusZoomStep, setFocusZoomStep] = useState(0);
-  const mainZoomStepRef = useRef(mainZoomStep);
-  mainZoomStepRef.current = mainZoomStep;
   const [resizePreviewProject, setResizePreviewProject] = useState(null);
   const resizePreviewRef = useRef(null);
   const phaseResizeActiveRef = useRef(false);
@@ -5797,9 +3537,7 @@ function GanttChartInner({
   const [phaseMovePendingId, setPhaseMovePendingId] = useState(null);
 
   const timelineSections = useMemo(() => {
-    const active = validProjects.filter((p) => (
-      !isPipelineStatus(p.status) && !isPotentialStatus(p.status)
-    ));
+    const active = validProjects.filter((p) => !isPipelineStatus(p.status));
     const scheduled = validProjects.filter((p) => isPipelineStatus(p.status));
     return [
       {
@@ -5844,18 +3582,20 @@ function GanttChartInner({
       : daysFromEpoch(timelineFocusProject.endDate);
     const minDay = minStart - GANTT_FOCUS_HEAD_DAYS;
     const maxDay = maxEnd + GANTT_FOCUS_TAIL_DAYS;
-    const totalDays = ganttTotalDays(minDay, maxDay);
+    const totalDays = Math.max(7, maxDay - minDay);
     return { minDay, maxDay, totalDays };
   }, [timelineFocusProject]);
 
   useEffect(() => {
-    if (!expandedProjectId) return;
-    setFocusZoomStep(mainZoomStepRef.current);
-  }, [expandedProjectId]);
+    if (!expandedProjectId || !focusRange) return;
+    setFocusZoomStep(defaultFocusZoomStep(focusRange.totalDays));
+  }, [expandedProjectId, focusRange]);
 
   const timelineView = useMemo(() => {
+    const ganttLastDay = daysFromEpoch('2027-12-31');
+
     if (focusedProject && focusRange) {
-      const pxPerDay = ganttPxForZoomStep(focusZoomStep, mobileLayout);
+      const pxPerDay = FOCUS_ZOOM_STEPS[focusZoomStep] ?? FOCUS_ZOOM_STEPS[0];
       return {
         minDay: focusRange.minDay,
         maxDay: focusRange.maxDay,
@@ -5874,31 +3614,29 @@ function GanttChartInner({
         if (ph.endDate) allEnds.push(daysFromEpoch(ph.endDate));
       });
     });
-    const minStart = allStarts.length ? Math.min(...allStarts) : todayDay;
-    const maxEnd = allEnds.length ? Math.max(...allEnds) : todayDay;
+    const minStart = Math.min(...allStarts);
+    const maxEnd = Math.max(...allEnds);
     let minDay = minStart - 14;
     let maxDay = Math.min(
       Math.max(maxEnd + 380, todayDay + 460, minStart + 120),
-      GANTT_TIMELINE_LAST_DAY,
+      ganttLastDay,
     );
     if (maxDay <= minDay) minDay = maxDay - 365;
-    const totalDays = ganttTotalDays(minDay, maxDay);
+    const totalDays = Math.max(7, maxDay - minDay);
     return {
       minDay,
       maxDay,
       totalDays,
-      pxPerDay: ganttPxForZoomStep(mainZoomStep, mobileLayout),
+      pxPerDay: FOCUS_ZOOM_STEPS[mainZoomStep] ?? GANTT_PX_PER_DAY,
       focusMode: false,
     };
-  }, [focusedProject, focusRange, focusZoomStep, mainZoomStep, validProjects, todayDay, mobileLayout]);
+  }, [focusedProject, focusRange, focusZoomStep, mainZoomStep, validProjects, todayDay]);
 
   const { minDay, maxDay, totalDays, pxPerDay, focusMode } = timelineView;
-  /** Focus + mobile have no label column — tracks must match the full chart width. */
-  const ganttLeadW = (!mobileLayout && !focusMode) ? GANTT_LEAD_W_DESKTOP : 0;
-  const { chartMinWidthPx, trackWidthPx: chartTrackWidthPx } = ganttChartWidths(
-    totalDays,
-    pxPerDay,
-    ganttLeadW,
+  const chartMinWidthPx = Math.ceil(totalDays * pxPerDay);
+  const chartTrackWidthPx = Math.max(
+    1,
+    chartMinWidthPx - (mobileLayout ? 0 : GANTT_LEAD_W_DESKTOP),
   );
   const sectionsToRender = useMemo(
     () => (focusMode && timelineFocusProject
@@ -5983,36 +3721,15 @@ function GanttChartInner({
     );
   }, [applyLinkedProjectUpdate, timelineFocusProject]);
 
-  const handleEditRailMarkerPatch = useCallback((markerId, patch) => {
-    if (!timelineFocusProject) return;
-    applyLinkedProjectUpdate(
-      updateProjectMarker(timelineFocusProject, markerId, patch),
-    );
-  }, [applyLinkedProjectUpdate, timelineFocusProject]);
-
-  const handleEditRailMarkerRelink = useCallback((markerId, target) => {
-    if (!timelineFocusProject || !target?.phaseKey) return;
-    const current = (timelineFocusProject.markers || []).find((marker) => marker.id === markerId);
-    if (!current) return;
-    applyLinkedProjectUpdate(
-      updateProjectMarker(timelineFocusProject, markerId, {
-        phaseKey: target.phaseKey,
-        date: target.date || current.date || '',
-        linkedTo: target.linkedTo || '',
-      }),
-    );
-  }, [applyLinkedProjectUpdate, timelineFocusProject]);
-
   const exitFocusView = useCallback(() => {
     if (timelineEditMode) finishTimelineEdit();
-    centerOnTodayPendingRef.current = true;
     setExpandedProjectId(null);
   }, [timelineEditMode, finishTimelineEdit]);
 
-  const pct = (day) => ganttDayLeftPct(day, minDay, totalDays);
+  const pct = (day) => ((day - minDay) / totalDays) * 100;
 
-  const minYear = new Date(minDay * 86400000).getUTCFullYear();
-  const maxYear = new Date(maxDay * 86400000).getUTCFullYear();
+  const minYear = new Date(minDay * 86400000).getFullYear();
+  const maxYear = new Date(maxDay * 86400000).getFullYear();
   const monthLabelSpansYears = minYear !== maxYear;
 
   const monthMarkers = useMemo(
@@ -6026,14 +3743,12 @@ function GanttChartInner({
       maxDay,
       totalDays,
       pxPerDay,
-      { showWeekDates: focusMode },
+      chartTrackWidthPx,
     ),
-    [minDay, maxDay, totalDays, pxPerDay, focusMode],
+    [minDay, maxDay, totalDays, pxPerDay, chartTrackWidthPx],
   );
   const gridLines = timelineSchedule.ticks;
   const weekendBands = timelineSchedule.weekendBands;
-  const weekdayLines = timelineSchedule.weekdayLines;
-  const monthLines = timelineSchedule.monthLines || [];
 
   useEffect(() => {
     if (!onFocusMetaChange) return undefined;
@@ -6079,18 +3794,19 @@ function GanttChartInner({
       window.cancelAnimationFrame(raf);
       window.removeEventListener('resize', alignFocusControls);
     };
-  }, [focusMode, timelineFocusProject, mobileLayout]);
+  }, [focusMode, timelineFocusProject, timelineEditMode, mobileLayout]);
 
-  const todayPct = ganttDayCenterPct(todayDay, minDay, totalDays);
+  const todayPct = pct(todayDay);
 
   const scrollTimelineBy = useCallback((direction) => {
     const el = scrollRef.current;
     if (!el) return;
     /** One calendar week in chart pixels (same scale as day columns). */
-    const weekPx = pxPerDay * 7;
+    const weekPx =
+      totalDays > 0 ? (chartMinWidthPx / totalDays) * 7 : 0;
     const step = Math.max(1, Math.round(weekPx));
     el.scrollBy({ left: direction * step, behavior: 'smooth' });
-  }, [pxPerDay]);
+  }, [chartMinWidthPx, totalDays]);
 
   const scrollToToday = useCallback((behavior = 'smooth') => {
     const el = scrollRef.current;
@@ -6106,24 +3822,17 @@ function GanttChartInner({
       });
       return;
     }
-    const x = ganttScrollLeftForTrackPct(todayPct, {
-      leadW: ganttLeadW,
-      trackWidthPx: chartTrackWidthPx,
-      clientWidth: el.clientWidth,
-      scrollWidth: el.scrollWidth,
-    });
-    el.scrollTo({ left: x, behavior: scrollBehavior });
-  }, [todayPct, ganttLeadW, chartTrackWidthPx]);
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+    const x = (todayPct / 100) * el.scrollWidth - el.clientWidth / 2;
+    el.scrollTo({ left: Math.max(0, Math.min(maxScroll, x)), behavior: scrollBehavior });
+  }, [todayPct]);
 
   const updateJobLabelPins = useCallback(() => {
     const wrapper = scrollRef.current;
-    if (!wrapper) return;
+    if (!wrapper || focusMode) return;
     const stickPx = 15;
-    const selector = focusMode
-      ? '.gantt-lane-label--phase[data-label-pct]'
-      : '.gantt-lane-label--job[data-label-pct]';
     const wrapperLeft = wrapper.getBoundingClientRect().left;
-    wrapper.querySelectorAll(selector).forEach((label) => {
+    wrapper.querySelectorAll('.gantt-lane-label--job[data-label-pct]').forEach((label) => {
       const labelPct = Number(label.dataset.labelPct);
       if (!Number.isFinite(labelPct)) return;
       const track = label.closest('.gantt-track');
@@ -6136,33 +3845,17 @@ function GanttChartInner({
     });
   }, [focusMode]);
 
-  const prevMobileLayoutRef = useRef(mobileLayout);
-
   useLayoutEffect(() => {
-    if (prevMobileLayoutRef.current === mobileLayout) return;
-    prevMobileLayoutRef.current = mobileLayout;
-    const viewportPx = typeof window !== 'undefined' ? window.innerWidth : 1120;
-    const prevScales = ganttZoomScales(!mobileLayout);
-    const nextScales = ganttZoomScales(mobileLayout);
-    const mapStep = (step) => {
-      const px = prevScales[step]?.px;
-      if (px == null) return defaultMainZoomStep(mobileLayout, viewportPx);
-      const matched = nextScales.findIndex((scale) => scale.px === px);
-      if (matched >= 0) return matched;
-      return defaultMainZoomStep(mobileLayout, viewportPx);
-    };
+    if (!mobileLayout) return;
     centerOnTodayPendingRef.current = true;
-    setMainZoomStep(mapStep);
-    setFocusZoomStep(mapStep);
+    setMainZoomStep((step) => {
+      const desktopDefault = defaultMainZoomStep(false);
+      const mobileDefault = defaultMainZoomStep(true);
+      return step === desktopDefault ? mobileDefault : step;
+    });
   }, [mobileLayout]);
 
-  const prevFocusModeRef = useRef(false);
-
   useLayoutEffect(() => {
-    if (prevFocusModeRef.current && !focusMode) {
-      centerOnTodayPendingRef.current = true;
-    }
-    prevFocusModeRef.current = focusMode;
     if (!centerOnTodayPendingRef.current || !scrollRef.current) return;
     scrollToToday('auto');
     centerOnTodayPendingRef.current = false;
@@ -6179,6 +3872,7 @@ function GanttChartInner({
   }, [focusMode, expandedProjectId, mobileLayout]);
 
   useLayoutEffect(() => {
+    if (focusMode) return undefined;
     const wrapper = scrollRef.current;
     if (!wrapper) return undefined;
 
@@ -6430,14 +4124,9 @@ function GanttChartInner({
     isResizing = false,
   }) => {
     if (!startDate || !endDate) return null;
-    const startDay = daysFromEpoch(startDate);
-    const endDay = daysFromEpoch(endDate);
-    const { left: startPct, width: widthPct } = ganttInclusiveBarPct(
-      startDay,
-      endDay,
-      minDay,
-      totalDays,
-    );
+    const startPct = pct(daysFromEpoch(startDate));
+    const endPct = pct(daysFromEpoch(endDate));
+    const widthPct = endPct - startPct;
     const hasLabels = showLabels && (labelPrimary || labelSecondary);
     const isBandBar = /\bgantt-bar--(?:job|phase|task|overview)\b/.test(barClass);
     const isTaskBand = barClass.includes('gantt-bar--task');
@@ -6520,7 +4209,6 @@ function GanttChartInner({
           `gantt-lane-label--${variant}`,
         ].filter(Boolean).join(' ')}
         style={{ left: `${left}%` }}
-        data-label-pct={left}
         title={text}
       >
         <span className="gantt-lane-label-text">{text}</span>
@@ -6535,7 +4223,7 @@ function GanttChartInner({
     if (!list.length) return null;
     const barColor = colors?.bar || '#8B978C';
     return list.map((marker) => {
-      const left = ganttDayLeftPct(daysFromEpoch(marker.date), minDay, totalDays);
+      const left = pct(daysFromEpoch(marker.date));
       const dateLabel = formatMarkerDateLabel(marker.date);
       const title = marker.title.trim() || 'Milestone';
       const tip = [dateLabel, title, marker.linkedTo ? `Linked: ${marker.linkedTo}` : '']
@@ -6552,8 +4240,8 @@ function GanttChartInner({
         >
           <span className="gantt-marker-dot" aria-hidden />
           <span className="gantt-marker-hover">
-            <span className="gantt-marker-title">{title}</span>
             <span className="gantt-marker-date">{dateLabel}</span>
+            <span className="gantt-marker-title">{title}</span>
           </span>
         </div>
       );
@@ -6742,13 +4430,7 @@ function GanttChartInner({
     if (!onSelectProject) return;
     if (focusMode) return;
     if (projectHasMilestones(project)) {
-      setExpandedProjectId((cur) => {
-        if (cur === project.id) {
-          centerOnTodayPendingRef.current = true;
-          return null;
-        }
-        return project.id;
-      });
+      setExpandedProjectId((cur) => (cur === project.id ? null : project.id));
       return;
     }
     openProjectEdit(project);
@@ -6762,18 +4444,13 @@ function GanttChartInner({
     };
   };
 
-  const zoomScales = ganttZoomScales(mobileLayout);
   const zoomStep = focusMode ? focusZoomStep : mainZoomStep;
   const setZoomStep = focusMode ? setFocusZoomStep : setMainZoomStep;
 
-  const setZoomScale = useCallback((step) => {
-    centerOnTodayPendingRef.current = true;
-    setZoomStep(Math.max(0, Math.min(zoomScales.length - 1, step)));
-  }, [setZoomStep, zoomScales.length]);
-
   const changeZoomStep = useCallback((delta) => {
-    setZoomScale(zoomStep + delta);
-  }, [setZoomScale, zoomStep]);
+    centerOnTodayPendingRef.current = true;
+    setZoomStep((s) => Math.max(0, Math.min(FOCUS_ZOOM_STEPS.length - 1, s + delta)));
+  }, [setZoomStep]);
 
   // Trackpad pinch (ctrl/meta + wheel) and ⌘/Ctrl + − to zoom the timeline.
   useEffect(() => {
@@ -6818,9 +4495,28 @@ function GanttChartInner({
     };
   }, [changeZoomStep, focusMode, chartMinWidthPx]);
 
-  const timelineNavCluster = (
-    <div className="gantt-toolbar gantt-toolbar--tools gantt-toolbar--nav" role="toolbar" aria-label="Timeline date">
+  const timelineToolCluster = (
+    <div className="gantt-toolbar gantt-toolbar--tools" role="toolbar" aria-label="Timeline tools">
       <div className="gantt-toolbar-inner gantt-toolbar-inner--bubble">
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--icon"
+          onClick={() => changeZoomStep(-1)}
+          disabled={zoomStep <= 0}
+          aria-label="Zoom out"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="gantt-nav-btn gantt-nav-btn--icon"
+          onClick={() => changeZoomStep(1)}
+          disabled={zoomStep >= FOCUS_ZOOM_STEPS.length - 1}
+          aria-label="Zoom in"
+        >
+          +
+        </button>
+        <span className="gantt-toolbar-divider" aria-hidden />
         <button
           type="button"
           className="gantt-nav-btn gantt-nav-btn--arrow"
@@ -6848,59 +4544,13 @@ function GanttChartInner({
     </div>
   );
 
-  const timelineZoomCluster = (
-    <div className="gantt-toolbar gantt-toolbar--tools gantt-toolbar--zoom" role="toolbar" aria-label="Timeline zoom">
-      <GanttZoomMenu zoomStep={zoomStep} onSelect={setZoomScale} scales={zoomScales} />
-      <div className="gantt-toolbar-inner gantt-toolbar-inner--bubble">
-        <button
-          type="button"
-          className="gantt-nav-btn gantt-nav-btn--icon"
-          onClick={() => changeZoomStep(-1)}
-          disabled={zoomStep <= 0}
-          aria-label="Zoom out"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="gantt-nav-btn gantt-nav-btn--icon"
-          onClick={() => changeZoomStep(1)}
-          disabled={zoomStep >= zoomScales.length - 1}
-          aria-label="Zoom in"
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-
   const renderWeekendBands = (keyPrefix) => (
     <>
       {weekendBands.map((band) => (
         <div
           key={`${keyPrefix}-${band.key}`}
-          className={[
-            'gantt-weekend-band',
-            band.widthPct != null ? 'gantt-weekend-band--day' : '',
-          ].filter(Boolean).join(' ')}
-          style={{
-            left: `${band.left}%`,
-            width: band.widthPct != null ? `${band.widthPct}%` : `${band.widthPx}px`,
-          }}
-        />
-      ))}
-      {weekdayLines.map((line) => (
-        <div
-          key={`${keyPrefix}-${line.key}`}
-          className="gantt-weekday-line"
-          style={{ left: `${line.left}%` }}
-        />
-      ))}
-      {monthLines.map((line) => (
-        <div
-          key={`${keyPrefix}-${line.key}`}
-          className="gantt-month-line"
-          style={{ left: `${line.left}%` }}
+          className="gantt-weekend-band"
+          style={{ left: `${band.left}%`, width: `${band.widthPx}px` }}
         />
       ))}
     </>
@@ -6934,80 +4584,70 @@ function GanttChartInner({
             >
               <span className="gantt-focus-back-icon" aria-hidden>‹</span>
             </button>
-            {timelineNavCluster}
             <div
-              className={`gantt-focus-controls${timelineEditMode ? ' gantt-focus-controls--editing' : ''}`}
-              style={!mobileLayout && focusControlsAlignPx > 0 ? { marginLeft: focusControlsAlignPx } : undefined}
+              className="gantt-focus-controls"
+              style={focusControlsAlignPx > 0 ? { marginLeft: focusControlsAlignPx } : undefined}
             >
-              {onUpdateProject ? (
-                <div className="gantt-focus-edit-slot">
-                  {timelineEditMode ? (
-                    <span className="icon-bubble icon-bubble--on gantt-focus-edit-bubble" aria-live="polite">
-                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
-                        <path
-                          d="M10.6 2.9l2.5 2.5-7.8 7.8H2.8v-2.5l7.8-7.8z"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      <span className="sr-only">Editing</span>
-                    </span>
-                  ) : (
+              {timelineEditMode ? (
+                <>
+                  <span className="gantt-focus-edit-badge" aria-live="polite">Editing</span>
+                  <button
+                    type="button"
+                    className="gantt-export-btn gantt-focus-action-btn"
+                    onClick={cancelTimelineEdit}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="gantt-export-btn gantt-focus-action-btn gantt-focus-action-btn--primary"
+                    onClick={finishTimelineEdit}
+                  >
+                    Done
+                  </button>
+                </>
+              ) : (
+                <>
+                  {onUpdateProject ? (
                     <button
                       type="button"
-                      className="icon-bubble gantt-focus-edit-bubble"
+                      className="gantt-export-btn gantt-focus-action-btn"
                       onClick={beginTimelineEdit}
                       disabled={!projectHasMilestones(timelineFocusProject)}
-                      aria-label="Edit"
                       title={
                         projectHasMilestones(timelineFocusProject)
                           ? 'Edit schedule beside the timeline'
                           : 'Add milestones to edit schedule'
                       }
                     >
-                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
-                        <path
-                          d="M10.6 2.9l2.5 2.5-7.8 7.8H2.8v-2.5l7.8-7.8z"
-                          stroke="currentColor"
-                          strokeWidth="1.4"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                      Edit
                     </button>
-                  )}
-                  {timelineEditMode ? (
-                    <div className="gantt-focus-edit-actions">
-                      <button
-                        type="button"
-                        className="icon-bubble gantt-focus-cancel-bubble"
-                        onClick={cancelTimelineEdit}
-                        aria-label="Cancel"
-                      >
-                        <span className="icon-bubble-text">Cancel</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-bubble gantt-focus-done-bubble"
-                        onClick={finishTimelineEdit}
-                        aria-label="Done"
-                      >
-                        <span className="icon-bubble-text">Done</span>
-                      </button>
-                    </div>
                   ) : null}
-                </div>
-              ) : null}
+                  <button
+                    type="button"
+                    className="gantt-export-btn gantt-focus-action-btn"
+                    onClick={() => setShowOverview(true)}
+                    disabled={!projectHasMilestones(timelineFocusProject)}
+                    title={!projectHasMilestones(timelineFocusProject) ? 'Add milestones to export' : 'Export timeline overview'}
+                  >
+                    Export
+                  </button>
+                </>
+              )}
             </div>
-            {timelineZoomCluster}
+            {timelineToolCluster}
           </>
         ) : (
           <div className="gantt-timeline-chrome-main">
-            {timelineNavCluster}
-            {timelineZoomCluster}
+            {timelineToolCluster}
           </div>
         )}
       </div>
+      {focusMode && timelineEditMode ? (
+        <p className="gantt-focus-edit-hint" role="status">
+          Changes update the timeline. Cancel restores the previous dates.
+        </p>
+      ) : null}
       <div
         className={
           focusMode && timelineEditMode && !mobileLayout && timelineFocusProject
@@ -7021,8 +4661,6 @@ function GanttChartInner({
             onPhaseDates={handleEditRailPhaseDates}
             onTaskDates={handleEditRailTaskDates}
             onMarkerDate={handleEditRailMarkerDate}
-            onMarkerPatch={handleEditRailMarkerPatch}
-            onMarkerRelink={handleEditRailMarkerRelink}
           />
         ) : null}
         <div className="gantt-wrapper" ref={scrollRef}>
@@ -7032,13 +4670,11 @@ function GanttChartInner({
               mobileLayout ? 'gantt-chart--mobile' : '',
               focusMode ? 'gantt-chart--focused' : '',
               focusMode && timelineEditMode ? 'gantt-chart--editing' : '',
-              timelineSchedule.ticks.length === 0 ? 'gantt-chart--months-only' : '',
-              pxPerDay < 12 ? 'gantt-chart--zoom-30' : '',
             ].filter(Boolean).join(' ')}
             style={{ minWidth: chartMinWidthPx }}
           >
           <div className="gantt-chart-weekends" aria-hidden>
-            {ganttLeadW > 0 ? (
+            {!mobileLayout ? (
               <>
                 <div className="gantt-lines-spacer" />
                 <div className="gantt-weekend-track">
@@ -7053,7 +4689,7 @@ function GanttChartInner({
           </div>
           {todayPct >= 0 && todayPct <= 100 && (
             <div className="gantt-chart-today" aria-hidden>
-              {ganttLeadW > 0 ? (
+              {!mobileLayout ? (
                 <>
                   <div className="gantt-lines-spacer" />
                   <div className="gantt-today-track">
@@ -7074,14 +4710,14 @@ function GanttChartInner({
             </div>
           )}
           <div className={`gantt-chart-header${focusMode ? ' gantt-chart-header--focus' : ''}`}>
-          {ganttLeadW > 0 ? <div className="gantt-lines-spacer" aria-hidden /> : null}
+          {!mobileLayout ? <div className="gantt-lines-spacer" aria-hidden /> : null}
           <div className="gantt-ruler">
             <div className="gantt-ruler-months">
               {monthMarkers.map((m) => (
                 <span
                   key={m.day}
                   className="gantt-ruler-month"
-                  style={{ left: `${m.left}%`, width: `${m.width}%` }}
+                  style={{ left: `${m.left}%` }}
                 >
                   {m.label}
                 </span>
@@ -7097,7 +4733,8 @@ function GanttChartInner({
                   <span
                     className={[
                       'gantt-tick-label',
-                      'gantt-tick-label--week-range',
+                      line.labelTier === 'full' ? 'gantt-tick-label--week-full' : '',
+                      line.labelTier === 'day' ? 'gantt-tick-label--week-day' : '',
                     ].filter(Boolean).join(' ')}
                   >
                     {line.label}
@@ -7338,32 +4975,64 @@ function GanttChartInner({
 
 const STUDIO_ACCESS_STORAGE = 'ew_studio_access';
 const STUDIO_ACCESS_CODE = '3131';
-const STUDIO_PREVIEW_STORAGE = 'ew_studio_preview';
+const STUDIO_VIEW_STORAGE = 'studio_view';
+const STUDIO_GANTT_FOCUS_STORAGE = 'studio_gantt_focus';
+const APP_VIEWS = new Set(['projects', 'gantt', 'scheduled', 'archive']);
 
-function isLocalHost() {
-  if (typeof window === 'undefined') return false;
-  const host = window.location.hostname;
-  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+function readStoredAppLocation() {
+  let view = 'projects';
+  let focus = null;
+  try {
+    if (typeof window === 'undefined') return { view, focus };
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get('view');
+    if (APP_VIEWS.has(fromUrl)) {
+      view = fromUrl;
+    } else {
+      const fromStore = localStorage.getItem(STUDIO_VIEW_STORAGE);
+      if (APP_VIEWS.has(fromStore)) view = fromStore;
+    }
+    if (view === 'gantt') {
+      const focusParam = params.get('focus');
+      if (focusParam) {
+        focus = focusParam;
+      } else {
+        focus = localStorage.getItem(STUDIO_GANTT_FOCUS_STORAGE) || null;
+      }
+    }
+  } catch {
+    /* ignore storage / URL errors */
+  }
+  return { view, focus };
 }
 
-/** npm start and localhost skip Google. The live site still requires it. */
-function isAuthBypassed() {
-  if (process.env.NODE_ENV === 'development') return true;
-  if (typeof window === 'undefined') return false;
+function writeStoredAppLocation({ view, focus = null }) {
+  if (typeof window === 'undefined' || !APP_VIEWS.has(view)) return;
   try {
+    localStorage.setItem(STUDIO_VIEW_STORAGE, view);
+    if (view === 'gantt' && focus) {
+      localStorage.setItem(STUDIO_GANTT_FOCUS_STORAGE, focus);
+    } else {
+      localStorage.removeItem(STUDIO_GANTT_FOCUS_STORAGE);
+    }
+
     const params = new URLSearchParams(window.location.search);
-    if (params.get('preview') === '1' || params.has('preview')) {
-      sessionStorage.setItem(STUDIO_PREVIEW_STORAGE, '1');
-      return true;
+    // Keep auth-related params out of the restored location.
+    params.delete('lock');
+    params.delete('logout');
+    params.set('view', view);
+    if (view === 'gantt' && focus) params.set('focus', focus);
+    else params.delete('focus');
+
+    const qs = params.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) {
+      window.history.replaceState(null, '', next);
     }
-    if (params.get('logout') === '1' || params.has('lock')) {
-      sessionStorage.removeItem(STUDIO_PREVIEW_STORAGE);
-    }
-    if (sessionStorage.getItem(STUDIO_PREVIEW_STORAGE) === '1') return true;
   } catch {
-    /* ignore */
+    /* ignore storage / URL errors */
   }
-  return isLocalHost();
 }
 
 function normalizeRemoteProject(p) {
@@ -7376,40 +5045,11 @@ function normalizeRemoteProject(p) {
   );
 }
 
-function normalizeRemoteWorkspace({ designers, projects, todos }) {
+function normalizeRemoteWorkspace({ designers, projects }) {
   return {
-    designers: (designers || []).map(designerWithNormalizedColor),
-    projects: (projects || []).map(normalizeRemoteProject),
-    todos: (Array.isArray(todos) ? todos : []).map(normalizeTodo).filter(Boolean),
+    designers: designers.map(designerWithNormalizedColor),
+    projects: projects.map(normalizeRemoteProject),
   };
-}
-
-/** Prefer keeping local todos when a remote payload arrives with none. */
-function mergeWorkspaceTodos(localTodos, remoteTodos) {
-  const remote = Array.isArray(remoteTodos) ? remoteTodos : [];
-  const local = Array.isArray(localTodos) ? localTodos : [];
-  if (remote.length > 0) return remote;
-  if (local.length > 0) return local;
-  return remote;
-}
-
-function applyRemoteWorkspaceState(remote, setDesigners, setProjects, setTodos, todosRef) {
-  const normalized = normalizeRemoteWorkspace(remote);
-  const mergedTodos = mergeWorkspaceTodos(todosRef.current, normalized.todos);
-  setDesigners(normalized.designers);
-  setProjects(normalized.projects);
-  setTodos(mergedTodos);
-
-  // If cloud lost its to-dos but this browser still has them, write them back.
-  const shouldHealTodos = normalized.todos.length === 0 && mergedTodos.length > 0;
-  if (shouldHealTodos) {
-    return saveWorkspacePayload({
-      designers: normalized.designers,
-      projects: normalized.projects,
-      todos: mergedTodos,
-    });
-  }
-  return Promise.resolve({ ok: true });
 }
 
 function parseUpdatedAt(iso) {
@@ -7424,20 +5064,12 @@ function isRemoteNewer(remoteAt, knownAt) {
   return parseUpdatedAt(remoteAt) > parseUpdatedAt(knownAt);
 }
 
-function AccessScreen({
-  mode = 'code',
-  onUnlock,
-  onGoogleSignIn,
-  onLocalContinue,
-  errorMessage = '',
-  busy = false,
-}) {
+function AccessScreen({ onUnlock }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState(false);
 
   const submit = (e) => {
     e.preventDefault();
-    if (mode === 'google') return;
     if (value === STUDIO_ACCESS_CODE) {
       try {
         localStorage.setItem(STUDIO_ACCESS_STORAGE, '1');
@@ -7455,52 +5087,25 @@ function AccessScreen({
     <div className="access-gate">
       <form className="access-gate-form" onSubmit={submit}>
         <p className="access-gate-brand">Extended Whānau</p>
-        {mode === 'google' ? (
-          <>
-            {(errorMessage || error) && (
-              <p className="access-gate-error">{errorMessage || 'Could not sign in.'}</p>
-            )}
-            <button
-              type="button"
-              className="access-gate-continue"
-              onClick={onGoogleSignIn}
-              disabled={busy}
-            >
-              {busy ? 'Signing in…' : 'Continue with Google'}
-            </button>
-            {onLocalContinue ? (
-              <button
-                type="button"
-                className="access-gate-continue access-gate-continue--secondary"
-                onClick={onLocalContinue}
-              >
-                Continue locally
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <input
-              className="access-gate-input"
-              type="password"
-              inputMode="numeric"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder="••••"
-              aria-label="Access code"
-              value={value}
-              onChange={(e) => {
-                setValue(e.target.value);
-                setError(false);
-              }}
-            />
-            {error && <p className="access-gate-error">Code not recognised.</p>}
-            <button type="submit" className="access-gate-continue" disabled={!value.trim()}>
-              Continue
-            </button>
-          </>
-        )}
+        <input
+          className="access-gate-input"
+          type="password"
+          inputMode="numeric"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="••••"
+          aria-label="Access code"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(false);
+          }}
+        />
+        {error && <p className="access-gate-error">Code not recognised.</p>}
+        <button type="submit" className="access-gate-continue" disabled={!value.trim()}>
+          Continue
+        </button>
       </form>
     </div>
   );
@@ -7524,7 +5129,7 @@ export default function App() {
     }
   });
 
-  const [view, setView] = useState('overview');
+  const [view, setView] = useState(() => readStoredAppLocation().view);
   const [designers, setDesigners] = useState(loadDesignersFromStorage);
   const [projects, setProjects] = useState(() => {
     let raw;
@@ -7553,40 +5158,23 @@ export default function App() {
   const [showNewProject, setShowNewProject] = useState(false);
   const [designerModalOpen, setDesignerModalOpen] = useState(false);
   const [designerBeingEdited, setDesignerBeingEdited] = useState(null);
-  const [todos, setTodos] = useState(loadTodosFromStorage);
-  const [todoArchiveOpen, setTodoArchiveOpen] = useState(false);
   const [filterDesigner, setFilterDesigner] = useState('all');
   const [teamOpen, setTeamOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [overviewDragId, setOverviewDragId] = useState(null);
-  const [overviewDropColumn, setOverviewDropColumn] = useState(null);
-  const [overviewDragSize, setOverviewDragSize] = useState(null);
-  const [overviewColumnTitles, setOverviewColumnTitles] = useState(loadOverviewColumnTitles);
-  const [overviewColumnVisibility, setOverviewColumnVisibility] = useState(loadOverviewColumnVisibility);
-  const skipOverviewClickRef = useRef(false);
-  const overviewDragIdRef = useRef(null);
-  const overviewDragGhostRef = useRef(null);
-  const overviewDragOffsetRef = useRef({ ox: 0, oy: 0 });
-  const overviewPointerRef = useRef({ x: 0, y: 0 });
-  const [ganttFocusProjectId, setGanttFocusProjectId] = useState(null);
+  const [ganttFocusProjectId, setGanttFocusProjectId] = useState(
+    () => readStoredAppLocation().focus,
+  );
   const [ganttFocusMeta, setGanttFocusMeta] = useState(null);
   const [overviewPreviewProject, setOverviewPreviewProject] = useState(() => (
     shouldShowDevOverviewPreview() ? getDevOverviewPreviewProject() : null
   ));
   /** After first Supabase pull (or immediately if Supabase off), cloud saves are allowed. */
   const [cloudReady, setCloudReady] = useState(() => !isSupabaseConfigured());
-  const [authReady, setAuthReady] = useState(() => isAuthBypassed() || !isSupabaseConfigured());
-  const [sessionUser, setSessionUser] = useState(null);
-  const [authError, setAuthError] = useState('');
-  const [authBusy, setAuthBusy] = useState(false);
 
   const designersRef = useRef(designers);
   const projectsRef = useRef(projects);
-  const todosRef = useRef(todos);
   designersRef.current = designers;
   projectsRef.current = projects;
-  todosRef.current = todos;
-  const notifyPrevRef = useRef({ designers, projects, todos });
   const remoteUpdatedAtRef = useRef(null);
   const pendingRemoteUpdatedAtRef = useRef(null);
   const remotePullInFlightRef = useRef(false);
@@ -7618,21 +5206,11 @@ export default function App() {
 
       if (remote.designers.length > 0 || remote.projects.length > 0) {
         applyingRemoteRef.current = true;
-        const heal = await applyRemoteWorkspaceState(
-          remote,
-          setDesigners,
-          setProjects,
-          setTodos,
-          todosRef,
-        );
-        if (heal?.ok && heal.updatedAt) {
-          remoteUpdatedAtRef.current = heal.updatedAt;
-        } else {
-          remoteUpdatedAtRef.current = remote.updatedAt;
-        }
-      } else if (remote.updatedAt) {
-        remoteUpdatedAtRef.current = remote.updatedAt;
+        const normalized = normalizeRemoteWorkspace(remote);
+        setDesigners(normalized.designers);
+        setProjects(normalized.projects);
       }
+      remoteUpdatedAtRef.current = remote.updatedAt;
       pendingRemoteUpdatedAtRef.current = null;
     } finally {
       remotePullInFlightRef.current = false;
@@ -7664,87 +5242,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isAuthBypassed()) {
-      setAuthReady(true);
-    }
-    if (!isSupabaseConfigured() || !supabase) {
-      setAuthReady(true);
-      return undefined;
-    }
-    let cancelled = false;
-    const applySession = async (session) => {
-      const email = session?.user?.email || '';
-      if (!email) {
-        if (!cancelled) {
-          setSessionUser(null);
-          setCloudReady(false);
-        }
-        return;
-      }
-      if (!isStudioEmail(email)) {
-        await supabase.auth.signOut();
-        if (!cancelled) {
-          setSessionUser(null);
-          setCloudReady(false);
-          setAuthError('Use your Extended Whānau Google account.');
-        }
-        return;
-      }
-      if (!cancelled) {
-        setAuthError('');
-        setSessionUser(session.user);
-      }
-    };
-
-    supabase.auth.getSession().then(({ data }) => {
-      if (cancelled) return;
-      applySession(data?.session).finally(() => {
-        if (!cancelled) setAuthReady(true);
-      });
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      applySession(session);
-    });
-    return () => {
-      cancelled = true;
-      listener?.subscription?.unsubscribe();
-    };
-  }, []);
-
-  const signInWithGoogle = useCallback(async () => {
-    if (!supabase) return;
-    setAuthBusy(true);
-    setAuthError('');
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-        queryParams: { hd: 'extendedwhanau.com' },
-      },
-    });
-    if (error) {
-      setAuthError(error.message || 'Google sign-in is not enabled yet in Supabase.');
-      setAuthBusy(false);
-    }
-  }, []);
-
-  const signOutStudio = useCallback(async () => {
-    try {
-      localStorage.removeItem(STUDIO_ACCESS_STORAGE);
-    } catch {
-      /* ignore */
-    }
-    if (supabase) await supabase.auth.signOut();
-    setSessionUser(null);
-    setAccessUnlocked(false);
-    setCloudReady(false);
-    setSidebarOpen(false);
-  }, []);
-
-  useEffect(() => {
     if (!isSupabaseConfigured()) return undefined;
-    if (!sessionUser) return undefined;
     let cancelled = false;
     (async () => {
       const remote = await loadWorkspacePayload();
@@ -7754,24 +5252,16 @@ export default function App() {
         return;
       }
       if (remote.designers.length > 0 || remote.projects.length > 0) {
-        applyingRemoteRef.current = true;
-        const heal = await applyRemoteWorkspaceState(
-          remote,
-          setDesigners,
-          setProjects,
-          setTodos,
-          todosRef,
-        );
-        if (heal?.ok && heal.updatedAt) {
-          remoteUpdatedAtRef.current = heal.updatedAt;
-        } else if (remote.updatedAt) {
+        const normalized = normalizeRemoteWorkspace(remote);
+        setDesigners(normalized.designers);
+        setProjects(normalized.projects);
+        if (remote.updatedAt) {
           remoteUpdatedAtRef.current = remote.updatedAt;
         }
       } else {
         const result = await saveWorkspacePayload({
           designers: designersRef.current,
           projects: projectsRef.current,
-          todos: todosRef.current,
         });
         if (result.ok && result.updatedAt) {
           remoteUpdatedAtRef.current = result.updatedAt;
@@ -7784,7 +5274,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [sessionUser]);
+  }, []);
 
   useEffect(() => {
     try {
@@ -7797,33 +5287,16 @@ export default function App() {
     } catch {
       /* ignore */
     }
-    try {
-      localStorage.setItem('studio_todos', JSON.stringify(todos));
-    } catch {
-      /* ignore */
-    }
 
     if (!isSupabaseConfigured() || !cloudReady) return undefined;
 
     if (applyingRemoteRef.current) {
       applyingRemoteRef.current = false;
-      notifyPrevRef.current = { designers, projects, todos };
       return undefined;
     }
 
     const t = window.setTimeout(() => {
-      const prev = notifyPrevRef.current;
-      const events = buildNotifyEvents({
-        prevProjects: prev.projects,
-        nextProjects: projects,
-        prevTodos: prev.todos,
-        nextTodos: todos,
-        designers,
-        actorEmail: sessionUser?.email,
-      });
-      enqueueStudioNotifications(events);
-      notifyPrevRef.current = { designers, projects, todos };
-      saveWorkspacePayload({ designers, projects, todos }).then((result) => {
+      saveWorkspacePayload({ designers, projects }).then((result) => {
         if (result.ok && result.updatedAt) {
           remoteUpdatedAtRef.current = result.updatedAt;
           if (pendingRemoteUpdatedAtRef.current
@@ -7834,26 +5307,7 @@ export default function App() {
       });
     }, 550);
     return () => window.clearTimeout(t);
-  }, [designers, projects, todos, cloudReady, sessionUser]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(OVERVIEW_COLUMN_TITLE_STORAGE, JSON.stringify(overviewColumnTitles));
-    } catch {
-      /* ignore */
-    }
-  }, [overviewColumnTitles]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        OVERVIEW_COLUMN_VISIBILITY_STORAGE,
-        JSON.stringify(overviewColumnVisibility),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [overviewColumnVisibility]);
+  }, [designers, projects, cloudReady]);
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !cloudReady) return undefined;
@@ -7924,6 +5378,14 @@ export default function App() {
     if (view !== 'gantt') setGanttFocusMeta(null);
   }, [view]);
 
+  // Persist nav (+ focused timeline project) so refresh stays on the same screen.
+  useEffect(() => {
+    const focus = view === 'gantt'
+      ? (ganttFocusMeta?.id || ganttFocusProjectId || null)
+      : null;
+    writeStoredAppLocation({ view, focus });
+  }, [view, ganttFocusMeta, ganttFocusProjectId]);
+
   const saveProject = (p) => {
     const withDesigners = normalizeProjectDesignersOnProject(p);
     const withMilestones = normalizeProjectMilestones(withDesigners);
@@ -7938,23 +5400,12 @@ export default function App() {
           const { completedAt, ...rest } = base;
           return rest;
         })();
-    setProjects((prev) => {
-      const exists = prev.find((x) => x.id === normalized.id);
-      const next = {
-        ...normalized,
-        todoHistory: Array.isArray(normalized.todoHistory)
-          ? normalized.todoHistory
-          : (exists?.todoHistory || []),
-      };
-      return exists ? prev.map((x) => (x.id === normalized.id ? next : x)) : [...prev, next];
+    setProjects(prev => {
+      const exists = prev.find(x => x.id === normalized.id);
+      return exists ? prev.map(x => x.id === normalized.id ? normalized : x) : [...prev, normalized];
     });
   };
-  const deleteProject = (id) => {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
-    setTodos((prev) => prev.map((item) => (
-      item.projectId === id ? { ...item, projectId: '' } : item
-    )));
-  };
+  const deleteProject = (id) => setProjects(prev => prev.filter(p => p.id !== id));
 
   const openProjectTimeline = useCallback((project) => {
     if (!project?.id || !projectHasMilestones(project) || !project.startDate || !project.endDate) {
@@ -7984,9 +5435,6 @@ export default function App() {
       return normalizeProjectDesignersOnProject({ ...p, designerIds: nextIds });
     }));
     setFilterDesigner((fd) => (fd === id ? 'all' : fd));
-    setTodos((prev) => prev.map((item) => (
-      item.designerId === id ? { ...item, designerId: '' } : item
-    )));
   };
 
   const updateProjectStatus = (id, status) => {
@@ -8003,158 +5451,17 @@ export default function App() {
     }));
   };
 
-  const moveProjectToOverviewColumn = useCallback((id, column) => {
-    const projectId = id || overviewDragIdRef.current;
-    if (!projectId || !column) return;
-    setProjects((prev) => prev.map((p) => (
-      p.id === projectId ? applyOverviewColumnMove(p, column) : p
-    )));
-    overviewDragIdRef.current = null;
-    setOverviewDragId(null);
-    setOverviewDropColumn(null);
-    setOverviewDragSize(null);
-  }, []);
-
-  const placeOverviewDragGhost = useCallback((x, y) => {
-    const node = overviewDragGhostRef.current;
-    if (!node) return;
-    const { ox, oy } = overviewDragOffsetRef.current;
-    node.style.transform = `translate3d(${x - ox}px, ${y - oy}px, 0) scale(1.02)`;
-  }, []);
-
-  const startOverviewPointerDrag = useCallback((event, projectId) => {
-    const originX = event.clientX;
-    const originY = event.clientY;
-    const pointerId = event.pointerId;
-    const target = event.currentTarget;
-    const rect = target.getBoundingClientRect();
-    const isTouch = event.pointerType === 'touch';
-    const holdMs = 450;
-    const cancelMovePx = isTouch ? 12 : 5;
-    let active = false;
-    let cancelled = false;
-    let raf = 0;
-    let holdTimer = 0;
-    overviewDragIdRef.current = projectId;
-    overviewDragOffsetRef.current = { ox: originX - rect.left, oy: originY - rect.top };
-    overviewPointerRef.current = { x: originX, y: originY };
-
-    const beginDrag = () => {
-      if (active || cancelled) return;
-      active = true;
-      skipOverviewClickRef.current = true;
-      setOverviewDragSize({ w: rect.width, h: rect.height });
-      setOverviewDragId(projectId);
-      document.body.classList.add('overview-dragging');
-      try {
-        target.setPointerCapture?.(pointerId);
-      } catch {
-        /* capture is optional — window listeners still track the drag */
-      }
-    };
-
-    if (isTouch) {
-      holdTimer = window.setTimeout(beginDrag, holdMs);
-    }
-
-    const onMove = (moveEvent) => {
-      if (moveEvent.pointerId !== pointerId) return;
-      const dx = moveEvent.clientX - originX;
-      const dy = moveEvent.clientY - originY;
-      if (!active) {
-        if (isTouch) {
-          if ((dx * dx + dy * dy) >= cancelMovePx * cancelMovePx) {
-            if (holdTimer) window.clearTimeout(holdTimer);
-            holdTimer = 0;
-            cancelled = true;
-          }
-          return;
-        }
-        if ((dx * dx + dy * dy) < 25) return;
-        beginDrag();
-      }
-      if (moveEvent.cancelable) moveEvent.preventDefault();
-      overviewPointerRef.current = { x: moveEvent.clientX, y: moveEvent.clientY };
-      if (!raf) {
-        raf = window.requestAnimationFrame(() => {
-          raf = 0;
-          const { x, y } = overviewPointerRef.current;
-          placeOverviewDragGhost(x, y);
-        });
-      }
-      const column = overviewColumnFromPoint(moveEvent.clientX, moveEvent.clientY);
-      setOverviewDropColumn((prev) => (prev === column ? prev : column));
-    };
-
-    const finish = (upEvent) => {
-      if (upEvent.pointerId !== pointerId) return;
-      window.removeEventListener('pointermove', onMove, true);
-      window.removeEventListener('pointerup', finish, true);
-      window.removeEventListener('pointercancel', finish, true);
-      if (holdTimer) window.clearTimeout(holdTimer);
-      if (raf) window.cancelAnimationFrame(raf);
-      try {
-        if (target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
-      } catch {
-        /* ignore */
-      }
-      document.body.classList.remove('overview-dragging');
-      if (active) {
-        const column = overviewColumnFromPoint(upEvent.clientX, upEvent.clientY);
-        if (column) moveProjectToOverviewColumn(projectId, column);
-      }
-      overviewDragIdRef.current = null;
-      setOverviewDragId(null);
-      setOverviewDropColumn(null);
-      setOverviewDragSize(null);
-      window.setTimeout(() => {
-        skipOverviewClickRef.current = false;
-      }, 200);
-    };
-
-    window.addEventListener('pointermove', onMove, { capture: true, passive: false });
-    window.addEventListener('pointerup', finish, true);
-    window.addEventListener('pointercancel', finish, true);
-  }, [moveProjectToOverviewColumn, placeOverviewDragGhost]);
-
-  const openOverviewProject = useCallback((project) => {
-    if (skipOverviewClickRef.current) {
-      skipOverviewClickRef.current = false;
-      return;
-    }
-    openProjectEdit(project);
-  }, [openProjectEdit]);
-
-  useLayoutEffect(() => {
-    if (!overviewDragId) return undefined;
-    const { x, y } = overviewPointerRef.current;
-    placeOverviewDragGhost(x, y);
-    return undefined;
-  }, [overviewDragId, placeOverviewDragGhost]);
-
   const designerFiltered = filterDesigner === 'all'
     ? projects
     : projects.filter((p) => getProjectDesignerIds(p).includes(filterDesigner));
-  const todayStr = today();
-  const archivedTodoCount = useMemo(() => {
-    const entries = archivedTodoEntries(todos, projects, todayStr);
-    return filterDesigner === 'all'
-      ? entries.length
-      : entries.filter((item) => item.designerId === filterDesigner).length;
-  }, [todos, projects, filterDesigner, todayStr]);
-  const showTodoArchive = todoArchiveOpen;
 
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
-  const inStudioProjects = activeProjects.filter((p) => (
-    !isPipelineStatus(p.status) && !isPotentialStatus(p.status)
-  ));
-  const devTimelinePreview = shouldUseDevTimelinePreview(inStudioProjects);
+  const devTimelinePreview = shouldUseDevTimelinePreview(activeProjects);
   const ganttProjects = devTimelinePreview
     ? getDevTimelinePreviewProjects(designers)
-    : activeProjects.filter((p) => !isPotentialStatus(p.status));
-  const mainProjects = inStudioProjects;
+    : activeProjects;
+  const mainProjects = activeProjects.filter(p => !isPipelineStatus(p.status));
   const pipelineProjects = activeProjects.filter(p => isPipelineStatus(p.status));
-  const potentialProjects = activeProjects.filter((p) => isPotentialStatus(p.status));
   const archivedProjects = designerFiltered
     .filter(p => p.status === 'Complete')
     .slice()
@@ -8176,20 +5483,13 @@ export default function App() {
       return (a.endDate || '').localeCompare(b.endDate || '');
     });
 
-  const thisWeekFeed = sortFeed(mainProjects.filter((p) => getProjectCategory(p) === 'thisWeek'));
-  const studioFeed = sortSecondaryFeed(mainProjects.filter((p) => getProjectCategory(p) === 'studio'));
-  const studioBoardFeed = [...thisWeekFeed, ...studioFeed];
-  const pipelineThisWeekFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'thisWeek'));
-  const pipelineStudioFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'studio'));
-  const overviewScheduleFeed = pipelineProjects.slice().sort((a, b) =>
-    (a.startDate || a.endDate || '').localeCompare(b.startDate || b.endDate || ''),
-  );
-  const overviewPotentialFeed = potentialProjects.slice().sort((a, b) =>
-    (a.startDate || a.endDate || '').localeCompare(b.startDate || b.endDate || ''),
-  );
+  const priorityFeed = sortFeed(mainProjects.filter((p) => getProjectCategory(p) === 'priority'));
+  const secondaryFeed = sortSecondaryFeed(mainProjects.filter((p) => getProjectCategory(p) === 'secondary'));
+  const pipelinePriorityFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'priority'));
+  const pipelineSecondaryFeed = sortFeed(pipelineProjects.filter((p) => getProjectCategory(p) === 'secondary'));
 
   const mainProjectCount = projects.filter(
-    p => p.status !== 'Complete' && !isPipelineStatus(p.status) && !isPotentialStatus(p.status),
+    p => p.status !== 'Complete' && !isPipelineStatus(p.status),
   ).length;
   const scheduledCount = projects.filter(p => isPipelineStatus(p.status)).length;
   const archivedCount = projects.filter(p => p.status === 'Complete').length;
@@ -8209,67 +5509,8 @@ export default function App() {
     return out;
   }, [projects]);
 
-  const overviewDragProject = overviewDragId
-    ? projects.find((p) => p.id === overviewDragId)
-    : null;
-  const overviewDragFromColumn = overviewColumnForProject(overviewDragProject);
-  const overviewDropPreviewHeight = overviewDragSize?.h || 88;
-  const overviewColDragProps = (columnId) => ({
-    showDropPreview: Boolean(
-      overviewDragId && overviewDropColumn === columnId && overviewDragFromColumn !== columnId
-    ),
-    dropPreviewHeight: overviewDropPreviewHeight,
-  });
-
-  const toggleOverviewColumn = useCallback((columnId) => {
-    setOverviewColumnVisibility((prev) => {
-      const turningOff = prev[columnId];
-      if (turningOff && OVERVIEW_COLUMN_IDS.filter((id) => prev[id]).length <= 1) {
-        return prev;
-      }
-      return { ...prev, [columnId]: !prev[columnId] };
-    });
-  }, []);
-
-  const overviewBoardCard = (p, boardDate) => (
-    <ProjectRow
-      key={p.id}
-      project={p}
-      designers={designers}
-      variant="board"
-      boardDate={boardDate}
-      draggable
-      dragging={overviewDragId === p.id}
-      onDragStart={startOverviewPointerDrag}
-      onClick={openOverviewProject}
-      onStatusChange={updateProjectStatus}
-    />
-  );
-
-  if (!authReady && !isAuthBypassed()) {
-    return (
-      <div className="access-gate">
-        <p className="access-gate-brand">Extended Whānau</p>
-      </div>
-    );
-  }
-
-  if (isSupabaseConfigured() && !sessionUser && !isAuthBypassed() && !accessUnlocked) {
-    return (
-      <AccessScreen
-        mode="google"
-        onGoogleSignIn={signInWithGoogle}
-        onLocalContinue={process.env.NODE_ENV === 'development'
-          ? () => setAccessUnlocked(true)
-          : undefined}
-        errorMessage={authError}
-        busy={authBusy}
-      />
-    );
-  }
-
-  if (!isSupabaseConfigured() && !accessUnlocked && !isAuthBypassed()) {
-    return <AccessScreen mode="code" onUnlock={() => setAccessUnlocked(true)} />;
+  if (!accessUnlocked) {
+    return <AccessScreen onUnlock={() => setAccessUnlocked(true)} />;
   }
 
   return (
@@ -8295,8 +5536,8 @@ export default function App() {
         <nav className="sidebar-nav">
           <button
             type="button"
-            className={`nav-item ${view === 'overview' ? 'active' : ''}`}
-            onClick={() => { setView('overview'); closeSidebar(); }}
+            className={`nav-item ${view === 'projects' ? 'active' : ''}`}
+            onClick={() => { setView('projects'); closeSidebar(); }}
           >
             Projects
           </button>
@@ -8309,20 +5550,11 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={`nav-item ${view === 'todos' ? 'active' : ''}`}
-            onClick={() => { setView('todos'); closeSidebar(); }}
+            className={`nav-item ${view === 'scheduled' ? 'active' : ''}`}
+            onClick={() => { setView('scheduled'); closeSidebar(); }}
           >
-            To-Do
+            Schedule
           </button>
-          {canAccessTimeTracker(sessionUser?.email) && (
-            <button
-              type="button"
-              className={`nav-item ${view === 'time' ? 'active' : ''}`}
-              onClick={() => { setView('time'); closeSidebar(); }}
-            >
-              Time
-            </button>
-          )}
           <button
             type="button"
             className={`nav-item ${view === 'archive' ? 'active' : ''}`}
@@ -8406,34 +5638,15 @@ export default function App() {
         </div>
 
         <div className="sidebar-bottom">
-          {sessionUser?.email ? (
-            <div className="sidebar-session">
-              <p className="sidebar-session-email">{sessionUser.email}</p>
-              <button type="button" className="sidebar-session-signout" onClick={signOutStudio}>
-                Sign out
-              </button>
-            </div>
-          ) : isSupabaseConfigured() ? (
-            <div className="sidebar-session">
-              <p className="sidebar-session-hint">
-                Sign in with Google to send dated to-dos to Tasks.
-              </p>
-              <button
-                type="button"
-                className="sidebar-session-signout"
-                onClick={signInWithGoogle}
-                disabled={authBusy}
-              >
-                {authBusy ? 'Signing in…' : 'Sign in'}
-              </button>
-            </div>
-          ) : null}
+          <div className="sidebar-date">
+            {new Date().toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'long' })}
+          </div>
         </div>
       </aside>
 
       {/* Main */}
       <main className="main">
-        <header className={`main-header${view === 'todos' ? ' main-header--todos' : ''}`}>
+        <header className="main-header">
           <div className="main-header-title-row">
             <button
               type="button"
@@ -8446,15 +5659,13 @@ export default function App() {
             </button>
             <div className="page-title-cluster">
               <h1 className="page-title">
-                {view === 'todos'
-                  ? 'To-Do'
-                  : view === 'time'
-                    ? 'Time'
-                    : view === 'overview'
-                      ? 'Projects'
-                      : view === 'archive'
-                        ? 'Archive'
-                        : 'Timeline'}
+                {view === 'projects'
+                  ? 'Projects'
+                  : view === 'scheduled'
+                    ? 'Schedule'
+                    : view === 'archive'
+                      ? 'Archive'
+                      : 'Timeline'}
               </h1>
               {view === 'gantt' && ganttFocusMeta ? (
                 <button
@@ -8477,24 +5688,11 @@ export default function App() {
             </div>
           </div>
           <div className="main-header-actions">
-            {((view === 'overview' && activeProjects.length > 0)
-              || (view === 'projects' && mainProjectCount > 0)
+            {((view === 'projects' && mainProjectCount > 0)
               || (view === 'scheduled' && scheduledCount > 0)
               || (view === 'archive' && archivedCount > 0)
-              || view === 'todos'
               || view !== 'archive') && (
               <div className="main-header-trailing">
-                {view === 'overview' && (
-                  <OverviewFilterMenu
-                    titles={{
-                      studio: overviewColumnTitles.studio,
-                      schedule: OVERVIEW_COLUMN_FALLBACK_TITLES.schedule,
-                      potential: OVERVIEW_COLUMN_FALLBACK_TITLES.potential,
-                    }}
-                    visibility={overviewColumnVisibility}
-                    onToggle={toggleOverviewColumn}
-                  />
-                )}
                 {view === 'projects' && mainProjectCount > 0 && (
                   <span className="page-title-badge" aria-label={`${mainProjectCount} active projects`}>
                     {mainProjectCount}
@@ -8516,40 +5714,14 @@ export default function App() {
                     {archivedCount}
                   </span>
                 )}
-                {view === 'todos' ? (
+                {view !== 'archive' && (
                   <button
                     type="button"
-                    className={`icon-bubble page-title-archive${showTodoArchive ? ' icon-bubble--on' : ''}`}
-                    aria-pressed={showTodoArchive}
-                    aria-label={
-                      showTodoArchive
-                        ? 'Show this week’s to-dos'
-                        : `Archive, ${archivedTodoCount} done ${archivedTodoCount === 1 ? 'to-do' : 'to-dos'}`
-                    }
-                    onClick={() => setTodoArchiveOpen((open) => !open)}
-                  >
-                    <svg className="page-title-archive-icon" width="15" height="15" viewBox="0 0 16 16" aria-hidden>
-                      <path
-                        d="M2.5 3.25h11a.75.75 0 0 1 .75.75v1.25H1.75V4a.75.75 0 0 1 .75-.75Zm-.75 3h12.5v6a1.25 1.25 0 0 1-1.25 1.25h-10A1.25 1.25 0 0 1 1.75 12.25v-6Zm4 2.25h4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    <span className="icon-bubble-text">Archive</span>
-                  </button>
-                ) : null}
-                {view !== 'archive' && view !== 'todos' && (
-                  <button
-                    type="button"
-                    className="icon-bubble header-new-project"
+                    className="sidebar-add-btn header-new-project"
                     onClick={() => setShowNewProject(true)}
-                    aria-label="Create"
+                    aria-label="New Project"
                   >
-                    <span className="icon-bubble-glyph" aria-hidden>+</span>
-                    <span className="icon-bubble-text">Create</span>
+                    +
                   </button>
                 )}
               </div>
@@ -8557,47 +5729,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className={`main-content${view === 'overview' ? ' main-content--overview' : ''}${view === 'todos' ? ' main-content--todos' : ''}`}>
-          {view === 'overview' && (
-            <div className={`overview-board${overviewDragId ? ' overview-board--dragging' : ''}`}>
-              {overviewColumnVisibility.studio ? (
-              <OverviewColumn
-                title={overviewColumnTitles.studio}
-                columnId="studio"
-                count={studioBoardFeed.length}
-                empty="No jobs in the studio."
-                renameFallback={CATEGORY_LABELS.studio}
-                onRename={(next) => setOverviewColumnTitles((t) => ({ ...t, studio: next }))}
-                {...overviewColDragProps('studio')}
-              >
-                {studioBoardFeed.map((p) => overviewBoardCard(p, 'due'))}
-              </OverviewColumn>
-              ) : null}
-              {overviewColumnVisibility.schedule ? (
-              <OverviewColumn
-                title="Scheduled"
-                columnId="schedule"
-                count={overviewScheduleFeed.length}
-                empty="Nothing booked yet."
-                {...overviewColDragProps('schedule')}
-              >
-                {overviewScheduleFeed.map((p) => overviewBoardCard(p, 'start'))}
-              </OverviewColumn>
-              ) : null}
-              {overviewColumnVisibility.potential ? (
-              <OverviewColumn
-                title="Potential"
-                columnId="potential"
-                count={overviewPotentialFeed.length}
-                empty="No potential jobs yet."
-                {...overviewColDragProps('potential')}
-              >
-                {overviewPotentialFeed.map((p) => overviewBoardCard(p, 'start'))}
-              </OverviewColumn>
-              ) : null}
-            </div>
-          )}
-
+        <div className="main-content">
           {view === 'projects' && (
             <div className="project-list">
               {mainProjects.length === 0 ? (
@@ -8608,10 +5740,10 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  {thisWeekFeed.length > 0 && (
+                  {priorityFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-feed-heading">This Week</h2>
-                      {thisWeekFeed.map(p => (
+                      <h2 className="project-feed-heading">Priority</h2>
+                      {priorityFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
@@ -8623,10 +5755,10 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  {studioFeed.length > 0 && (
+                  {secondaryFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-feed-heading">Studio</h2>
-                      {studioFeed.map(p => (
+                      <h2 className="project-feed-heading">Secondary</h2>
+                      {secondaryFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
@@ -8651,10 +5783,10 @@ export default function App() {
                 </div>
               ) : (
                 <>
-                  {pipelineThisWeekFeed.length > 0 && (
+                  {pipelinePriorityFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-feed-heading">This Week</h2>
-                      {pipelineThisWeekFeed.map(p => (
+                      <h2 className="project-feed-heading">Priority</h2>
+                      {pipelinePriorityFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
@@ -8666,10 +5798,10 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  {pipelineStudioFeed.length > 0 && (
+                  {pipelineSecondaryFeed.length > 0 && (
                     <div className="project-section">
-                      <h2 className="project-feed-heading">Studio</h2>
-                      {pipelineStudioFeed.map(p => (
+                      <h2 className="project-feed-heading">Secondary</h2>
+                      {pipelineSecondaryFeed.map(p => (
                         <ProjectRow
                           key={p.id}
                           project={p}
@@ -8708,28 +5840,6 @@ export default function App() {
             </div>
           )}
 
-          {view === 'todos' && (
-            <TodosView
-              todos={todos}
-              setTodos={setTodos}
-              setProjects={setProjects}
-              designers={designers}
-              projects={projects}
-              filterDesigner={filterDesigner}
-              showArchive={showTodoArchive}
-            />
-          )}
-
-          {view === 'time' && canAccessTimeTracker(sessionUser?.email) && (
-            <TimeTracker
-              projects={projects}
-              streamtimeUserId={getStreamtimeUserId(sessionUser?.email)}
-              onSyncToStreamtime={() => {
-                alert('Streamtime sync coming soon! For now, time is saved locally in your browser.');
-              }}
-            />
-          )}
-
           {view === 'gantt' && (
             <GanttChart
               projects={ganttProjects}
@@ -8746,30 +5856,12 @@ export default function App() {
         </div>
       </main>
 
-      {overviewDragProject && createPortal(
-        <div
-          ref={overviewDragGhostRef}
-          className="overview-drag-ghost"
-          style={{ width: overviewDragSize?.w || 350 }}
-        >
-          <ProjectRow
-            project={overviewDragProject}
-            designers={designers}
-            variant="board"
-            boardDate={overviewDragFromColumn === 'schedule' || overviewDragFromColumn === 'potential' ? 'start' : 'due'}
-            onClick={() => {}}
-            onStatusChange={() => {}}
-          />
-        </div>,
-        document.body,
-      )}
       {/* Modals */}
       {showNewProject && (
         <ProjectModal
           project={null}
           designers={designers}
           existingClients={existingClientNames}
-          sessionUser={sessionUser}
           onClose={() => setShowNewProject(false)}
           onSave={saveProject}
           onDelete={deleteProject}
@@ -8781,7 +5873,6 @@ export default function App() {
           project={editingProject}
           designers={designers}
           existingClients={existingClientNames}
-          sessionUser={sessionUser}
           initialTab={editingProjectTab}
           onClose={() => {
             setEditingProject(null);
