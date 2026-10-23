@@ -15,9 +15,9 @@
   align-items: center;
   box-sizing: border-box;
   /* padding + clock + gap + play button */
-  width: calc(18px + var(--timer-clock-w, 32px) + 8px + 32px + 10px);
+  width: calc(18px + var(--timer-clock-w, 32px) + 8px + 32px + 8px);
   height: 52px;
-  padding: 0 10px 0 18px;
+  padding: 0 8px 0 18px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--surface);
@@ -31,7 +31,7 @@
 .timer-pill--open {
   /* closed width + client name + its gap + save/reset when shown */
   width: min(
-    calc(18px + var(--timer-label-w, 60px) + 8px + var(--timer-clock-w, 32px) + 8px + 32px + var(--timer-actions-w, 0px) + 10px),
+    calc(18px + var(--timer-label-w, 60px) + 8px + var(--timer-clock-w, 32px) + 8px + 32px + var(--timer-actions-w, 0px) + 8px),
     360px,
     calc(100vw - 24px)
   );
@@ -59,12 +59,7 @@
   margin-right: 8px;
 }
 
-.timer-btn--save,
-.timer-btn--reset {
-  margin-left: 0;
-}
-
-.timer-btn--save {
+.timer-btn + .timer-btn {
   margin-left: 8px;
 }
 

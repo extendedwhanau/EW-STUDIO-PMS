@@ -357,7 +357,7 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
               onClick={reset}
               aria-label="Reset timer"
             >
-              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden>
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
                 <path
                   d="M3.2 3.2a1 1 0 0 1 1.4 0L8 6.6l3.4-3.4a1 1 0 1 1 1.4 1.4L9.4 8l3.4 3.4a1 1 0 0 1-1.4 1.4L8 9.4l-3.4 3.4a1 1 0 0 1-1.4-1.4L6.6 8 3.2 4.6a1 1 0 0 1 0-1.4z"
                   fill="currentColor"
