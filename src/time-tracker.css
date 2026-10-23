@@ -138,9 +138,37 @@
   }
 }
 
-/* Sit above the To-Do composer */
-.timer-dock--raised {
-  bottom: 112px;
+/* On the To-Do page the pill lives in the composer dock: one centred row on
+   desktop, stacked above the composer on phones. */
+.todo-composer-dock {
+  align-items: center;
+  gap: 12px;
+  width: min(1000px, calc(100% - 24px));
+}
+
+.todo-timer-slot {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.todo-timer-slot:empty {
+  display: none;
+}
+
+.timer-dock--inline {
+  position: static;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  .todo-composer-dock {
+    flex-direction: column-reverse;
+    width: min(680px, calc(100% - 24px));
+  }
+
+  .timer-dock--inline {
+    left: auto;
+  }
 }
 
 /* ── Time page (today vs standard day) ─────────────────────────────────── */

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { STANDARD_WORK_HOURS } from './timeTrackerConfig';
 
@@ -118,9 +119,10 @@ function logTime(timer, project, ms) {
 
 /**
  * Small always-on timer pill, bottom centre. Job picker lists the signed-in
- * designer's jobs first, then everything else.
+ * designer's jobs first, then everything else. When `slot` is given (the To-Do
+ * composer dock) the pill renders inside it so the two share one row.
  */
-export function TimerDock({ myJobs, otherJobs, raised = false }) {
+export function TimerDock({ myJobs, otherJobs, slot = null }) {
   const [timer, setTimerState] = useState(loadTimer);
   const [now, setNow] = useState(() => Date.now());
 
@@ -221,8 +223,8 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
     setTimer({ ...EMPTY_TIMER, jobId: timer.jobId });
   };
 
-  return (
-    <div className={`timer-dock${raised ? ' timer-dock--raised' : ''}`}>
+  const dock = (
+    <div className={`timer-dock${slot ? ' timer-dock--inline' : ''}`}>
       <div
         ref={pillRef}
         className={[
@@ -300,6 +302,7 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
       </div>
     </div>
   );
+  return slot ? createPortal(dock, slot) : dock;
 }
 
 function TimeEntry({ entry, onEdit, onDelete }) {
@@ -414,7 +417,7 @@ export default function TimeTracker({ onSyncToStreamtime }) {
 
       {todayEntries.length === 0 ? (
         <p className="time-tracker-empty">
-          Nothing logged yet today. Pick a job in the timer at the bottom left and press play.
+          Nothing logged yet today. Pick a job in the timer at the bottom and press play.
         </p>
       ) : (
         <div className="time-tracker-entries">

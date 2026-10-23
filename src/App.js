@@ -2490,6 +2490,7 @@ function TodosView({
   projects,
   filterDesigner,
   showArchive,
+  timerSlotRef,
 }) {
   const [draft, setDraft] = useState('');
   const [composerJob, setComposerJob] = useState('');
@@ -2783,7 +2784,12 @@ function TodosView({
           ))}
         </div>
       )}
-      {composer ? <div className="todo-composer-dock">{composer}</div> : null}
+      {composer ? (
+        <div className="todo-composer-dock">
+          {composer}
+          <div ref={timerSlotRef} className="todo-timer-slot" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -8145,6 +8151,7 @@ export default function App() {
   const showTodoArchive = todoArchiveOpen;
 
   const timeTrackerEnabled = canAccessTimeTracker(sessionUser?.email);
+  const [todoTimerSlot, setTodoTimerSlot] = useState(null);
   const timerJobs = useMemo(() => {
     const email = timeTrackerEmail(sessionUser?.email);
     const firstName = email.split('@')[0];
@@ -8740,6 +8747,7 @@ export default function App() {
               projects={projects}
               filterDesigner={filterDesigner}
               showArchive={showTodoArchive}
+              timerSlotRef={timeTrackerEnabled ? setTodoTimerSlot : undefined}
             />
           )}
 
@@ -8771,7 +8779,7 @@ export default function App() {
         <TimerDock
           myJobs={timerJobs.mine}
           otherJobs={timerJobs.others}
-          raised={view === 'todos' && !showTodoArchive}
+          slot={view === 'todos' && !showTodoArchive ? todoTimerSlot : null}
         />
       )}
 
