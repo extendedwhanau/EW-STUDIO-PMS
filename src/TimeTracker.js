@@ -189,7 +189,9 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
     <div className={`timer-dock${raised ? ' timer-dock--raised' : ''}`}>
       <div className={`timer-pill${timer.running ? ' timer-pill--running' : ''}`}>
         <label className={`timer-job${project ? '' : ' timer-job--empty'}`}>
-          <span className="timer-job-label">{project ? jobLabel(project) : '+ Job'}</span>
+          <span className="timer-job-label">
+            {project ? (String(project.client || '').trim() || jobLabel(project)) : '+ Job'}
+          </span>
           <select
             className="timer-job-select"
             value={timer.jobId}
