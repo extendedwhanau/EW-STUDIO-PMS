@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 import './gantt-timeline.css';
+import './time-tracker.css';
 import {
   isSupabaseConfigured,
   loadWorkspacePayload,
@@ -54,6 +55,8 @@ import {
   ganttTotalDays,
   pointerDayFromTrack as pointerDayFromTrackGeometry,
 } from './ganttGeometry';
+import TimeTracker from './TimeTracker';
+import { canAccessTimeTracker, getStreamtimeUserId } from './timeTrackerConfig';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -8311,6 +8314,15 @@ export default function App() {
           >
             To-Do
           </button>
+          {canAccessTimeTracker(sessionUser?.email) && (
+            <button
+              type="button"
+              className={`nav-item ${view === 'time' ? 'active' : ''}`}
+              onClick={() => { setView('time'); closeSidebar(); }}
+            >
+              Time
+            </button>
+          )}
           <button
             type="button"
             className={`nav-item ${view === 'archive' ? 'active' : ''}`}
@@ -8436,11 +8448,13 @@ export default function App() {
               <h1 className="page-title">
                 {view === 'todos'
                   ? 'To-Do'
-                  : view === 'overview'
-                    ? 'Projects'
-                    : view === 'archive'
-                      ? 'Archive'
-                      : 'Timeline'}
+                  : view === 'time'
+                    ? 'Time'
+                    : view === 'overview'
+                      ? 'Projects'
+                      : view === 'archive'
+                        ? 'Archive'
+                        : 'Timeline'}
               </h1>
               {view === 'gantt' && ganttFocusMeta ? (
                 <button
@@ -8703,6 +8717,16 @@ export default function App() {
               projects={projects}
               filterDesigner={filterDesigner}
               showArchive={showTodoArchive}
+            />
+          )}
+
+          {view === 'time' && canAccessTimeTracker(sessionUser?.email) && (
+            <TimeTracker
+              projects={projects}
+              streamtimeUserId={getStreamtimeUserId(sessionUser?.email)}
+              onSyncToStreamtime={() => {
+                alert('Streamtime sync coming soon! For now, time is saved locally in your browser.');
+              }}
             />
           )}
 
