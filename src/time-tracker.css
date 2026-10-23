@@ -1,0 +1,345 @@
+/* ── Timer dock (always-on: bottom of the sidebar on desktop, bottom centre on
+   phones). Lives outside the sidebar so a wide open pill overlaps the main area. */
+
+.timer-dock {
+  position: fixed;
+  left: 16px;
+  bottom: 48px;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.timer-pill {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  /* padding + clock + gap + play button */
+  width: calc(18px + var(--timer-clock-w, 32px) + 8px + 32px + 8px);
+  height: 52px;
+  padding: 0 8px 0 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 10px 28px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.timer-pill--open {
+  /* closed width + client name + its gap + save/reset when shown */
+  width: min(
+    calc(18px + var(--timer-label-w, 60px) + 8px + var(--timer-clock-w, 32px) + 8px + 32px + var(--timer-actions-w, 0px) + 8px),
+    360px,
+    calc(100vw - 24px)
+  );
+  cursor: default;
+}
+
+.timer-job {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 0;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.timer-pill--open .timer-job {
+  padding-right: 8px;
+  opacity: 1;
+  transition: opacity 0.35s ease 0.12s;
+}
+
+.timer-clock {
+  margin-right: 8px;
+}
+
+.timer-btn + .timer-btn {
+  margin-left: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-pill,
+  .timer-job,
+  .timer-pill--open .timer-job {
+    transition: none;
+  }
+}
+
+.timer-job-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.timer-job--empty .timer-job-label {
+  color: var(--text-secondary);
+}
+
+.timer-job-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.timer-clock {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+}
+
+.timer-pill--running .timer-clock {
+  color: var(--text-primary);
+}
+
+.timer-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--bubble-bg);
+  color: var(--bubble-icon-strong);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.timer-btn:hover:not(:disabled) {
+  background: var(--bubble-bg-hover);
+}
+
+.timer-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.timer-pill--running .timer-btn--toggle {
+  background: var(--text-primary);
+  color: var(--surface);
+}
+
+@media (max-width: 768px) {
+  .timer-dock {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
+/* On phones the To-Do page puts the pill in the composer dock, stacked above
+   the composer. On desktop it stays floating bottom left. */
+.todo-composer-dock {
+  align-items: center;
+  gap: 12px;
+  width: min(1000px, calc(100% - 24px));
+}
+
+.todo-timer-slot {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.todo-timer-slot:empty {
+  display: none;
+}
+
+.timer-dock--inline {
+  position: static;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  .todo-composer-dock {
+    flex-direction: column-reverse;
+    width: min(680px, calc(100% - 24px));
+  }
+
+  .timer-dock--inline {
+    left: auto;
+  }
+}
+
+/* ── Time page (today vs standard day) ─────────────────────────────────── */
+
+.time-tracker {
+  max-width: 560px;
+  padding-bottom: 96px;
+}
+
+.time-tracker-date {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.time-tracker-progress {
+  margin-bottom: 24px;
+}
+
+.time-tracker-progress-bar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.time-tracker-progress-fill {
+  height: 100%;
+  background: #22A45A;
+  transition: width 0.3s ease;
+}
+
+.time-tracker-progress-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 15px;
+}
+
+.time-tracker-logged {
+  font-weight: 600;
+}
+
+.time-tracker-separator {
+  color: var(--text-tertiary);
+}
+
+.time-tracker-target {
+  color: var(--text-secondary);
+}
+
+.time-tracker-remaining {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.time-tracker-empty {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.time-tracker-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.time-tracker-entry {
+  background: var(--project-card-fill);
+  border-radius: var(--control-radius);
+  padding: 12px 14px;
+}
+
+.time-tracker-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.time-tracker-entry-client {
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-tracker-entry-duration {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.time-tracker-entry-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.time-tracker-entry-action {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px 2px 0;
+}
+
+.time-tracker-entry-action:hover {
+  color: var(--text-primary);
+}
+
+.time-tracker-entry-action--danger:hover {
+  color: #d32f2f;
+}
+
+.time-tracker-entry-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.time-tracker-minutes-input {
+  width: 48px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 16px;
+  text-align: center;
+}
+
+.time-tracker-sync-section {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.time-tracker-sync-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.time-tracker-sync-btn {
+  padding: 10px 16px;
+  background: var(--text-primary);
+  color: var(--surface);
+  border: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.time-tracker-sync-btn:disabled {
+  background: var(--border);
+  color: var(--text-tertiary);
+  cursor: default;
+}
