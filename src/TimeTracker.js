@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { STANDARD_WORK_HOURS } from './timeTrackerConfig';
 
@@ -117,7 +117,7 @@ function logTime(timer, project, ms) {
 }
 
 /**
- * Small always-on timer pill, bottom-left. Job picker lists the signed-in
+ * Small always-on timer pill, bottom centre. Job picker lists the signed-in
  * designer's jobs first, then everything else.
  */
 export function TimerDock({ myJobs, otherJobs, raised = false }) {
@@ -140,11 +140,40 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
     return () => window.clearInterval(id);
   }, [timer.running]);
 
+  const [open, setOpen] = useState(false);
+  const pillRef = useRef(null);
+  const closeTimer = useRef(null);
+
+  const openPill = () => {
+    window.clearTimeout(closeTimer.current);
+    setOpen(true);
+  };
+
+  const schedulePillClose = () => {
+    window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => {
+      const root = pillRef.current;
+      if (root && root.contains(document.activeElement)) return;
+      setOpen(false);
+    }, 120);
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (e) => {
+      if (pillRef.current && !pillRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+
   const allJobs = [...myJobs, ...otherJobs];
   const project = allJobs.find((p) => p.id === timer.jobId) || null;
   const elapsed = elapsedMs(timer, now);
-  const showClock = timer.running || elapsed > 0;
   const canStop = !timer.running && elapsed >= STOP_AFTER_MS;
+  const expanded = open || !project;
 
   const changeJob = (nextId) => {
     if (!nextId || nextId === timer.jobId) return;
@@ -187,13 +216,29 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
 
   return (
     <div className={`timer-dock${raised ? ' timer-dock--raised' : ''}`}>
-      <div className={`timer-pill${timer.running ? ' timer-pill--running' : ''}`}>
-        <label className={`timer-job${project ? '' : ' timer-job--empty'}`}>
+      <div
+        ref={pillRef}
+        className={[
+          'timer-pill',
+          timer.running ? 'timer-pill--running' : '',
+          expanded ? 'timer-pill--open' : '',
+        ].filter(Boolean).join(' ')}
+        onMouseEnter={openPill}
+        onMouseLeave={schedulePillClose}
+        onBlur={schedulePillClose}
+        onClick={openPill}
+      >
+        <label
+          className={`timer-job${project ? '' : ' timer-job--empty'}`}
+          aria-hidden={!expanded}
+        >
           <span className="timer-job-label">
             {project ? (String(project.client || '').trim() || jobLabel(project)) : '+ Job'}
           </span>
           <select
             className="timer-job-select"
+            tabIndex={expanded ? 0 : -1}
+            onFocus={openPill}
             value={timer.jobId}
             aria-label="Job to track time against"
             onChange={(e) => changeJob(e.target.value)}
@@ -210,13 +255,14 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
             ))}
           </select>
         </label>
-        {showClock ? (
-          <span className="timer-clock" aria-live="off">{formatClock(elapsed)}</span>
-        ) : null}
+        <span className="timer-clock" aria-live="off">{formatClock(elapsed)}</span>
         <button
           type="button"
           className="timer-btn timer-btn--toggle"
-          onClick={toggle}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggle();
+          }}
           disabled={!project}
           aria-label={timer.running ? 'Pause timer' : 'Start timer'}
         >
@@ -231,7 +277,7 @@ export function TimerDock({ myJobs, otherJobs, raised = false }) {
             </svg>
           )}
         </button>
-        {canStop ? (
+        {canStop && expanded ? (
           <button
             type="button"
             className="timer-btn timer-btn--stop"

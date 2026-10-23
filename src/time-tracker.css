@@ -1,10 +1,11 @@
-/* ── Timer dock (always-on, bottom left) ───────────────────────────────── */
+/* ── Timer dock (always-on, bottom centre; matches the To-Do composer) ──── */
 
 .timer-dock {
   position: fixed;
-  left: calc(var(--sidebar-width) + 20px);
+  left: calc(var(--sidebar-width) + (100vw - var(--sidebar-width)) / 2);
   bottom: 48px;
   z-index: 50;
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -12,31 +13,48 @@
   pointer-events: auto;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  max-width: min(340px, calc(100vw - var(--sidebar-width) - 40px));
-  height: 44px;
-  padding: 0 6px 0 16px;
+  height: 52px;
+  padding: 0 10px 0 18px;
   border-radius: 999px;
   background: var(--surface);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 10px 28px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+}
+
+.timer-pill--open {
+  width: min(320px, calc(100vw - 24px));
+  justify-content: flex-start;
+  cursor: default;
 }
 
 .timer-job {
   position: relative;
-  display: flex;
+  display: none;
   align-items: center;
   min-width: 0;
   flex: 1 1 auto;
   cursor: pointer;
 }
 
+.timer-pill--open .timer-job {
+  display: flex;
+  animation: timer-job-in 0.2s ease;
+}
+
+@keyframes timer-job-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 .timer-job-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--text-primary);
@@ -100,12 +118,7 @@
 
 @media (max-width: 768px) {
   .timer-dock {
-    left: max(12px, env(safe-area-inset-left, 0px));
-    bottom: max(16px, env(safe-area-inset-bottom, 0px));
-  }
-
-  .timer-pill {
-    max-width: calc(100vw - 24px);
+    left: 50%;
   }
 }
 
