@@ -178,11 +178,18 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
   const expanded = open || !project;
   const clockText = formatClock(elapsed);
 
+  const jobText = project ? (String(project.client || '').trim() || jobLabel(project)) : '+ Job';
+
   const clockRef = useRef(null);
+  const labelRef = useRef(null);
   const [clockWidth, setClockWidth] = useState(0);
+  const [labelWidth, setLabelWidth] = useState(0);
   useLayoutEffect(() => {
     if (clockRef.current) setClockWidth(clockRef.current.offsetWidth);
   }, [clockText]);
+  useLayoutEffect(() => {
+    if (labelRef.current) setLabelWidth(labelRef.current.scrollWidth);
+  }, [jobText]);
 
   const changeJob = (nextId) => {
     if (!nextId || nextId === timer.jobId) return;
@@ -232,7 +239,11 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
           timer.running ? 'timer-pill--running' : '',
           expanded ? 'timer-pill--open' : '',
         ].filter(Boolean).join(' ')}
-        style={clockWidth ? { '--timer-clock-w': `${clockWidth}px` } : undefined}
+        style={{
+          ...(clockWidth ? { '--timer-clock-w': `${clockWidth}px` } : {}),
+          ...(labelWidth ? { '--timer-label-w': `${labelWidth}px` } : {}),
+          '--timer-stop-w': canStop && expanded ? '40px' : '0px',
+        }}
         onMouseEnter={openPill}
         onMouseLeave={schedulePillClose}
         onBlur={schedulePillClose}
@@ -242,9 +253,7 @@ export function TimerDock({ myJobs, otherJobs, slot = null }) {
           className={`timer-job${project ? '' : ' timer-job--empty'}`}
           aria-hidden={!expanded}
         >
-          <span className="timer-job-label">
-            {project ? (String(project.client || '').trim() || jobLabel(project)) : '+ Job'}
-          </span>
+          <span ref={labelRef} className="timer-job-label">{jobText}</span>
           <select
             className="timer-job-select"
             tabIndex={expanded ? 0 : -1}

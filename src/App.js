@@ -2500,6 +2500,9 @@ function TodosView({
   ));
   const [composerOpen, setComposerOpen] = useState(false);
   const composerRef = useRef(null);
+  const composerInputRef = useRef(null);
+  const composerMetaRef = useRef(null);
+  const [composerOpenWidth, setComposerOpenWidth] = useState(0);
   const composerBlurTimer = useRef(0);
 
   useEffect(() => {
@@ -2668,16 +2671,34 @@ function TodosView({
     }, 120);
   };
 
+  // Open width hugs the typed text plus the pickers, so a long to-do grows the bar.
+  useLayoutEffect(() => {
+    const input = composerInputRef.current;
+    const meta = composerMetaRef.current;
+    if (!input || !meta) return;
+    const style = window.getComputedStyle(input);
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const text = draft || input.placeholder || '';
+    const textWidth = ctx.measureText(text).width + 6;
+    const items = Array.from(meta.children);
+    const metaWidth = items.reduce((sum, el) => sum + el.getBoundingClientRect().width, 0)
+      + Math.max(0, items.length - 1) * 8 + 2;
+    setComposerOpenWidth(Math.ceil(18 + Math.max(textWidth, 110) + 10 + metaWidth + 12));
+  }, [draft, composerOwner, composerJob, composerDate, designers, jobOptions]);
+
   const composer = !showArchive ? (
     <div
       ref={composerRef}
       className={`todo-composer${composerOpen ? ' todo-composer--open' : ''}`}
+      style={composerOpenWidth ? { '--todo-composer-open-w': `${composerOpenWidth}px` } : undefined}
       onMouseEnter={openComposer}
       onMouseLeave={scheduleComposerClose}
       onFocus={openComposer}
       onBlur={scheduleComposerClose}
     >
       <input
+        ref={composerInputRef}
         className="todo-composer-input"
         type="text"
         value={draft}
@@ -2707,7 +2728,7 @@ function TodosView({
         aria-hidden={!composerOpen}
         inert={composerOpen ? undefined : true}
       >
-        <div className="todo-composer-meta">
+        <div ref={composerMetaRef} className="todo-composer-meta">
           <TodoDesignerPicker
             value={composerOwner}
             onChange={setComposerOwner}

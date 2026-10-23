@@ -5238,7 +5238,7 @@ body.client-overview-open {
 
 .todo-composer--open,
 .todo-composer:hover {
-  width: min(640px, calc(100% - 24px));
+  width: min(max(320px, var(--todo-composer-open-w, 640px)), 720px, calc(100% - 24px));
   padding: 0 12px 0 18px;
   gap: 10px;
 }
@@ -5276,6 +5276,7 @@ body.client-overview-open {
 
 .todo-composer--open .todo-composer-meta-wrap,
 .todo-composer:hover .todo-composer-meta-wrap {
+  flex-shrink: 0;
   grid-template-columns: 1fr;
   opacity: 1;
   transform: translateX(0);

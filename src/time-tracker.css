@@ -29,7 +29,12 @@
 }
 
 .timer-pill--open {
-  width: min(320px, calc(100vw - 24px));
+  /* closed width + client name + its gap + stop button when shown */
+  width: min(
+    calc(18px + var(--timer-label-w, 60px) + 8px + var(--timer-clock-w, 32px) + 8px + 32px + var(--timer-stop-w, 0px) + 10px),
+    320px,
+    calc(100vw - 24px)
+  );
   cursor: default;
 }
 
