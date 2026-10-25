@@ -4,7 +4,8 @@
 .timer-dock {
   position: fixed;
   left: 16px;
-  bottom: 48px;
+  /* Clear the sidebar sign-in block (pad + hint + button) with a small gap. */
+  bottom: 96px;
   z-index: 50;
   pointer-events: none;
 }
@@ -140,6 +141,7 @@
 @media (max-width: 768px) {
   .timer-dock {
     left: 50%;
+    bottom: 48px;
     transform: translateX(-50%);
   }
 }
