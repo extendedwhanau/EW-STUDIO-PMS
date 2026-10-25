@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import './App.css';
 import './gantt-timeline.css';
+import './time-tracker.css';
 import {
   isSupabaseConfigured,
   loadWorkspacePayload,
@@ -54,6 +55,8 @@ import {
   ganttTotalDays,
   pointerDayFromTrack as pointerDayFromTrackGeometry,
 } from './ganttGeometry';
+import TimeTracker, { TimerDock } from './TimeTracker';
+import { canAccessTimeTracker, timeTrackerEmail } from './timeTrackerConfig';
 
 // ── Designer palette (muted, contemporary fills + readable labels) ─────────────
 const DESIGNER_COLORS = [
@@ -2487,6 +2490,7 @@ function TodosView({
   projects,
   filterDesigner,
   showArchive,
+  timerSlotRef,
 }) {
   const [draft, setDraft] = useState('');
   const [composerJob, setComposerJob] = useState('');
@@ -2496,6 +2500,9 @@ function TodosView({
   ));
   const [composerOpen, setComposerOpen] = useState(false);
   const composerRef = useRef(null);
+  const composerInputRef = useRef(null);
+  const composerMetaRef = useRef(null);
+  const [composerOpenWidth, setComposerOpenWidth] = useState(0);
   const composerBlurTimer = useRef(0);
 
   useEffect(() => {
@@ -2664,16 +2671,34 @@ function TodosView({
     }, 120);
   };
 
+  // Open width hugs the typed text plus the pickers, so a long to-do grows the bar.
+  useLayoutEffect(() => {
+    const input = composerInputRef.current;
+    const meta = composerMetaRef.current;
+    if (!input || !meta) return;
+    const style = window.getComputedStyle(input);
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const text = draft || input.placeholder || '';
+    const textWidth = ctx.measureText(text).width + 6;
+    const items = Array.from(meta.children);
+    const metaWidth = items.reduce((sum, el) => sum + el.getBoundingClientRect().width, 0)
+      + Math.max(0, items.length - 1) * 8 + 2;
+    setComposerOpenWidth(Math.ceil(18 + Math.max(textWidth, 110) + 10 + metaWidth + 12));
+  }, [draft, composerOwner, composerJob, composerDate, designers, jobOptions]);
+
   const composer = !showArchive ? (
     <div
       ref={composerRef}
       className={`todo-composer${composerOpen ? ' todo-composer--open' : ''}`}
+      style={composerOpenWidth ? { '--todo-composer-open-w': `${composerOpenWidth}px` } : undefined}
       onMouseEnter={openComposer}
       onMouseLeave={scheduleComposerClose}
       onFocus={openComposer}
       onBlur={scheduleComposerClose}
     >
       <input
+        ref={composerInputRef}
         className="todo-composer-input"
         type="text"
         value={draft}
@@ -2703,7 +2728,7 @@ function TodosView({
         aria-hidden={!composerOpen}
         inert={composerOpen ? undefined : true}
       >
-        <div className="todo-composer-meta">
+        <div ref={composerMetaRef} className="todo-composer-meta">
           <TodoDesignerPicker
             value={composerOwner}
             onChange={setComposerOwner}
@@ -2780,7 +2805,12 @@ function TodosView({
           ))}
         </div>
       )}
-      {composer ? <div className="todo-composer-dock">{composer}</div> : null}
+      {composer ? (
+        <div className="todo-composer-dock">
+          {composer}
+          <div ref={timerSlotRef} className="todo-timer-slot" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -8141,6 +8171,31 @@ export default function App() {
   }, [todos, projects, filterDesigner, todayStr]);
   const showTodoArchive = todoArchiveOpen;
 
+  const timeTrackerEnabled = canAccessTimeTracker(sessionUser?.email);
+  const [todoTimerSlot, setTodoTimerSlot] = useState(null);
+  const timerMobile = useGanttMobileLayout();
+  const timerJobs = useMemo(() => {
+    const email = timeTrackerEmail(sessionUser?.email);
+    const firstName = email.split('@')[0];
+    const me = email
+      ? (designers.find((d) => normalizeEmail(d.email) === email)
+        || designers.find((d) => (
+          !d.email && String(d.name || '').trim().split(/\s+/)[0].toLowerCase() === firstName
+        )))
+      : null;
+    const open = projects
+      .filter((p) => p.status !== 'Complete')
+      .sort((a, b) => (
+        String(a.client || '').localeCompare(String(b.client || ''))
+        || String(a.name || '').localeCompare(String(b.name || ''))
+      ));
+    if (!me) return { mine: [], others: open };
+    const isMine = (p) => getProjectDesignerIds(p).map(String).includes(String(me.id));
+    const mine = open.filter(isMine);
+    const others = open.filter((p) => !isMine(p));
+    return { mine, others };
+  }, [projects, designers, sessionUser]);
+
   const activeProjects = designerFiltered.filter(p => p.status !== 'Complete');
   const inStudioProjects = activeProjects.filter((p) => (
     !isPipelineStatus(p.status) && !isPotentialStatus(p.status)
@@ -8311,6 +8366,15 @@ export default function App() {
           >
             To-Do
           </button>
+          {canAccessTimeTracker(sessionUser?.email) && (
+            <button
+              type="button"
+              className={`nav-item ${view === 'time' ? 'active' : ''}`}
+              onClick={() => { setView('time'); closeSidebar(); }}
+            >
+              Time
+            </button>
+          )}
           <button
             type="button"
             className={`nav-item ${view === 'archive' ? 'active' : ''}`}
@@ -8436,11 +8500,13 @@ export default function App() {
               <h1 className="page-title">
                 {view === 'todos'
                   ? 'To-Do'
-                  : view === 'overview'
-                    ? 'Projects'
-                    : view === 'archive'
-                      ? 'Archive'
-                      : 'Timeline'}
+                  : view === 'time'
+                    ? 'Time'
+                    : view === 'overview'
+                      ? 'Projects'
+                      : view === 'archive'
+                        ? 'Archive'
+                        : 'Timeline'}
               </h1>
               {view === 'gantt' && ganttFocusMeta ? (
                 <button
@@ -8703,6 +8769,15 @@ export default function App() {
               projects={projects}
               filterDesigner={filterDesigner}
               showArchive={showTodoArchive}
+              timerSlotRef={timeTrackerEnabled ? setTodoTimerSlot : undefined}
+            />
+          )}
+
+          {view === 'time' && canAccessTimeTracker(sessionUser?.email) && (
+            <TimeTracker
+              onSyncToStreamtime={() => {
+                alert('Streamtime sync isn’t connected yet. Your time is saved in this browser.');
+              }}
             />
           )}
 
@@ -8721,6 +8796,14 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {timeTrackerEnabled && (
+        <TimerDock
+          myJobs={timerJobs.mine}
+          otherJobs={timerJobs.others}
+          slot={timerMobile && view === 'todos' && !showTodoArchive ? todoTimerSlot : null}
+        />
+      )}
 
       {overviewDragProject && createPortal(
         <div
