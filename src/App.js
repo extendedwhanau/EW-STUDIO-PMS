@@ -2314,11 +2314,6 @@ function TodoJobCardRow({
   const dateState = item.date && !item.done ? workingDayCountdown(item.date) : null;
   const overdue = dateState?.kind === 'overdue';
   const dateLabel = formatTaskDateShort(item.date);
-  const assignedOptions = useMemo(() => ([
-    { value: '', label: 'No one' },
-    ...(designers || []).map((d) => ({ value: d.id, label: d.name })),
-  ]), [designers]);
-
   useLayoutEffect(() => {
     resizeTodoTextarea(titleRef.current);
   }, [item.title]);
@@ -2409,9 +2404,6 @@ function TodoJobCardRow({
       </div>
       {menuOpen ? (
         <div ref={menuRef} className="todo-task-menu" role="menu" aria-label={`Options for ${item.title}`}>
-          <label className="todo-task-menu-label" htmlFor={`todo-designer-${item.id}`}>
-            Designer
-          </label>
           <select
             id={`todo-designer-${item.id}`}
             className="todo-task-menu-select"
