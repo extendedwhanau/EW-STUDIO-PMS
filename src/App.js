@@ -2294,24 +2294,68 @@ function TodoDesignerPicker({
 }
 
 
+function resizeTodoTextarea(node) {
+  if (!node) return;
+  node.style.height = '0px';
+  node.style.height = `${Math.max(node.scrollHeight, 20)}px`;
+}
+
 function TodoJobCardRow({
   item,
+  designers,
   onToggle,
   onPatch,
   onRemove,
 }) {
+  const rowRef = useRef(null);
+  const menuRef = useRef(null);
+  const titleRef = useRef(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const dateState = item.date && !item.done ? workingDayCountdown(item.date) : null;
   const overdue = dateState?.kind === 'overdue';
   const dateLabel = formatTaskDateShort(item.date);
+  const assignedOptions = useMemo(() => ([
+    { value: '', label: 'No one' },
+    ...(designers || []).map((d) => ({ value: d.id, label: d.name })),
+  ]), [designers]);
+
+  useLayoutEffect(() => {
+    resizeTodoTextarea(titleRef.current);
+  }, [item.title]);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onPointerDown = (e) => {
+      if (menuRef.current?.contains(e.target)) return;
+      if (rowRef.current?.contains(e.target) && e.target.closest('.todo-job-card-title')) return;
+      setMenuOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
 
   return (
-    <div className={`todo-job-card-row${item.done ? ' todo-job-card-row--done' : ''}`}>
+    <div
+      ref={rowRef}
+      className={`todo-job-card-row${item.done ? ' todo-job-card-row--done' : ''}${menuOpen ? ' todo-job-card-row--menu-open' : ''}`}
+    >
       <button
         type="button"
         className={`todo-check todo-check--square${item.done ? ' todo-check--done' : ''}`}
         aria-label={item.done ? `Mark ${item.title} as not done` : `Mark ${item.title} as done`}
         aria-pressed={item.done}
-        onClick={onToggle}
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenuOpen(false);
+          onToggle();
+        }}
       >
         {item.done ? (
           <svg viewBox="0 0 16 16" aria-hidden>
@@ -2326,20 +2370,28 @@ function TodoJobCardRow({
           </svg>
         ) : null}
       </button>
-      <input
+      <textarea
+        ref={titleRef}
         className="todo-job-card-title"
-        type="text"
+        rows={1}
         value={item.title}
         aria-label="To-do"
-        onChange={(e) => onPatch({ title: e.target.value })}
+        aria-expanded={menuOpen}
+        aria-haspopup="menu"
+        onClick={() => setMenuOpen(true)}
+        onChange={(e) => {
+          onPatch({ title: e.target.value });
+          resizeTodoTextarea(e.target);
+        }}
         onBlur={(e) => {
           const next = e.target.value.trim();
           onPatch({ title: next || item.title });
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             e.currentTarget.blur();
+            setMenuOpen(false);
           }
         }}
       />
@@ -2354,15 +2406,39 @@ function TodoJobCardRow({
             rangeFormat="task"
           />
         </div>
-        <button
-          type="button"
-          className="todo-job-card-remove"
-          onClick={onRemove}
-          aria-label={`Remove ${item.title}`}
-        >
-          ×
-        </button>
       </div>
+      {menuOpen ? (
+        <div ref={menuRef} className="todo-task-menu" role="menu" aria-label={`Options for ${item.title}`}>
+          <label className="todo-task-menu-label" htmlFor={`todo-designer-${item.id}`}>
+            Designer
+          </label>
+          <select
+            id={`todo-designer-${item.id}`}
+            className="todo-task-menu-select"
+            value={item.designerId || ''}
+            aria-label="Assigned to"
+            onChange={(e) => {
+              onPatch({ designerId: e.target.value });
+              setMenuOpen(false);
+            }}
+          >
+            {assignedOptions.map((opt) => (
+              <option key={opt.value || 'none'} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="todo-task-menu-delete"
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false);
+              onRemove();
+            }}
+          >
+            Delete task
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2370,6 +2446,7 @@ function TodoJobCardRow({
 function TodoJobCard({
   job,
   designerId,
+  designers,
   showArchive,
   jobOptions,
   onAdd,
@@ -2380,6 +2457,7 @@ function TodoJobCard({
 }) {
   const [draft, setDraft] = useState('');
   const [draftDate, setDraftDate] = useState('');
+  const draftRef = useRef(null);
   const title = job.project
     ? todoClientName(job.project)
     : (job.items.length ? 'Other' : '');
@@ -2391,6 +2469,10 @@ function TodoJobCard({
     }
     return opts;
   }, [jobOptions, job.projectId, job.project]);
+
+  useLayoutEffect(() => {
+    resizeTodoTextarea(draftRef.current);
+  }, [draft]);
 
   const submit = () => {
     const next = draft.trim();
@@ -2435,6 +2517,7 @@ function TodoJobCard({
               <TodoJobCardRow
                 key={item.id}
                 item={item}
+                designers={designers}
                 onToggle={() => onToggle(item)}
                 onPatch={(patch) => onPatch(item.id, patch)}
                 onRemove={() => onRemove(item.id)}
@@ -2445,15 +2528,19 @@ function TodoJobCard({
         {!showArchive ? (
           <div className={`todo-job-card-row todo-job-card-row--new${hasDraft ? ' todo-job-card-row--typing' : ''}`}>
             <span className="todo-check todo-check--square todo-check--ghost" aria-hidden />
-            <input
+            <textarea
+              ref={draftRef}
               className="todo-job-card-title todo-job-card-draft"
-              type="text"
+              rows={1}
               value={draft}
               placeholder="New Task"
               aria-label={title ? `Add task to ${title}` : 'New Task'}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                resizeTodoTextarea(e.target);
+              }}
               onKeyDown={(e) => {
-                if (e.key !== 'Enter') return;
+                if (e.key !== 'Enter' || e.shiftKey) return;
                 e.preventDefault();
                 submit();
               }}
@@ -2496,6 +2583,7 @@ function TodosView({
   ));
   const [composerOpen, setComposerOpen] = useState(false);
   const composerRef = useRef(null);
+  const composerInputRef = useRef(null);
   const composerBlurTimer = useRef(0);
 
   useEffect(() => {
@@ -2509,6 +2597,10 @@ function TodosView({
   useEffect(() => () => {
     window.clearTimeout(composerBlurTimer.current);
   }, []);
+
+  useLayoutEffect(() => {
+    resizeTodoTextarea(composerInputRef.current);
+  }, [draft, composerOpen]);
 
   const projectById = useMemo(() => {
     const map = new Map();
@@ -2673,20 +2765,24 @@ function TodosView({
       onFocus={openComposer}
       onBlur={scheduleComposerClose}
     >
-      <input
+      <textarea
+        ref={composerInputRef}
         className="todo-composer-input"
-        type="text"
+        rows={1}
         value={draft}
         placeholder="Add a to-do"
         aria-label="Add a to-do"
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          resizeTodoTextarea(e.target);
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && !draft.trim()) {
             e.currentTarget.blur();
             setComposerOpen(false);
             return;
           }
-          if (e.key !== 'Enter') return;
+          if (e.key !== 'Enter' || e.shiftKey) return;
           e.preventDefault();
           submitDraft();
         }}
@@ -2766,6 +2862,7 @@ function TodosView({
                     key={job.projectId || 'no-job'}
                     job={job}
                     designerId={col.id}
+                    designers={designers}
                     showArchive={showArchive}
                     jobOptions={jobOptions}
                     onAdd={addToJob}
