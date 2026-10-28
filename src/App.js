@@ -12,6 +12,7 @@ import {
   saveWorkspacePayload,
   fetchWorkspaceUpdatedAt,
   subscribeWorkspaceChanges,
+  unionMergeTodos,
 } from './supabaseData';
 import { supabase } from './supabaseClient';
 import { isStudioEmail, normalizeEmail } from './studioConfig';
@@ -2423,6 +2424,7 @@ function TodoJobCardRow({
             className="todo-task-menu-delete"
             role="menuitem"
             onClick={() => {
+              if (!window.confirm(`Delete “${item.title}”?`)) return;
               setMenuOpen(false);
               onRemove();
             }}
@@ -7470,29 +7472,43 @@ function normalizeRemoteWorkspace({ designers, projects, todos }) {
   };
 }
 
-/** Prefer keeping local todos when a remote payload arrives with none. */
-function mergeWorkspaceTodos(localTodos, remoteTodos) {
-  const remote = Array.isArray(remoteTodos) ? remoteTodos : [];
-  const local = Array.isArray(localTodos) ? localTodos : [];
-  if (remote.length > 0) return remote;
-  if (local.length > 0) return local;
-  return remote;
+/** Union local + remote by id; never drop local-only ids on pull (except intentional deletes). */
+function mergeWorkspaceTodos(localTodos, remoteTodos, deletedIds = []) {
+  return unionMergeTodos(localTodos, remoteTodos, {
+    deletedIds,
+    prefer: 'secondary',
+  }).map(normalizeTodo).filter(Boolean);
 }
 
-function applyRemoteWorkspaceState(remote, setDesigners, setProjects, setTodos, todosRef) {
+function applyRemoteWorkspaceState(
+  remote,
+  setDesigners,
+  setProjects,
+  setTodos,
+  todosRef,
+  deletedTodoIdsRef,
+) {
   const normalized = normalizeRemoteWorkspace(remote);
-  const mergedTodos = mergeWorkspaceTodos(todosRef.current, normalized.todos);
+  const deletedIds = [...(deletedTodoIdsRef?.current || [])];
+  const mergedTodos = mergeWorkspaceTodos(todosRef.current, normalized.todos, deletedIds);
   setDesigners(normalized.designers);
   setProjects(normalized.projects);
   setTodos(mergedTodos);
 
-  // If cloud lost its to-dos but this browser still has them, write them back.
-  const shouldHealTodos = normalized.todos.length === 0 && mergedTodos.length > 0;
-  if (shouldHealTodos) {
+  // Write back when this browser still has ids the cloud is missing.
+  const remoteIds = new Set((normalized.todos || []).map((t) => String(t.id || '')));
+  const hasLocalOnly = mergedTodos.some((t) => t.id && !remoteIds.has(String(t.id)));
+  if (hasLocalOnly || (normalized.todos.length === 0 && mergedTodos.length > 0)) {
     return saveWorkspacePayload({
       designers: normalized.designers,
       projects: normalized.projects,
       todos: mergedTodos,
+      deletedTodoIds: deletedIds,
+    }).then((result) => {
+      if (result?.ok && deletedTodoIdsRef?.current) {
+        deletedIds.forEach((id) => deletedTodoIdsRef.current.delete(id));
+      }
+      return result;
     });
   }
   return Promise.resolve({ ok: true });
@@ -7669,6 +7685,7 @@ export default function App() {
   const designersRef = useRef(designers);
   const projectsRef = useRef(projects);
   const todosRef = useRef(todos);
+  const pendingDeletedTodoIdsRef = useRef(new Set());
   designersRef.current = designers;
   projectsRef.current = projects;
   todosRef.current = todos;
@@ -7710,6 +7727,7 @@ export default function App() {
           setProjects,
           setTodos,
           todosRef,
+          pendingDeletedTodoIdsRef,
         );
         if (heal?.ok && heal.updatedAt) {
           remoteUpdatedAtRef.current = heal.updatedAt;
@@ -7847,6 +7865,7 @@ export default function App() {
           setProjects,
           setTodos,
           todosRef,
+          pendingDeletedTodoIdsRef,
         );
         if (heal?.ok && heal.updatedAt) {
           remoteUpdatedAtRef.current = heal.updatedAt;
@@ -7854,13 +7873,18 @@ export default function App() {
           remoteUpdatedAtRef.current = remote.updatedAt;
         }
       } else {
+        const deletedTodoIds = [...pendingDeletedTodoIdsRef.current];
         const result = await saveWorkspacePayload({
           designers: designersRef.current,
           projects: projectsRef.current,
           todos: todosRef.current,
+          deletedTodoIds,
         });
-        if (result.ok && result.updatedAt) {
-          remoteUpdatedAtRef.current = result.updatedAt;
+        if (result.ok) {
+          deletedTodoIds.forEach((id) => pendingDeletedTodoIdsRef.current.delete(id));
+          if (result.updatedAt) {
+            remoteUpdatedAtRef.current = result.updatedAt;
+          }
         } else if (remote.updatedAt) {
           remoteUpdatedAtRef.current = remote.updatedAt;
         }
@@ -7899,6 +7923,12 @@ export default function App() {
 
     const t = window.setTimeout(() => {
       const prev = notifyPrevRef.current;
+      const prevIds = new Set((prev.todos || []).map((item) => String(item.id || '')).filter(Boolean));
+      const nextIds = new Set((todos || []).map((item) => String(item.id || '')).filter(Boolean));
+      prevIds.forEach((id) => {
+        if (!nextIds.has(id)) pendingDeletedTodoIdsRef.current.add(id);
+      });
+      const deletedTodoIds = [...pendingDeletedTodoIdsRef.current];
       const events = buildNotifyEvents({
         prevProjects: prev.projects,
         nextProjects: projects,
@@ -7909,12 +7939,15 @@ export default function App() {
       });
       enqueueStudioNotifications(events);
       notifyPrevRef.current = { designers, projects, todos };
-      saveWorkspacePayload({ designers, projects, todos }).then((result) => {
-        if (result.ok && result.updatedAt) {
-          remoteUpdatedAtRef.current = result.updatedAt;
-          if (pendingRemoteUpdatedAtRef.current
-            && !isRemoteNewer(pendingRemoteUpdatedAtRef.current, result.updatedAt)) {
-            pendingRemoteUpdatedAtRef.current = null;
+      saveWorkspacePayload({ designers, projects, todos, deletedTodoIds }).then((result) => {
+        if (result.ok) {
+          deletedTodoIds.forEach((id) => pendingDeletedTodoIdsRef.current.delete(id));
+          if (result.updatedAt) {
+            remoteUpdatedAtRef.current = result.updatedAt;
+            if (pendingRemoteUpdatedAtRef.current
+              && !isRemoteNewer(pendingRemoteUpdatedAtRef.current, result.updatedAt)) {
+              pendingRemoteUpdatedAtRef.current = null;
+            }
           }
         }
       });

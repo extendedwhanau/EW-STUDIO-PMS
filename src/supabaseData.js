@@ -2,6 +2,54 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const WORKSPACE_ID = 'main';
 
+function todoStamp(todo) {
+  if (!todo) return 0;
+  const candidates = [todo.doneAt, todo.createdAt, todo.archivedAt]
+    .map((v) => Date.parse(String(v || '')) || 0);
+  return Math.max(0, ...candidates);
+}
+
+/**
+ * Union merge to-dos by id.
+ * Prefer higher doneAt/createdAt stamp; on equal stamp, `prefer` side wins field merges.
+ * Ids in deletedIds are omitted (intentional deletes).
+ */
+export function unionMergeTodos(primary, secondary, {
+  deletedIds = [],
+  prefer = 'secondary',
+} = {}) {
+  const deleted = new Set((deletedIds || []).map((id) => String(id || '').trim()).filter(Boolean));
+  const byId = new Map();
+
+  const consider = (item, isPreferredSide) => {
+    if (!item) return;
+    const id = String(item.id || '').trim();
+    if (!id || deleted.has(id)) return;
+    const prev = byId.get(id);
+    if (!prev) {
+      byId.set(id, item);
+      return;
+    }
+    const prevStamp = todoStamp(prev);
+    const nextStamp = todoStamp(item);
+    if (nextStamp > prevStamp) {
+      byId.set(id, { ...prev, ...item });
+    } else if (nextStamp < prevStamp) {
+      byId.set(id, { ...item, ...prev });
+    } else if (isPreferredSide) {
+      byId.set(id, { ...prev, ...item });
+    } else {
+      byId.set(id, { ...item, ...prev });
+    }
+  };
+
+  const primaryPreferred = prefer === 'primary';
+  (Array.isArray(primary) ? primary : []).forEach((item) => consider(item, primaryPreferred));
+  (Array.isArray(secondary) ? secondary : []).forEach((item) => consider(item, !primaryPreferred));
+
+  return Array.from(byId.values());
+}
+
 /**
  * Load shared designers + projects from Supabase.
  * @returns {Promise<{ designers: unknown[], projects: unknown[], todos: unknown[], updatedAt: string | null } | null>}
@@ -50,13 +98,21 @@ export async function fetchWorkspaceUpdatedAt() {
 
 /**
  * Save full workspace (replace payload for id = main).
- * Protects to-dos from accidental wipes: never replace a non-empty cloud
- * list with a missing or empty todos array (deploy / sign-in races).
+ * Union-merges to-dos by id so a stale/partial client cannot wipe the cloud list.
+ * Pass deletedTodoIds for intentional removals.
  */
 export async function saveWorkspacePayload(payload) {
   if (!supabase) return { ok: false, error: 'not configured' };
 
-  let nextPayload = payload;
+  const deletedTodoIds = Array.isArray(payload?.deletedTodoIds)
+    ? payload.deletedTodoIds
+    : [];
+  const {
+    deletedTodoIds: _omitDeleted,
+    ...payloadWithoutDeleted
+  } = payload || {};
+
+  let nextPayload = payloadWithoutDeleted;
   try {
     const { data: existing, error: readError } = await supabase
       .from('studio_workspace')
@@ -71,8 +127,25 @@ export async function saveWorkspacePayload(payload) {
       const hasTodosKey = payload && Object.prototype.hasOwnProperty.call(payload, 'todos');
       const incomingTodos = hasTodosKey && Array.isArray(payload.todos) ? payload.todos : null;
 
-      if (existingTodos.length > 0 && (!hasTodosKey || incomingTodos?.length === 0)) {
-        nextPayload = { ...payload, todos: existingTodos };
+      if (!hasTodosKey) {
+        nextPayload = {
+          ...payloadWithoutDeleted,
+          todos: unionMergeTodos(existingTodos, [], { deletedIds: deletedTodoIds }),
+        };
+      } else if (!incomingTodos || incomingTodos.length === 0) {
+        // Empty/missing list: keep cloud todos except intentional deletes.
+        nextPayload = {
+          ...payloadWithoutDeleted,
+          todos: unionMergeTodos(existingTodos, [], { deletedIds: deletedTodoIds }),
+        };
+      } else {
+        nextPayload = {
+          ...payloadWithoutDeleted,
+          todos: unionMergeTodos(existingTodos, incomingTodos, {
+            deletedIds: deletedTodoIds,
+            prefer: 'secondary',
+          }),
+        };
       }
     }
   } catch (err) {
