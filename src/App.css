@@ -5254,20 +5254,28 @@ body.client-overview-open {
   max-height: 140px;
   height: auto;
   margin: 0;
-  padding: 0 10px 0 0;
+  padding: 0;
   border: none;
   background: transparent;
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.02em;
-  line-height: 1.35;
+  line-height: 28px;
   color: var(--text-primary);
-  text-align: left;
+  text-align: center;
   outline: none;
   resize: none;
   overflow-y: auto;
   field-sizing: content;
+}
+
+/* Open pill: type left-aligned; keep single-line text vertically centred with chips */
+.todo-composer--open .todo-composer-input,
+.todo-composer:hover .todo-composer-input {
+  text-align: left;
+  line-height: 1.35;
+  padding: 0 10px 0 0;
 }
 
 .todo-composer-meta-wrap {
