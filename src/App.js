@@ -13,6 +13,7 @@ import {
   fetchWorkspaceUpdatedAt,
   subscribeWorkspaceChanges,
   unionMergeTodos,
+  unionMergeProjects,
 } from './supabaseData';
 import { supabase } from './supabaseClient';
 import { isStudioEmail, normalizeEmail } from './studioConfig';
@@ -1227,6 +1228,7 @@ function normalizeTodo(item) {
   const dateRaw = String(item.date || '').trim();
   const date = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : '';
   const done = Boolean(item.done);
+  const createdAt = item.createdAt || new Date().toISOString();
   return {
     id: item.id || uuidv4(),
     title,
@@ -1234,7 +1236,8 @@ function normalizeTodo(item) {
     projectId: String(item.projectId || '').trim(),
     date,
     done,
-    createdAt: item.createdAt || new Date().toISOString(),
+    createdAt,
+    updatedAt: item.updatedAt || createdAt,
     doneAt: done ? (item.doneAt || new Date().toISOString()) : '',
   };
 }
@@ -2702,19 +2705,21 @@ function TodosView({
     );
     if (!ids.size) return;
     const nextId = String(nextProjectId || '').trim();
+    const updatedAt = new Date().toISOString();
     setTodos((prev) => prev.map((item) => {
       if (!ids.has(item.id)) return item;
-      return normalizeTodo({ ...item, projectId: nextId }) || item;
+      return normalizeTodo({ ...item, projectId: nextId, updatedAt }) || item;
     }));
   };
 
   const patchTodo = (id, patch) => {
+    const updatedAt = new Date().toISOString();
     setTodos((prev) => prev.map((item) => {
       if (item.id !== id) return item;
       if (Object.prototype.hasOwnProperty.call(patch, 'title')) {
-        return { ...item, title: patch.title };
+        return { ...item, title: patch.title, updatedAt };
       }
-      return normalizeTodo({ ...item, ...patch }) || item;
+      return normalizeTodo({ ...item, ...patch, updatedAt }) || item;
     }));
   };
 
@@ -7480,33 +7485,63 @@ function mergeWorkspaceTodos(localTodos, remoteTodos, deletedIds = []) {
   }).map(normalizeTodo).filter(Boolean);
 }
 
+function mergeWorkspaceProjects(localProjects, remoteProjects, deletedIds = []) {
+  return unionMergeProjects(localProjects, remoteProjects, {
+    deletedIds,
+    prefer: 'secondary',
+  }).map(normalizeRemoteProject);
+}
+
 function applyRemoteWorkspaceState(
   remote,
   setDesigners,
   setProjects,
   setTodos,
   todosRef,
+  projectsRef,
   deletedTodoIdsRef,
+  deletedProjectIdsRef,
 ) {
   const normalized = normalizeRemoteWorkspace(remote);
-  const deletedIds = [...(deletedTodoIdsRef?.current || [])];
-  const mergedTodos = mergeWorkspaceTodos(todosRef.current, normalized.todos, deletedIds);
+  const deletedTodoIds = [...(deletedTodoIdsRef?.current || [])];
+  const deletedProjectIds = [...(deletedProjectIdsRef?.current || [])];
+  const mergedTodos = mergeWorkspaceTodos(todosRef.current, normalized.todos, deletedTodoIds);
+  const mergedProjects = mergeWorkspaceProjects(
+    projectsRef.current,
+    normalized.projects,
+    deletedProjectIds,
+  );
   setDesigners(normalized.designers);
-  setProjects(normalized.projects);
+  setProjects(mergedProjects);
   setTodos(mergedTodos);
 
   // Write back when this browser still has ids the cloud is missing.
-  const remoteIds = new Set((normalized.todos || []).map((t) => String(t.id || '')));
-  const hasLocalOnly = mergedTodos.some((t) => t.id && !remoteIds.has(String(t.id)));
-  if (hasLocalOnly || (normalized.todos.length === 0 && mergedTodos.length > 0)) {
+  const remoteTodoIds = new Set((normalized.todos || []).map((t) => String(t.id || '')));
+  const remoteProjectIds = new Set((normalized.projects || []).map((p) => String(p.id || '')));
+  const hasLocalOnlyTodos = mergedTodos.some((t) => t.id && !remoteTodoIds.has(String(t.id)));
+  const hasLocalOnlyProjects = mergedProjects.some(
+    (p) => p.id && !remoteProjectIds.has(String(p.id)),
+  );
+  if (
+    hasLocalOnlyTodos
+    || hasLocalOnlyProjects
+    || (normalized.todos.length === 0 && mergedTodos.length > 0)
+    || (normalized.projects.length === 0 && mergedProjects.length > 0)
+  ) {
     return saveWorkspacePayload({
       designers: normalized.designers,
-      projects: normalized.projects,
+      projects: mergedProjects,
       todos: mergedTodos,
-      deletedTodoIds: deletedIds,
+      deletedTodoIds,
+      deletedProjectIds,
     }).then((result) => {
-      if (result?.ok && deletedTodoIdsRef?.current) {
-        deletedIds.forEach((id) => deletedTodoIdsRef.current.delete(id));
+      if (result?.ok) {
+        if (deletedTodoIdsRef?.current) {
+          deletedTodoIds.forEach((id) => deletedTodoIdsRef.current.delete(id));
+        }
+        if (deletedProjectIdsRef?.current) {
+          deletedProjectIds.forEach((id) => deletedProjectIdsRef.current.delete(id));
+        }
       }
       return result;
     });
@@ -7686,6 +7721,7 @@ export default function App() {
   const projectsRef = useRef(projects);
   const todosRef = useRef(todos);
   const pendingDeletedTodoIdsRef = useRef(new Set());
+  const pendingDeletedProjectIdsRef = useRef(new Set());
   designersRef.current = designers;
   projectsRef.current = projects;
   todosRef.current = todos;
@@ -7727,7 +7763,9 @@ export default function App() {
           setProjects,
           setTodos,
           todosRef,
+          projectsRef,
           pendingDeletedTodoIdsRef,
+          pendingDeletedProjectIdsRef,
         );
         if (heal?.ok && heal.updatedAt) {
           remoteUpdatedAtRef.current = heal.updatedAt;
@@ -7865,7 +7903,9 @@ export default function App() {
           setProjects,
           setTodos,
           todosRef,
+          projectsRef,
           pendingDeletedTodoIdsRef,
+          pendingDeletedProjectIdsRef,
         );
         if (heal?.ok && heal.updatedAt) {
           remoteUpdatedAtRef.current = heal.updatedAt;
@@ -7874,14 +7914,17 @@ export default function App() {
         }
       } else {
         const deletedTodoIds = [...pendingDeletedTodoIdsRef.current];
+        const deletedProjectIds = [...pendingDeletedProjectIdsRef.current];
         const result = await saveWorkspacePayload({
           designers: designersRef.current,
           projects: projectsRef.current,
           todos: todosRef.current,
           deletedTodoIds,
+          deletedProjectIds,
         });
         if (result.ok) {
           deletedTodoIds.forEach((id) => pendingDeletedTodoIdsRef.current.delete(id));
+          deletedProjectIds.forEach((id) => pendingDeletedProjectIdsRef.current.delete(id));
           if (result.updatedAt) {
             remoteUpdatedAtRef.current = result.updatedAt;
           }
@@ -7923,12 +7966,22 @@ export default function App() {
 
     const t = window.setTimeout(() => {
       const prev = notifyPrevRef.current;
-      const prevIds = new Set((prev.todos || []).map((item) => String(item.id || '')).filter(Boolean));
-      const nextIds = new Set((todos || []).map((item) => String(item.id || '')).filter(Boolean));
-      prevIds.forEach((id) => {
-        if (!nextIds.has(id)) pendingDeletedTodoIdsRef.current.add(id);
+      const prevTodoIds = new Set((prev.todos || []).map((item) => String(item.id || '')).filter(Boolean));
+      const nextTodoIds = new Set((todos || []).map((item) => String(item.id || '')).filter(Boolean));
+      prevTodoIds.forEach((id) => {
+        if (!nextTodoIds.has(id)) pendingDeletedTodoIdsRef.current.add(id);
+      });
+      const prevProjectIds = new Set(
+        (prev.projects || []).map((item) => String(item.id || '')).filter(Boolean),
+      );
+      const nextProjectIds = new Set(
+        (projects || []).map((item) => String(item.id || '')).filter(Boolean),
+      );
+      prevProjectIds.forEach((id) => {
+        if (!nextProjectIds.has(id)) pendingDeletedProjectIdsRef.current.add(id);
       });
       const deletedTodoIds = [...pendingDeletedTodoIdsRef.current];
+      const deletedProjectIds = [...pendingDeletedProjectIdsRef.current];
       const events = buildNotifyEvents({
         prevProjects: prev.projects,
         nextProjects: projects,
@@ -7939,9 +7992,16 @@ export default function App() {
       });
       enqueueStudioNotifications(events);
       notifyPrevRef.current = { designers, projects, todos };
-      saveWorkspacePayload({ designers, projects, todos, deletedTodoIds }).then((result) => {
+      saveWorkspacePayload({
+        designers,
+        projects,
+        todos,
+        deletedTodoIds,
+        deletedProjectIds,
+      }).then((result) => {
         if (result.ok) {
           deletedTodoIds.forEach((id) => pendingDeletedTodoIdsRef.current.delete(id));
+          deletedProjectIds.forEach((id) => pendingDeletedProjectIdsRef.current.delete(id));
           if (result.updatedAt) {
             remoteUpdatedAtRef.current = result.updatedAt;
             if (pendingRemoteUpdatedAtRef.current
@@ -8050,6 +8110,7 @@ export default function App() {
       ...withMilestones,
       status: normalizeProjectStatus(withMilestones.status),
       priority: normalizeProjectCategory(withMilestones.priority),
+      updatedAt: new Date().toISOString(),
     };
     const normalized = base.status === 'Complete'
       ? { ...base, completedAt: base.completedAt || today() }
